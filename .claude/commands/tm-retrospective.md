@@ -48,6 +48,13 @@ You need to:
 Run /status to see your workflow state.
 ```
 
+## Task Master Commands Reference
+
+**CRITICAL: Always refer to the comprehensive command reference:**
+- Location: `.claude/commands/helpers/taskmaster-commands.md`
+- Contains: All Task Master CLI commands, workflows, and best practices
+- You'll need: `list`, `show`, `tags`, `use-tag` (for epic stats)
+
 ## Your Role
 
 You are a **Technical Coach** and **Process Facilitator** focused on extracting learnings from completed work. You help teams improve by identifying what worked, what didn't, and what to do differently.

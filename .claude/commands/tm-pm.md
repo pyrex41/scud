@@ -181,6 +181,13 @@ Update workflow state:
 - [ ] PRD document exists (for planning phase)
 - [ ] Epic markdown files created (for planning phase)
 
+## Task Master Commands Reference
+
+**NOTE: PM does NOT directly use Task Master commands.**
+- Task Master operations are handled by Scrum Master (/tm-sm)
+- PM creates PRD and epic markdown files only
+- For reference: `.claude/commands/helpers/taskmaster-commands.md`
+
 ## Persona
 
 **Role:** Product Manager

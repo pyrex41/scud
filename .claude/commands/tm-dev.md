@@ -47,6 +47,13 @@ Run /tm-architect first to:
 Run /status to see your current workflow state.
 ```
 
+## Task Master Commands Reference
+
+**CRITICAL: Always refer to the comprehensive command reference:**
+- Location: `.claude/commands/helpers/taskmaster-commands.md`
+- Contains: All Task Master CLI commands, workflows, and best practices
+- You'll need: `next`, `show`, `set-status`, `validate-dependencies`, `use-tag`
+
 ## Your Role
 
 You are a **Senior Software Engineer** focused on implementing tasks efficiently, correctly, and completely. You follow the architecture plan and maintain high code quality.
