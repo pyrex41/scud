@@ -12,37 +12,70 @@ const fs = require('fs');
 const command = process.argv[2];
 const args = process.argv.slice(3);
 
+// Task management commands (use built-in task manager)
+const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', 'stats'];
+
+// AI-powered commands (delegate to external task-master CLI)
+const aiCommands = ['parse-prd', 'analyze-complexity', 'expand', 'research'];
+
 const commands = {
   init: 'Initialize BMAD-TM Lite in current project',
   status: 'Show current workflow status',
   install: 'Install slash commands for Claude Code',
   validate: 'Run workflow validation',
-  help: 'Show this help message'
+  help: 'Show this help message',
+  // Task commands
+  tags: 'List all epic tags',
+  'use-tag': 'Switch to epic',
+  list: 'List tasks in active epic',
+  show: 'Show task details',
+  'set-status': 'Update task status',
+  next: 'Find next available task',
+  stats: 'Show task statistics'
 };
 
 function showHelp() {
   console.log(`
 ╭─────────────────────╮
 │                     │
-│   BMAD-TM Lite CLI  │
+│   BMAD-TM CLI       │
 │                     │
 ╰─────────────────────╯
 
 Usage: bmad-tm <command> [options]
 
-Commands:
-  init          Initialize BMAD-TM Lite in current project
+Setup Commands:
+  init          Initialize BMAD-TM in current project
   install       Install slash commands for Claude Code
   status        Show current workflow status
   validate      Run workflow validation
-  help          Show this help message
+
+Task Management (built-in, fast):
+  tags                        List all epic tags
+  use-tag <tag>              Switch to epic
+  list [--status=<status>]   List tasks in active epic
+  show <id>                  Show task details
+  set-status <id> <status>   Update task status
+  next                       Find next available task
+  stats                      Show task statistics
+
+AI-Powered (requires task-master CLI):
+  For these features, use: task-master <command>
+
+  parse-prd <file> --tag=<tag>    Parse PRD into tasks
+  analyze-complexity              Analyze task complexity
+  expand --id=<id>                Expand task into subtasks
+  research "<query>"              AI research
 
 Examples:
-  bmad-tm init                    # Initialize in current directory
-  bmad-tm install --claude-code   # Install for Claude Code CLI
-  bmad-tm install --project       # Install in project only
-  bmad-tm status                  # Show workflow state
-  bmad-tm validate                # Validate workflow state
+  bmad-tm init                       # Initialize in current directory
+  bmad-tm tags                       # List all epics
+  bmad-tm use-tag epic-1-auth        # Switch to epic
+  bmad-tm next                       # Find next available task
+  bmad-tm set-status 3 in-progress   # Start task 3
+
+  task-master parse-prd epic.md --tag=epic-1   # Parse PRD (AI)
+  task-master expand --id=5                    # Expand task (AI)
 
 For more information, visit:
 https://github.com/yourusername/bmad-tm-lite
@@ -98,6 +131,17 @@ function validate() {
     console.log('✅ Validation passed');
   } catch (error) {
     console.error('❌ Validation failed');
+    process.exit(1);
+  }
+}
+
+// Check if this is a task management command
+if (taskCommands.includes(command)) {
+  const taskManager = path.join(__dirname, '..', 'src', 'task-manager.js');
+  try {
+    execSync(`node "${taskManager}" ${command} ${args.join(' ')}`, { stdio: 'inherit' });
+    process.exit(0);
+  } catch (error) {
     process.exit(1);
   }
 }
