@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "current_phase": "ideation",
+  "active_epic": null,
+  "phases": {
+    "ideation": {
+      "status": "active",
+      "completed_at": null,
+      "agent": "tm-pm",
+      "description": "Product definition and PRD creation"
+    },
+    "planning": {
+      "status": "pending",
+      "completed_at": null,
+      "agent": "tm-pm",
+      "description": "Parse PRD into Task Master epics and tasks"
+    },
+    "architecture": {
+      "status": "pending",
+      "completed_at": null,
+      "agent": "tm-architect",
+      "description": "Technical design and architecture planning"
+    },
+    "implementation": {
+      "status": "pending",
+      "completed_at": null,
+      "agent": "tm-dev",
+      "description": "Task execution and development"
+    },
+    "retrospective": {
+      "status": "pending",
+      "completed_at": null,
+      "agent": "tm-retrospective",
+      "description": "Post-epic analysis and learning capture"
+    }
+  },
+  "history": [],
+  "last_updated": null
+}
