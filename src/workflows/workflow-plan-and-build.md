@@ -13,12 +13,13 @@ This document outlines the end-to-end workflow for taking a product idea from co
 ## Quick Start
 
 1. Check your current status: `/status`
-2. Start with Product Manager: `/tm-pm`
-3. Follow the phase gates - the system will guide you
+2. Start with Product Manager: `/tm-pm` (creates PRD and epic files)
+3. Run Scrum Master: `/tm-sm` (parses into Task Master with tags)
+4. Follow the phase gates - the system will guide you
 
 ---
 
-## The Five Phases
+## The Six Phases
 
 ### Phase 1: Ideation (Product Definition)
 
@@ -39,24 +40,64 @@ This document outlines the end-to-end workflow for taking a product idea from co
 
 ---
 
-### Phase 2: Planning (Epic Breakdown)
+### Phase 2a: Planning (Epic Creation)
 
 **Agent:** `/tm-pm`
-**Goal:** Parse PRD into Task Master epics and tasks
-**Output:** Tasks in `.taskmaster/tasks/tasks.json`
+**Goal:** Create epic markdown files
+**Output:** Epic files in `docs/epics/`
 
 **What Happens:**
 1. PM agent reads PRD
 2. Creates epic markdown file(s) in `docs/epics/`
-3. Guides you to parse: `task-master parse-prd [file] --tag=[epic-tag]`
-4. Verifies epic created successfully
-5. Updates workflow state to 'architecture'
+3. Structures epics with user stories and tasks
+4. Hands off to Scrum Master
 
 **Exit Criteria:**
-- ✅ Epic exists in Task Master
-- ✅ Tasks have titles and descriptions
+- ✅ Epic markdown files created
+- ✅ User stories defined
+- ✅ Ready for Scrum Master
+
+---
+
+### Phase 2b: Planning (Task Breakdown)
+
+**Agent:** `/tm-sm` (Scrum Master)
+**Goal:** Translate epics into Task Master with proper estimation
+**Output:** Tasks in `.taskmaster/tasks/tasks.json`
+
+**What Happens:**
+1. SM reads epic markdown files
+2. **Parses into Task Master with tag:** `task-master parse-prd [file] --tag=[epic-tag]`
+3. **Switches to new epic:** `task-master use-tag [epic-tag]`
+4. Analyzes task complexity
+5. Breaks down large tasks (>13 points) into subtasks
+6. Maps dependencies
+7. Refines complexity estimates
+8. Updates workflow state to 'architecture'
+
+**Task Master Tag Operations:**
+```bash
+# Create epic with tag
+task-master parse-prd docs/epics/epic-1-auth.md --tag=epic-1-auth
+
+# Switch to work on that epic
+task-master use-tag epic-1-auth
+
+# View tasks in active epic
+task-master list
+
+# Switch to different epic
+task-master use-tag epic-2-todos
+```
+
+**Exit Criteria:**
+- ✅ Epic parsed into Task Master with unique tag
+- ✅ All tasks ≤ 13 complexity points
+- ✅ Dependencies mapped
 - ✅ Workflow phase: architecture
 - ✅ Active epic set in workflow state
+
+**IMPORTANT:** Each epic gets its own tag. Use `task-master use-tag [tag]` to switch between epics.
 
 ---
 

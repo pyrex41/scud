@@ -13,7 +13,7 @@ This document walks you through every aspect of BMAD-TM Lite with real examples,
 3. [Understanding the Workflow State](#understanding-the-workflow-state)
 4. [The /status Command Explained](#the-status-command-explained)
 5. [Phase 1: Ideation (Product Manager)](#phase-1-ideation-product-manager)
-6. [Phase 2: Planning (Product Manager)](#phase-2-planning-product-manager)
+6. [Phase 2: Planning (Product Manager & Scrum Master)](#phase-2-planning-product-manager--scrum-master)
 7. [Phase 3: Architecture (Architect)](#phase-3-architecture-architect)
 8. [Phase 4: Implementation (Developer)](#phase-4-implementation-developer)
 9. [Phase 5: Retrospective](#phase-5-retrospective)
@@ -927,15 +927,24 @@ Let's examine what was created at `docs/prd/todo-app-prd.md`:
 
 ---
 
-## Phase 2: Planning (Product Manager)
+## Phase 2: Planning (Product Manager & Scrum Master)
 
-### What Happens in Planning
+### Phase 2a: Epic Creation (Product Manager)
 
-The PM agent helps you **parse the epic into Task Master tasks**. This converts high-level epic descriptions into concrete, actionable tasks with:
+The PM agent creates **epic markdown files** from the PRD. These files contain:
+- Epic goals and user stories
+- Initial task breakdown
+- Technical considerations
+- Success criteria
+
+### Phase 2b: Task Master Translation (Scrum Master)
+
+The Scrum Master agent **parses epic files into Task Master** with proper tagging. This converts high-level epic descriptions into concrete, actionable tasks with:
 - Task titles
 - Descriptions
-- Complexity scores
+- Complexity scores (refined via Fibonacci scale)
 - Dependencies (initial guess, refined by architect)
+- Task Master tags for epic organization
 
 ### Epic File Structure
 
@@ -1023,20 +1032,44 @@ The PM created `docs/epics/epic-1-authentication.md`:
 - Load test login endpoint (1000 req/sec)
 ```
 
-### Parsing into Task Master
+### Scrum Master: Parsing into Task Master
 
-**Command:**
+**Agent Invocation:**
 ```bash
-task-master parse-prd docs/epics/epic-1-authentication.md --tag=epic-1-auth
+/tm-sm
 ```
 
-**What Happens:**
+**What the Scrum Master Does:**
 
-1. Task Master reads the epic file
-2. Extracts tasks from `## Tasks` section
-3. Parses task titles, descriptions, complexity, dependencies
-4. Creates epic entry in `.taskmaster/tasks/tasks.json`
-5. Validates JSON structure
+1. **Creates the epic with a tag:**
+   ```bash
+   task-master parse-prd docs/epics/epic-1-authentication.md --tag=epic-1-auth
+   ```
+   - The `--tag=epic-1-auth` creates a unique identifier for this epic
+   - Allows working on multiple epics independently
+
+2. **Switches to the new epic:**
+   ```bash
+   task-master use-tag epic-1-auth
+   ```
+   - Sets this epic as the "active" epic
+   - All task operations now apply to this epic only
+
+3. **Analyzes task complexity:**
+   - Reviews each task's complexity score
+   - Identifies tasks >13 points (need to be broken down)
+   - Applies Fibonacci scale: 1, 2, 3, 5, 8, 13
+
+4. **Breaks down large tasks:**
+   - If Task 5 is 21 points, splits into subtasks
+   - Each subtask ≤13 points
+   - Updates dependencies
+
+5. **Refines estimates and dependencies:**
+   - Validates dependency chain makes sense
+   - Updates Task Master with refined complexity
+
+6. **Updates workflow state to 'architecture'**
 
 **Output:**
 ```
@@ -1172,32 +1205,108 @@ Let's examine what was created in `.taskmaster/tasks/tasks.json`:
 - **`status`**: All start as `"pending"`
 - **`complexity`**: Fibonacci-like scale (1, 2, 3, 5, 8, 13...)
 
-### Continuing the PM Conversation
+### Working with Multiple Epics: Tag Operations
 
-After you run the parse command:
+**IMPORTANT:** Task Master uses tags to organize multiple epics. Each epic gets a unique tag.
 
-**You:**
+**Example: Creating Multiple Epics**
+
+```bash
+# Create first epic
+/tm-sm
+# → Scrum Master parses: task-master parse-prd docs/epics/epic-1-auth.md --tag=epic-1-auth
+# → Switches to it: task-master use-tag epic-1-auth
+# → Refines tasks in epic-1-auth
+
+# Create second epic
+/tm-sm
+# → Scrum Master parses: task-master parse-prd docs/epics/epic-2-todos.md --tag=epic-2-todos
+# → Switches to it: task-master use-tag epic-2-todos
+# → Refines tasks in epic-2-todos
 ```
-[Ran command above, got output]
-Done! Epic created.
+
+**Switching Between Epics:**
+
+```bash
+# List all epic tags
+task-master list-tags
+# → epic-1-auth
+# → epic-2-todos
+
+# Switch to work on epic-1-auth
+task-master use-tag epic-1-auth
+
+# Now all operations apply to epic-1-auth
+task-master list
+# → Shows only tasks in epic-1-auth
+
+# Switch to epic-2-todos
+task-master use-tag epic-2-todos
+
+# Now operations apply to epic-2-todos
+task-master list
+# → Shows only tasks in epic-2-todos
 ```
 
-**PM Agent:**
+**Validator Tag Commands:**
+
+```bash
+# List all epic tags in Task Master
+node src/validators/taskmaster-validator.js list-epic-tags
+# → { "valid": true, "tags": ["epic-1-auth", "epic-2-todos"], "count": 2 }
+
+# Get currently active epic tag
+node src/validators/taskmaster-validator.js get-active-epic-tag
+# → { "valid": true, "activeEpic": "epic-1-auth" }
+
+# Set active epic in workflow state
+node src/validators/taskmaster-validator.js set-active-epic-tag epic-2-todos
+# → { "valid": true, "activeEpic": "epic-2-todos" }
 ```
-✅ Perfect! Epic 'epic-1-auth' is now in Task Master with 8 tasks.
 
-Let me check the state...
+**The tasks.json File with Multiple Epics:**
 
-[Reads .taskmaster/tasks/tasks.json]
+```json
+{
+  "epic-1-auth": {
+    "metadata": { ... },
+    "tasks": [ ... ]
+  },
+  "epic-2-todos": {
+    "metadata": { ... },
+    "tasks": [ ... ]
+  }
+}
+```
 
-Looks good! All tasks are present with:
-  • Task IDs: 1-8
-  • Dependencies mapped correctly
-  • Total complexity: 36 points
+### Continuing the Scrum Master Conversation
+
+After Scrum Master creates and refines the epic:
+
+**Scrum Master Agent:**
+```
+✅ Epic 'epic-1-auth' created in Task Master with 8 tasks.
+
+📊 Analyzing task complexity...
+
+Reviewing each task against Fibonacci scale (1, 2, 3, 5, 8, 13):
+  ✓ Task 1: complexity 3 (appropriate)
+  ✓ Task 2: complexity 2 (appropriate)
+  ✓ Task 3: complexity 5 (appropriate)
+  ✓ Task 4: complexity 5 (appropriate)
+  ✓ Task 5: complexity 8 (appropriate)
+  ✓ Task 6: complexity 6 (not Fibonacci, adjusting to 5)
+  ✓ Task 7: complexity 4 (not Fibonacci, adjusting to 3)
+  ✓ Task 8: complexity 3 (appropriate)
+
+🔄 Validating dependencies...
+  ✓ All dependency chains are valid
+  ✓ No circular dependencies detected
+  ✓ No tasks depend on non-existent tasks
+
+Total complexity: 34 points (after adjustments)
 
 🔄 Updating workflow state...
-
-[Calls validator to update phase]
 
 ✅ Workflow phase updated: planning → architecture
 ✅ Active epic set: epic-1-auth

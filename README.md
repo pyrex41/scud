@@ -39,7 +39,8 @@ A **lightweight alternative to full BMAD** that:
 
 ```bash
 /status                    # Check your workflow state
-/tm-pm                     # Create PRD and plan epic
+/tm-pm                     # Create PRD and epic files
+/tm-sm                     # Parse epics into Task Master (with tags)
 /tm-architect              # Design technical solution
 /tm-dev                    # Implement tasks
 /tm-retrospective          # Capture learnings
@@ -51,15 +52,15 @@ A **lightweight alternative to full BMAD** that:
 
 ## The Workflow
 
-BMAD-TM Lite enforces a **5-phase linear workflow**:
+BMAD-TM Lite enforces a **6-phase linear workflow**:
 
 ```
-┌─────────────┐     ┌──────────┐     ┌──────────────┐     ┌────────────────┐     ┌───────────────┐
-│  Ideation   │────▶│ Planning │────▶│ Architecture │────▶│ Implementation │────▶│ Retrospective │
-│   (PRD)     │     │ (Epics)  │     │  (Design)    │     │    (Code)      │     │  (Learning)   │
-└─────────────┘     └──────────┘     └──────────────┘     └────────────────┘     └───────────────┘
-      ▲                                                                                     │
-      └─────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌────────────────┐     ┌───────────────┐
+│  Ideation   │────▶│  Planning    │────▶│ Architecture │────▶│ Implementation │────▶│ Retrospective │
+│   (PRD)     │     │(PM + SM)     │     │  (Design)    │     │    (Code)      │     │  (Learning)   │
+└─────────────┘     └──────────────┘     └──────────────┘     └────────────────┘     └───────────────┘
+      ▲                                                                                       │
+      └───────────────────────────────────────────────────────────────────────────────────────┘
                                     (Reset for next epic)
 ```
 
@@ -69,9 +70,17 @@ BMAD-TM Lite enforces a **5-phase linear workflow**:
 - Identify epic boundaries
 - **Output:** `docs/prd/[name]-prd.md`
 
-### Phase 2: Planning (Product Manager)
-- Break PRD into epics
-- Parse into Task Master
+### Phase 2a: Planning - Epic Creation (Product Manager)
+- Break PRD into epic markdown files
+- Define user stories and initial tasks
+- **Output:** `docs/epics/[epic-name].md`
+
+### Phase 2b: Planning - Task Master Translation (Scrum Master)
+- Parse epic files into Task Master with tags (`--tag=epic-name`)
+- Switch between epics using `task-master use-tag`
+- Analyze and refine task complexity (Fibonacci scale)
+- Break down large tasks (>13 points)
+- Map dependencies
 - **Output:** Tasks in `.taskmaster/tasks/tasks.json`
 
 ### Phase 3: Architecture (Architect)
@@ -126,6 +135,7 @@ bmad-tm/
 │   └── commands/              # Slash commands for Claude Code CLI
 │       ├── status.md          # Show workflow status
 │       ├── tm-pm.md           # Product Manager agent
+│       ├── tm-sm.md           # Scrum Master agent (Task Master operations)
 │       ├── tm-architect.md    # Architect agent
 │       ├── tm-dev.md          # Developer agent
 │       ├── tm-retrospective.md # Retrospective agent
@@ -135,6 +145,7 @@ bmad-tm/
 │   └── skills/                # Skills for OpenCode
 │       ├── status.md
 │       ├── tm-pm.md
+│       ├── tm-sm.md           # Scrum Master skill
 │       ├── tm-architect.md
 │       ├── tm-dev.md
 │       └── tm-retrospective.md
@@ -165,14 +176,27 @@ bmad-tm/
 
 ### Product Manager (`/tm-pm`)
 **Phases:** Ideation, Planning
-**Creates:** PRD, Epic files
-**Updates:** Task Master (via parse command)
+**Creates:** PRD, Epic markdown files
+**Updates:** Workflow state
 
 **Responsibilities:**
 - Gather requirements through discovery questions
 - Create structured PRD
-- Break down into epics
-- Parse epics into Task Master
+- Break down PRD into epic markdown files
+- Hand off to Scrum Master for Task Master operations
+
+### Scrum Master (`/tm-sm`)
+**Phase:** Planning
+**Creates:** Task Master tasks with tags
+**Updates:** Task Master (parse, complexity, dependencies)
+
+**Responsibilities:**
+- Parse epic markdown files into Task Master with `--tag` flag
+- Switch between epics using `task-master use-tag`
+- Analyze and refine task complexity (Fibonacci scale: 1, 2, 3, 5, 8, 13)
+- Break down large tasks (>13 points) into subtasks
+- Map task dependencies
+- Validate dependency chains
 
 ### Architect (`/tm-architect`)
 **Phase:** Architecture
@@ -219,6 +243,7 @@ bmad-tm/
 |---------|---------|-------|
 | `/status` | Show current workflow state | Any |
 | `/tm-pm` | Activate Product Manager | Ideation, Planning |
+| `/tm-sm` | Activate Scrum Master | Planning |
 | `/tm-architect` | Activate Architect | Architecture |
 | `/tm-dev` | Activate Developer | Implementation |
 | `/tm-retrospective` | Activate Retrospective | Retrospective |
@@ -227,12 +252,14 @@ bmad-tm/
 
 | Command | Purpose |
 |---------|---------|
-| `task-master parse-prd [file] --tag=[epic]` | Parse epic into tasks |
-| `task-master list [epic]` | List all tasks in epic |
-| `task-master show [epic] [task-id]` | Show task details |
-| `task-master update-status [epic] [task-id] [status]` | Update task status |
-| `task-master set-dependency [epic] [task] [dep]` | Set dependency |
-| `task-master remove-dependency [epic] [task] [dep]` | Remove dependency |
+| `task-master parse-prd [file] --tag=[epic]` | Parse epic into tasks (creates tag) |
+| `task-master use-tag [epic-tag]` | Switch to work on specific epic |
+| `task-master list-tags` | List all epic tags |
+| `task-master list` | List all tasks in active epic |
+| `task-master show [task-id]` | Show task details |
+| `task-master update-status [task-id] [status]` | Update task status |
+| `task-master set-dependency [task] [dep]` | Set dependency |
+| `task-master remove-dependency [task] [dep]` | Remove dependency |
 
 ### Validator Commands
 
@@ -245,6 +272,9 @@ bmad-tm/
 | `taskmaster-validator.js get-available-tasks [epic]` | Get startable tasks |
 | `taskmaster-validator.js get-epic-stats [epic]` | Get epic statistics |
 | `taskmaster-validator.js get-command-availability` | Check available commands |
+| `taskmaster-validator.js list-epic-tags` | List all epic tags |
+| `taskmaster-validator.js get-active-epic-tag` | Get currently active epic |
+| `taskmaster-validator.js set-active-epic-tag [epic]` | Set active epic in workflow |
 
 ---
 

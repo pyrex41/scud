@@ -344,6 +344,57 @@ class TaskMasterValidator {
   }
 
   /**
+   * List all epic tags in Task Master
+   */
+  listEpicTags() {
+    const tasks = this.loadTasks();
+    const tags = Object.keys(tasks);
+
+    return {
+      valid: true,
+      tags,
+      count: tags.length
+    };
+  }
+
+  /**
+   * Get currently active epic tag from workflow state
+   */
+  getActiveEpicTag() {
+    const state = this.loadWorkflowState();
+    return {
+      valid: true,
+      activeEpic: state.active_epic || null
+    };
+  }
+
+  /**
+   * Set active epic tag in workflow state
+   */
+  setActiveEpicTag(epicTag) {
+    const state = this.loadWorkflowState();
+    const tasks = this.loadTasks();
+
+    // Verify epic exists
+    if (!tasks[epicTag]) {
+      return {
+        valid: false,
+        error: `Epic '${epicTag}' not found in Task Master.`
+      };
+    }
+
+    state.active_epic = epicTag;
+    state.last_updated = new Date().toISOString();
+
+    this.saveWorkflowState(state);
+
+    return {
+      valid: true,
+      activeEpic: epicTag
+    };
+  }
+
+  /**
    * Get command availability for /status
    */
   getCommandAvailability() {
@@ -458,6 +509,19 @@ if (require.main === module) {
         result = validator.addHistoryEntry(entry);
         break;
 
+      case 'list-epic-tags':
+        result = validator.listEpicTags();
+        break;
+
+      case 'get-active-epic-tag':
+        result = validator.getActiveEpicTag();
+        break;
+
+      case 'set-active-epic-tag':
+        const epicTagToSet = process.argv[3];
+        result = validator.setActiveEpicTag(epicTagToSet);
+        break;
+
       default:
         console.error(`Unknown command: ${command}`);
         console.log(`
@@ -474,6 +538,9 @@ Commands:
   get-command-availability                       Get which commands are available
   update-phase <new-phase> [json-updates]       Update workflow phase
   add-history <json-entry>                       Add entry to workflow history
+  list-epic-tags                                 List all epic tags in Task Master
+  get-active-epic-tag                            Get currently active epic tag
+  set-active-epic-tag <epic-tag>                 Set active epic tag in workflow state
         `);
         process.exit(1);
     }
