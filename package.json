@@ -1,0 +1,52 @@
+{
+  "name": "bmad-tm-lite",
+  "version": "1.0.0",
+  "description": "Lightweight workflow orchestration for building software with Task Master and AI agents",
+  "main": "src/validators/taskmaster-validator.js",
+  "bin": {
+    "bmad-tm": "./bin/bmad-tm.js",
+    "bmad-tm-install": "./bin/install.js"
+  },
+  "scripts": {
+    "postinstall": "node bin/postinstall.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "task-master",
+    "workflow",
+    "orchestration",
+    "ai-agents",
+    "project-management",
+    "bmad",
+    "agile",
+    "scrum",
+    "claude-code"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/bmad-tm-lite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/bmad-tm-lite/issues"
+  },
+  "homepage": "https://github.com/yourusername/bmad-tm-lite#readme",
+  "peerDependencies": {
+    "task-master": ">=1.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    ".claude/",
+    ".opencode/",
+    "docs/",
+    "README.md",
+    "QUICKSTART.md",
+    "DETAILED_WALKTHROUGH.md",
+    "LICENSE"
+  ]
+}

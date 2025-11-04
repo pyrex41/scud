@@ -25,13 +25,24 @@ A **lightweight alternative to full BMAD** that:
 
 ### Installation
 
-**Claude Code CLI:**
+**NPM (Recommended):**
 ```bash
-./install-claude-code.sh
+# Install globally
+npm install -g bmad-tm-lite
+
+# Initialize in your project
+cd /path/to/your/project
+bmad-tm init
 ```
 
-**OpenCode:**
+**Alternative: Manual Installation**
+
+Clone this repository and run:
 ```bash
+# For Claude Code
+./install-claude-code.sh
+
+# For OpenCode
 ./install-opencode.sh
 ```
 

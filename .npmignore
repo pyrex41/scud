@@ -1,0 +1,37 @@
+# Development files
+*.log
+npm-debug.log*
+node_modules/
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Project-specific (not needed in package)
+.taskmaster/
+docs/prd/
+docs/epics/
+docs/architecture/
+docs/retrospectives/
+
+# Keep only documentation templates
+!docs/.gitkeep
+
+# Installation scripts (already in project)
+install-claude-code.sh
+install-opencode.sh
+
+# Keep these for the package
+!bin/
+!src/
+!.claude/
+!.opencode/
+!README.md
+!QUICKSTART.md
+!DETAILED_WALKTHROUGH.md
+!LICENSE
