@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * BMAD-TM Lite CLI
- * Main entry point for bmad-tm commands
+ * SCUD CLI
+ * Sprint Cycle Unified Development
+ * Main entry point for scud commands
  */
 
 const { execSync } = require('child_process');
@@ -19,7 +20,7 @@ const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', '
 const aiCommands = ['parse-prd', 'analyze-complexity', 'expand', 'research'];
 
 const commands = {
-  init: 'Initialize BMAD-TM Lite in current project',
+  init: 'Initialize SCUD in current project',
   status: 'Show current workflow status',
   install: 'Install slash commands for Claude Code',
   validate: 'Run workflow validation',
@@ -36,16 +37,17 @@ const commands = {
 
 function showHelp() {
   console.log(`
-╭─────────────────────╮
-│                     │
-│   BMAD-TM CLI       │
-│                     │
-╰─────────────────────╯
+╭────────────────────────────────────╮
+│                                    │
+│   SCUD CLI                         │
+│   Sprint Cycle Unified Development │
+│                                    │
+╰────────────────────────────────────╯
 
-Usage: bmad-tm <command> [options]
+Usage: scud <command> [options]
 
 Setup Commands:
-  init          Initialize BMAD-TM in current project
+  init          Initialize SCUD in current project
   install       Install slash commands for Claude Code
   status        Show current workflow status
   validate      Run workflow validation
@@ -68,17 +70,17 @@ AI-Powered (requires task-master CLI):
   research "<query>"              AI research
 
 Examples:
-  bmad-tm init                       # Initialize in current directory
-  bmad-tm tags                       # List all epics
-  bmad-tm use-tag epic-1-auth        # Switch to epic
-  bmad-tm next                       # Find next available task
-  bmad-tm set-status 3 in-progress   # Start task 3
+  scud init                       # Initialize in current directory
+  scud tags                       # List all epics
+  scud use-tag epic-1-auth        # Switch to epic
+  scud next                       # Find next available task
+  scud set-status 3 in-progress   # Start task 3
 
   task-master parse-prd epic.md --tag=epic-1   # Parse PRD (AI)
   task-master expand --id=5                    # Expand task (AI)
 
 For more information, visit:
-https://github.com/yourusername/bmad-tm-lite
+https://github.com/yourusername/scud
 `);
 }
 
@@ -109,7 +111,7 @@ function status() {
     const result = execSync(`node "${validator}" get-command-availability`, { encoding: 'utf8' });
     const availability = JSON.parse(result);
 
-    console.log('\n📊 BMAD-TM Lite Workflow Status\n');
+    console.log('\n📊 SCUD Workflow Status\n');
     console.log('Available Commands:');
 
     for (const [cmd, info] of Object.entries(availability)) {
@@ -165,6 +167,6 @@ switch (command) {
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.log('Run "bmad-tm help" for usage information');
+    console.log('Run "scud help" for usage information');
     process.exit(1);
 }

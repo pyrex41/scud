@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Simple Task Manager for BMAD-TM
+ * Simple Task Manager for SCUD
+ * Sprint Cycle Unified Development
  *
  * Provides core task operations without external dependencies.
  * For AI-powered features (expand, analyze-complexity, parse-prd),
@@ -23,7 +24,7 @@ class TaskManager {
    */
   loadTasks() {
     if (!fs.existsSync(this.tasksPath)) {
-      throw new Error(`Tasks file not found: ${this.tasksPath}\nRun: bmad-tm init`);
+      throw new Error(`Tasks file not found: ${this.tasksPath}\nRun: scud init`);
     }
     return JSON.parse(fs.readFileSync(this.tasksPath, 'utf8'));
   }
@@ -44,7 +45,7 @@ class TaskManager {
    */
   loadWorkflowState() {
     if (!fs.existsSync(this.workflowPath)) {
-      throw new Error(`Workflow state not found: ${this.workflowPath}\nRun: bmad-tm init`);
+      throw new Error(`Workflow state not found: ${this.workflowPath}\nRun: scud init`);
     }
     return JSON.parse(fs.readFileSync(this.workflowPath, 'utf8'));
   }
@@ -102,7 +103,7 @@ class TaskManager {
   listTasks(options = {}) {
     const activeEpic = this.getActiveEpic();
     if (!activeEpic) {
-      throw new Error('No active epic. Run: bmad-tm use-tag <epic-tag>');
+      throw new Error('No active epic. Run: scud use-tag <epic-tag>');
     }
 
     const tasks = this.loadTasks();
@@ -134,7 +135,7 @@ class TaskManager {
   showTask(taskId) {
     const activeEpic = this.getActiveEpic();
     if (!activeEpic) {
-      throw new Error('No active epic. Run: bmad-tm use-tag <epic-tag>');
+      throw new Error('No active epic. Run: scud use-tag <epic-tag>');
     }
 
     const tasks = this.loadTasks();
@@ -159,7 +160,7 @@ class TaskManager {
 
     const activeEpic = this.getActiveEpic();
     if (!activeEpic) {
-      throw new Error('No active epic. Run: bmad-tm use-tag <epic-tag>');
+      throw new Error('No active epic. Run: scud use-tag <epic-tag>');
     }
 
     const allTasks = this.loadTasks();
@@ -184,7 +185,7 @@ class TaskManager {
   findNext() {
     const activeEpic = this.getActiveEpic();
     if (!activeEpic) {
-      throw new Error('No active epic. Run: bmad-tm use-tag <epic-tag>');
+      throw new Error('No active epic. Run: scud use-tag <epic-tag>');
     }
 
     const tasks = this.loadTasks();
@@ -221,7 +222,7 @@ class TaskManager {
   getStats() {
     const activeEpic = this.getActiveEpic();
     if (!activeEpic) {
-      throw new Error('No active epic. Run: bmad-tm use-tag <epic-tag>');
+      throw new Error('No active epic. Run: scud use-tag <epic-tag>');
     }
 
     const tasks = this.loadTasks();
@@ -286,7 +287,7 @@ if (require.main === module) {
 
       case 'use-tag':
         if (!args[0]) {
-          console.error('Usage: bmad-tm use-tag <epic-tag>');
+          console.error('Usage: scud use-tag <epic-tag>');
           process.exit(1);
         }
         tm.setActiveEpic(args[0]);
@@ -324,7 +325,7 @@ if (require.main === module) {
 
       case 'show':
         if (!args[0]) {
-          console.error('Usage: bmad-tm show <task-id>');
+          console.error('Usage: scud show <task-id>');
           process.exit(1);
         }
         result = tm.showTask(args[0]);
@@ -346,7 +347,7 @@ if (require.main === module) {
 
       case 'set-status':
         if (!args[0] || !args[1]) {
-          console.error('Usage: bmad-tm set-status <task-id> <status>');
+          console.error('Usage: scud set-status <task-id> <status>');
           console.error('Valid statuses: pending, in-progress, done, review, blocked, deferred, cancelled');
           process.exit(1);
         }
@@ -361,7 +362,7 @@ if (require.main === module) {
           console.log(`Task ${result.id}: ${result.title}`);
           console.log(`Complexity: ${result.complexity || 0}`);
           console.log(`Priority: ${result.priority || 'medium'}`);
-          console.log(`\nRun: bmad-tm show ${result.id}`);
+          console.log(`\nRun: scud show ${result.id}`);
         } else {
           console.log('No tasks available (all tasks are blocked or complete)');
         }
@@ -380,7 +381,7 @@ if (require.main === module) {
 
       default:
         console.log(`
-Simple Task Manager for BMAD-TM
+Simple Task Manager for SCUD
 
 Core Commands (fast, no dependencies):
   tags                      List all epic tags
@@ -398,13 +399,13 @@ AI-Powered Commands (use task-master CLI):
   task-master research "<query>"              AI research
 
 Examples:
-  bmad-tm tags                      # List all epics
-  bmad-tm use-tag epic-1-auth       # Switch to epic
-  bmad-tm list                      # List tasks
-  bmad-tm next                      # Find next task
-  bmad-tm show 3                    # Show task 3
-  bmad-tm set-status 3 in-progress  # Start task 3
-  bmad-tm set-status 3 done         # Complete task 3
+  scud tags                      # List all epics
+  scud use-tag epic-1-auth       # Switch to epic
+  scud list                      # List tasks
+  scud next                      # Find next task
+  scud show 3                    # Show task 3
+  scud set-status 3 in-progress  # Start task 3
+  scud set-status 3 done         # Complete task 3
         `);
         process.exit(command ? 1 : 0);
     }

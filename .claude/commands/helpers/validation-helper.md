@@ -330,4 +330,4 @@ try {
 
 ---
 
-**Remember:** Validation is not optional. It's what makes BMAD-TM Lite enforce correct workflow usage and prevent common mistakes.
+**Remember:** Validation is not optional. It's what makes SCUD enforce correct workflow usage and prevent common mistakes.

@@ -1,23 +1,23 @@
 {
-  "name": "bmad-tm-lite",
+  "name": "scud",
   "version": "1.0.0",
-  "description": "Lightweight workflow orchestration for building software with Task Master and AI agents",
+  "description": "Sprint Cycle Unified Development - Lightweight workflow orchestration for building software with Task Master and AI agents",
   "main": "src/validators/taskmaster-validator.js",
   "bin": {
-    "bmad-tm": "./bin/bmad-tm.js",
-    "bmad-tm-install": "./bin/install.js"
+    "scud": "./bin/scud.js"
   },
   "scripts": {
     "postinstall": "node bin/postinstall.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
+    "scud",
+    "sprint-cycle",
     "task-master",
     "workflow",
     "orchestration",
     "ai-agents",
     "project-management",
-    "bmad",
     "agile",
     "scrum",
     "claude-code"
@@ -26,12 +26,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/bmad-tm-lite.git"
+    "url": "https://github.com/yourusername/scud.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/bmad-tm-lite/issues"
+    "url": "https://github.com/yourusername/scud/issues"
   },
-  "homepage": "https://github.com/yourusername/bmad-tm-lite#readme",
+  "homepage": "https://github.com/yourusername/scud#readme",
   "peerDependencies": {
     "task-master": ">=1.0.0"
   },

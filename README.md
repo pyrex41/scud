@@ -1,14 +1,16 @@
-# BMAD-TM Lite
+# SCUD
 
-**Lightweight workflow orchestration for building software with Task Master and AI agents** 🚀
+**Sprint Cycle Unified Development** 🚀
 
-BMAD-TM Lite combines Task Master's robust state management with intelligent agent prompting to guide you through building software epics. It enforces best practices (dependency management, testing, phase gates) without the overhead of full BMAD XML complexity.
+**Lightweight workflow orchestration for building software with Task Master and AI agents**
+
+SCUD combines Task Master's robust state management with intelligent agent prompting to guide you through building software epics. It enforces best practices (dependency management, testing, phase gates) without the overhead of full BMAD XML complexity.
 
 ---
 
-## What is BMAD-TM Lite?
+## What is SCUD?
 
-A **lightweight alternative to full BMAD** that:
+A **Sprint Cycle Unified Development** workflow that:
 
 - ✅ Guides you through structured workflow phases
 - ✅ Enforces dependencies and prevents build order issues
@@ -28,11 +30,11 @@ A **lightweight alternative to full BMAD** that:
 **NPM (Recommended):**
 ```bash
 # Install globally
-npm install -g bmad-tm-lite
+npm install -g scud
 
 # Initialize in your project
 cd /path/to/your/project
-bmad-tm init
+scud init
 ```
 
 **Alternative: Manual Installation**
@@ -63,7 +65,7 @@ Clone this repository and run:
 
 ## The Workflow
 
-BMAD-TM Lite enforces a **6-phase linear workflow**:
+SCUD enforces a **6-phase linear workflow**:
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌────────────────┐     ┌───────────────┐
@@ -291,7 +293,7 @@ bmad-tm/
 
 ## Validation & Enforcement
 
-BMAD-TM Lite enforces correct workflow usage through the Task Master validator:
+SCUD enforces correct workflow usage through the Task Master validator:
 
 ### Phase Gates
 ```javascript
@@ -392,7 +394,7 @@ $ /status
 
 ## Differences from Full BMAD
 
-| Feature | Full BMAD | BMAD-TM Lite |
+| Feature | Full BMAD | SCUD |
 |---------|-----------|--------------|
 | Agent Structure | XML with `<agent>` wrapper | Markdown with YAML frontmatter |
 | Activation | `<activation>` steps | Natural language invocation |
@@ -406,7 +408,7 @@ $ /status
 | Learning Curve | Steep | Gentle |
 | Enforcement | Structural | Runtime validation |
 
-**Choose BMAD-TM Lite when:**
+**Choose SCUD when:**
 - You want simple, readable agents
 - You need dependency enforcement
 - You prefer Task Master for state
@@ -503,7 +505,7 @@ cat .taskmaster/tasks/tasks.json | jq .
 **A:** No. Story files are eliminated. All context lives in Task Master's `details` field.
 
 ### Q: Can I work on multiple epics simultaneously?
-**A:** Not recommended. BMAD-TM Lite tracks a single active epic for focus. Finish one before starting another.
+**A:** Not recommended. SCUD tracks a single active epic for focus. Finish one before starting another.
 
 ### Q: How do I reset the workflow?
 **A:** Run `/tm-retrospective` after completing an epic. It automatically resets to ideation.
@@ -512,7 +514,7 @@ cat .taskmaster/tasks/tasks.json | jq .
 **A:** Yes! Edit the markdown files in `.claude/commands/` or `.opencode/skills/`.
 
 ### Q: Do I need full BMAD installed?
-**A:** No. BMAD-TM Lite is standalone. No BMAD installation required.
+**A:** No. SCUD is standalone. No BMAD installation required.
 
 ### Q: Can I use this with other AI tools?
 **A:** The slash commands are for Claude Code CLI. For other tools, reference the agent markdown directly.

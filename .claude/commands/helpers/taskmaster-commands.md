@@ -422,4 +422,4 @@ OPENAI_API_KEY=sk-...
 ---
 
 **Last Updated:** 2025-11-04
-**Version:** BMAD-TM Lite v1.0
+**Version:** SCUD v1.0

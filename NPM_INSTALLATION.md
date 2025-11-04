@@ -1,4 +1,5 @@
-# BMAD-TM Lite - NPM Installation Guide
+# SCUD - NPM Installation Guide
+Sprint Cycle Unified Development
 
 ## Publishing to NPM
 
@@ -12,7 +13,7 @@
 2. **Update package.json**
    - Set your name in `author`
    - Set your repository URL
-   - Choose a unique package name (check availability: `npm search bmad-tm-lite`)
+   - Choose a unique package name (check availability: `npm search scud`)
 
 ### Publishing Steps
 
@@ -20,7 +21,7 @@
 # 1. Test locally first
 npm pack
 # This creates a .tgz file you can test with:
-# npm install ./bmad-tm-lite-1.0.0.tgz
+# npm install ./scud-1.0.0.tgz
 
 # 2. Publish to npm
 npm publish
@@ -31,8 +32,8 @@ npm publish --access public
 
 ### Package Name Options
 
-If `bmad-tm-lite` is taken, consider:
-- `@yourusername/bmad-tm-lite` (scoped package)
+If `scud` is taken, consider:
+- `@yourusername/scud` (scoped package)
 - `bmad-taskmaster-lite`
 - `task-master-workflow`
 - `bmad-workflow`
@@ -47,31 +48,31 @@ Once published, users can install with:
 
 ```bash
 # Install globally for CLI commands
-npm install -g bmad-tm-lite
+npm install -g scud
 
 # Initialize in any project
 cd /path/to/your/project
-bmad-tm init
+scud init
 ```
 
 ### Local Installation (per-project)
 
 ```bash
 # Install in project
-npm install --save-dev bmad-tm-lite
+npm install --save-dev scud
 
 # Initialize
-npx bmad-tm init
+npx scud init
 ```
 
 ---
 
 ## Usage After Installation
 
-### 1. Initialize BMAD-TM Lite
+### 1. Initialize SCUD
 
 ```bash
-bmad-tm init
+scud init
 ```
 
 This creates:
@@ -82,7 +83,7 @@ This creates:
 ### 2. Check Status
 
 ```bash
-bmad-tm status
+scud status
 ```
 
 Shows available commands and current phase.
@@ -99,7 +100,7 @@ Begin with Product Manager to create PRD.
 
 ## What Gets Installed
 
-When `bmad-tm init` runs, it creates:
+When `scud init` runs, it creates:
 
 ```
 your-project/
@@ -127,32 +128,32 @@ your-project/
 
 ## CLI Commands
 
-### bmad-tm init
-Initializes BMAD-TM Lite in current project.
+### scud init
+Initializes SCUD in current project.
 
 ```bash
-bmad-tm init
+scud init
 ```
 
-### bmad-tm status
+### scud status
 Shows current workflow state and available commands.
 
 ```bash
-bmad-tm status
+scud status
 ```
 
-### bmad-tm validate
+### scud validate
 Validates Task Master CLI installation.
 
 ```bash
-bmad-tm validate
+scud validate
 ```
 
-### bmad-tm help
+### scud help
 Shows help information.
 
 ```bash
-bmad-tm help
+scud help
 ```
 
 ---
@@ -178,8 +179,8 @@ If you prefer not to use npm:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/bmad-tm-lite.git
-cd bmad-tm-lite
+git clone https://github.com/yourusername/scud.git
+cd scud
 
 # Copy to your project
 cp -r .claude /path/to/your/project/
@@ -220,10 +221,10 @@ npm install -g task-master
 
 ```bash
 # Make sure validator is executable
-chmod +x node_modules/bmad-tm-lite/src/validators/taskmaster-validator.js
+chmod +x node_modules/scud/src/validators/taskmaster-validator.js
 
 # Test it
-node node_modules/bmad-tm-lite/src/validators/taskmaster-validator.js validate-cli
+node node_modules/scud/src/validators/taskmaster-validator.js validate-cli
 ```
 
 ---
@@ -237,20 +238,20 @@ node node_modules/bmad-tm-lite/src/validators/taskmaster-validator.js validate-c
 rm -rf .taskmaster .claude/commands
 
 # Remove from package.json
-npm uninstall bmad-tm-lite
+npm uninstall scud
 ```
 
 ### Global Uninstall
 
 ```bash
-npm uninstall -g bmad-tm-lite
+npm uninstall -g scud
 ```
 
 ---
 
 ## Support
 
-- **Issues**: https://github.com/yourusername/bmad-tm-lite/issues
+- **Issues**: https://github.com/yourusername/scud/issues
 - **Documentation**: See README.md
 - **Examples**: See DETAILED_WALKTHROUGH.md
 
