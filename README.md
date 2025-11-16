@@ -20,11 +20,11 @@ scud init
 ### Use with Claude Code
 ```bash
 /status                    # Check workflow state
-/tm-pm                     # Create PRD
-/tm-sm                     # Plan tasks
-/tm-architect              # Design solution
-/tm-dev                    # Implement
-/tm-retrospective          # Learn & improve
+/scud-pm                     # Create PRD
+/scud-sm                     # Plan tasks
+/scud-architect              # Design solution
+/scud-dev                    # Implement
+/scud-retrospective          # Learn & improve
 ```
 
 **Full guide:** [docs/guides/COMPLETE_GUIDE.md](docs/guides/COMPLETE_GUIDE.md)
@@ -124,11 +124,11 @@ scud whois                          # See assignments
 scud init
 
 # 2. Define product (with Claude Code)
-/tm-pm
+/scud-pm
 # Creates: docs/prd/my-app-prd.md
 
 # 3. Create epics
-/tm-pm
+/scud-pm
 # Creates: docs/epics/epic-1-auth.md
 
 # 4. Parse into tasks
@@ -140,15 +140,15 @@ scud analyze-complexity
 scud expand --all  # Split complex tasks
 
 # 6. Design solution
-/tm-architect
+/scud-architect
 # Adds technical details to all tasks
 
 # 7. Implement
-/tm-dev
+/scud-dev
 # Agent uses: scud next → implement → scud set-status X done
 
 # 8. Retrospective
-/tm-retrospective
+/scud-retrospective
 # Captures learnings in docs/retrospectives/
 ```
 

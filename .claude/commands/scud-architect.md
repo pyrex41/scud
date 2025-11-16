@@ -25,8 +25,8 @@ The Architect agent can only run during the architecture phase.
 Current phase: [current_phase]
 
 You need to complete the planning phase first:
-  1. Run /tm-pm to create PRD and parse into Task Master
-  2. Then run /tm-architect
+  1. Run /scud-pm to create PRD and parse into Task Master
+  2. Then run /scud-architect
 
 Run /status to see your current workflow state.
 ```
@@ -38,9 +38,9 @@ Run /status to see your current workflow state.
 Task Master has no epics defined.
 
 You need to:
-  1. Run /tm-pm to create PRD
+  1. Run /scud-pm to create PRD
   2. Parse PRD into Task Master: task-master parse-prd [file] --tag=[epic-tag]
-  3. Then run /tm-architect
+  3. Then run /scud-architect
 
 Run /status to see your current workflow state.
 ```
@@ -103,7 +103,7 @@ For each task in Task Master:
 1. Review architecture document for completeness
 2. Ensure all tasks have sufficient technical detail
 3. Update workflow state to 'implementation' phase
-4. Guide user to `/tm-dev`
+4. Guide user to `/scud-dev`
 
 ## Architecture Document Template
 
@@ -366,7 +366,7 @@ Let's nail down the requirements first, then I'll design the right solution."
 - ✅ Risks identified and mitigation strategies defined
 - ✅ Testing strategy documented
 - ✅ Workflow state updated to 'implementation'
-- ✅ User guided to run `/tm-dev`
+- ✅ User guided to run `/scud-dev`
 
 ## Error Handling
 
@@ -374,7 +374,7 @@ Let's nail down the requirements first, then I'll design the right solution."
 ```
 ❌ Cannot find epic in Task Master
 
-Run /status to see available epics, or run /tm-pm to create one.
+Run /status to see available epics, or run /scud-pm to create one.
 ```
 
 ### Missing PRD
@@ -382,7 +382,7 @@ Run /status to see available epics, or run /tm-pm to create one.
 ⚠️  No PRD found
 
 I can still architect based on task descriptions, but I recommend:
-  1. Creating a PRD first (/tm-pm)
+  1. Creating a PRD first (/scud-pm)
   2. Ensuring requirements are clear
 
 Proceed anyway? (Y/N)

@@ -40,7 +40,7 @@ const epicResult = validator.validateActiveEpic();
 if (!epicResult.valid) {
   console.error('❌ NO ACTIVE EPIC');
   console.error(epicResult.error);
-  console.error('\nRun /tm-pm to create an epic first.');
+  console.error('\nRun /scud-pm to create an epic first.');
   return;
 }
 
@@ -181,10 +181,10 @@ Used by /status command:
 const commands = validator.getCommandAvailability();
 
 console.log('✨ Available Commands:');
-console.log(`  /tm-pm          - ${commands['tm-pm'].available ? '✅' : '🔒'} ${commands['tm-pm'].reason}`);
-console.log(`  /tm-architect   - ${commands['tm-architect'].available ? '✅' : '🔒'} ${commands['tm-architect'].reason}`);
-console.log(`  /tm-dev         - ${commands['tm-dev'].available ? '✅' : '🔒'} ${commands['tm-dev'].reason}`);
-console.log(`  /tm-retrospective - ${commands['tm-retrospective'].available ? '✅' : '🔒'} ${commands['tm-retrospective'].reason}`);
+console.log(`  /scud-pm          - ${commands['tm-pm'].available ? '✅' : '🔒'} ${commands['tm-pm'].reason}`);
+console.log(`  /scud-architect   - ${commands['tm-architect'].available ? '✅' : '🔒'} ${commands['tm-architect'].reason}`);
+console.log(`  /scud-dev         - ${commands['tm-dev'].available ? '✅' : '🔒'} ${commands['tm-dev'].reason}`);
+console.log(`  /scud-retrospective - ${commands['tm-retrospective'].available ? '✅' : '🔒'} ${commands['tm-retrospective'].reason}`);
 ```
 
 ## CLI Usage Examples

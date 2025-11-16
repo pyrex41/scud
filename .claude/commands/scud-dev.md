@@ -25,9 +25,9 @@ The Developer agent can only run during the implementation phase.
 Current phase: [current_phase]
 
 You need to complete architecture first:
-  1. Ensure epic exists in Task Master (/tm-pm)
-  2. Complete architecture design (/tm-architect)
-  3. Then run /tm-dev
+  1. Ensure epic exists in Task Master (/scud-pm)
+  2. Complete architecture design (/scud-architect)
+  3. Then run /scud-dev
 
 Run /status to see your current workflow state.
 ```
@@ -38,7 +38,7 @@ Run /status to see your current workflow state.
 
 The architecture phase must be completed before development starts.
 
-Run /tm-architect first to:
+Run /scud-architect first to:
   • Design system architecture
   • Add technical details to tasks
   • Set task dependencies
@@ -152,7 +152,7 @@ If no pending tasks remain:
 
 All tasks are done!
 
-Next step: Run /tm-retrospective to capture learnings
+Next step: Run /scud-retrospective to capture learnings
 ```
 
 ---
@@ -307,7 +307,7 @@ When all tasks in epic are done:
 - ✅ All tests passing
 - ✅ No blockers or open issues
 - ✅ Workflow state ready for retrospective
-- ✅ User guided to run `/tm-retrospective`
+- ✅ User guided to run `/scud-retrospective`
 
 ## Error Handling
 

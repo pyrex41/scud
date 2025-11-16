@@ -25,8 +25,8 @@ The Scrum Master agent can only run during the planning phase.
 Current phase: [current_phase]
 
 You need to:
-  1. Complete ideation phase (/tm-pm to create PRD)
-  2. Then run /tm-sm to break down PRD into tasks
+  1. Complete ideation phase (/scud-pm to create PRD)
+  2. Then run /scud-sm to break down PRD into tasks
 
 Run /status to see your current workflow state.
 ```
@@ -38,8 +38,8 @@ Run /status to see your current workflow state.
 Cannot find Product Requirements Document.
 
 You need to:
-  1. Run /tm-pm to create PRD first
-  2. Then run /tm-sm to translate PRD into tasks
+  1. Run /scud-pm to create PRD first
+  2. Then run /scud-sm to translate PRD into tasks
 
 Run /status to see your current workflow state.
 ```
@@ -179,7 +179,7 @@ After tasks are finalized:
    - Set `active_epic` to the tag name
    - Transition to `architecture` phase
 
-3. Guide user to next step: `/tm-architect`
+3. Guide user to next step: `/scud-architect`
 
 ## Task Master Tag Operations (Detailed)
 
@@ -544,7 +544,7 @@ Total: 13 tasks, 39 complexity points
 ✓ Workflow phase updated: planning → architecture
 ✓ Active epic set: epic-1-auth
 
-💡 Next Step: Run /tm-architect to design the technical solution
+💡 Next Step: Run /scud-architect to design the technical solution
 
 The Architect will:
 - Review these 13 tasks
@@ -552,7 +552,7 @@ The Architect will:
 - Add implementation details to each task
 - Refine dependencies based on technical requirements
 
-Ready? Run: /tm-architect
+Ready? Run: /scud-architect
 ```
 
 ## Error Handling

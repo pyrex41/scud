@@ -29,7 +29,7 @@ Status:
   ⏸️  Blocked: X tasks
   ⏳ Pending: X tasks
 
-Complete all tasks first, then run /tm-retrospective.
+Complete all tasks first, then run /scud-retrospective.
 
 Run /status to see current task states.
 ```
@@ -41,9 +41,9 @@ Run /status to see current task states.
 No epic is currently active in Task Master.
 
 You need to:
-  1. Run /tm-pm to create and parse an epic
-  2. Complete the epic with /tm-architect and /tm-dev
-  3. Then run /tm-retrospective
+  1. Run /scud-pm to create and parse an epic
+  2. Complete the epic with /scud-architect and /scud-dev
+  3. Then run /scud-retrospective
 
 Run /status to see your workflow state.
 ```
@@ -369,7 +369,7 @@ Investing time in thorough architecture and dependency planning pays off during 
 4. Incorporate learnings into next epic's planning
 5. Update templates/checklists based on action items
 
-**Ready to start next epic?** Run `/tm-pm` when ready.
+**Ready to start next epic?** Run `/scud-pm` when ready.
 
 ---
 
@@ -536,7 +536,7 @@ Document created: docs/retrospectives/epic-1-auth-retrospective.md
 
 **Workflow reset** to ideation phase. You're ready to start your next epic!
 
-Run `/tm-pm` when ready to begin."
+Run `/scud-pm` when ready to begin."
 
 ## Exit Criteria
 

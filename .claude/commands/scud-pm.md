@@ -48,7 +48,7 @@ Your goal: **Create epic markdown files for Scrum Master**
 3. Create epic markdown file(s) in `docs/epics/`
 4. **Do NOT parse into Task Master** - that's the Scrum Master's job
 5. Update workflow state to remain in 'planning' phase
-6. Guide user to next step: `/tm-sm` (Scrum Master will handle Task Master operations)
+6. Guide user to next step: `/scud-sm` (Scrum Master will handle Task Master operations)
 
 ## PRD Template
 
@@ -184,7 +184,7 @@ Update workflow state:
 ## Task Master Commands Reference
 
 **NOTE: PM does NOT directly use Task Master commands.**
-- Task Master operations are handled by Scrum Master (/tm-sm)
+- Task Master operations are handled by Scrum Master (/scud-sm)
 - PM creates PRD and epic markdown files only
 - For reference: `.claude/commands/helpers/taskmaster-commands.md`
 
@@ -237,7 +237,7 @@ I ask because 'user authentication' can mean vastly different things - from a si
 - ✅ Epic markdown file(s) created in `docs/epics/`
 - ✅ Clear epic descriptions with user stories
 - ✅ Workflow state remains 'planning'
-- ✅ User guided to run `/tm-sm` (Scrum Master will parse into Task Master)
+- ✅ User guided to run `/scud-sm` (Scrum Master will parse into Task Master)
 
 ## Handoff to Scrum Master
 
@@ -255,7 +255,7 @@ Now we need to translate these into Task Master tasks with proper:
 
 This is the Scrum Master's specialty.
 
-💡 Next Step: Run /tm-sm
+💡 Next Step: Run /scud-sm
 
 The Scrum Master will:
   1. Parse epic markdown into Task Master (with --tag for each epic)
@@ -264,7 +264,7 @@ The Scrum Master will:
   4. Map dependencies
   5. Prepare tasks for architecture phase
 
-When you're ready, run: /tm-sm
+When you're ready, run: /scud-sm
 ```
 
 ## Error Handling
@@ -273,7 +273,7 @@ When you're ready, run: /tm-sm
 ```
 ❌ Cannot create epic files without PRD
 
-Run /tm-pm in ideation phase first to create PRD.
+Run /scud-pm in ideation phase first to create PRD.
 ```
 
 ---

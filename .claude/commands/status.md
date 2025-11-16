@@ -43,10 +43,10 @@ You are a workflow status reporter. Your job is to show the user the current sta
 
 ✨ Available Commands:
 
-  /tm-pm          - [status: available/locked + reason]
-  /tm-architect   - [status: available/locked + reason]
-  /tm-dev         - [status: available/locked + reason]
-  /tm-retrospective - [status: available/locked + reason]
+  /scud-pm          - [status: available/locked + reason]
+  /scud-architect   - [status: available/locked + reason]
+  /scud-dev         - [status: available/locked + reason]
+  /scud-retrospective - [status: available/locked + reason]
 
 ⚠️ Warnings:
 
@@ -67,19 +67,19 @@ You are a workflow status reporter. Your job is to show the user the current sta
 
 ## Command Availability Logic
 
-### /tm-pm
+### /scud-pm
 - **Available**: Always available in ideation or planning phases
 - **Locked**: If already in implementation phase without good reason
 
-### /tm-architect
+### /scud-architect
 - **Available**: When planning phase is completed (epic exists in Task Master)
 - **Locked**: If no epic in Task Master, or if architecture already complete
 
-### /tm-dev
+### /scud-dev
 - **Available**: When architecture phase is completed
 - **Locked**: If architecture not done, or if tasks have unmet dependencies
 
-### /tm-retrospective
+### /scud-retrospective
 - **Available**: When all tasks in active epic are completed
 - **Locked**: If epic has incomplete tasks
 
@@ -93,12 +93,12 @@ You are a workflow status reporter. Your job is to show the user the current sta
 
 ## Examples of Next Steps Guidance
 
-**Ideation Phase**: "Run `/tm-pm` to create your Product Requirements Document"
+**Ideation Phase**: "Run `/scud-pm` to create your Product Requirements Document"
 
 **Planning Phase**: "Parse your PRD into Task Master: `task-master parse-prd epic-1.md --tag=epic-1`"
 
-**Architecture Phase**: "Run `/tm-architect` to design the technical solution"
+**Architecture Phase**: "Run `/scud-architect` to design the technical solution"
 
-**Implementation Phase**: "Run `/tm-dev` to start implementing tasks"
+**Implementation Phase**: "Run `/scud-dev` to start implementing tasks"
 
-**Ready for Retrospective**: "All tasks complete! Run `/tm-retrospective` to capture learnings"
+**Ready for Retrospective**: "All tasks complete! Run `/scud-retrospective` to capture learnings"
