@@ -18,7 +18,7 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
             if let Some(ref assigned) = task.assigned_to {
                 assignments
                     .entry(assigned.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push((epic_tag.clone(), task.id.clone(), task.title.clone()));
             }
 

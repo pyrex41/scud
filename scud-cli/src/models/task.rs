@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskStatus {
+    #[default]
     Pending,
     InProgress,
     Done,
@@ -25,6 +26,7 @@ impl TaskStatus {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "pending" => Some(TaskStatus::Pending),
@@ -51,18 +53,13 @@ impl TaskStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
     High,
+    #[default]
     Medium,
     Low,
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Medium
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +107,11 @@ pub struct Task {
 }
 
 impl Task {
+    // Validation constants
+    const MAX_TITLE_LENGTH: usize = 200;
+    const MAX_DESCRIPTION_LENGTH: usize = 5000;
+    const VALID_FIBONACCI_NUMBERS: &'static [u32] = &[0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+
     pub fn new(id: String, title: String, description: String) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Task {
@@ -128,6 +130,107 @@ impl Task {
             assigned_to: None,
             locked_by: None,
             locked_at: None,
+        }
+    }
+
+    /// Validate task ID - must contain only alphanumeric characters and hyphens
+    pub fn validate_id(id: &str) -> Result<(), String> {
+        if id.is_empty() {
+            return Err("Task ID cannot be empty".to_string());
+        }
+
+        if id.len() > 100 {
+            return Err("Task ID too long (max 100 characters)".to_string());
+        }
+
+        let valid_chars = id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+
+        if !valid_chars {
+            return Err(
+                "Task ID can only contain alphanumeric characters, hyphens, and underscores"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Validate title - must not be empty and within length limit
+    pub fn validate_title(title: &str) -> Result<(), String> {
+        if title.trim().is_empty() {
+            return Err("Task title cannot be empty".to_string());
+        }
+
+        if title.len() > Self::MAX_TITLE_LENGTH {
+            return Err(format!(
+                "Task title too long (max {} characters)",
+                Self::MAX_TITLE_LENGTH
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validate description - within length limit
+    pub fn validate_description(description: &str) -> Result<(), String> {
+        if description.len() > Self::MAX_DESCRIPTION_LENGTH {
+            return Err(format!(
+                "Task description too long (max {} characters)",
+                Self::MAX_DESCRIPTION_LENGTH
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validate complexity - must be a Fibonacci number
+    pub fn validate_complexity(complexity: u32) -> Result<(), String> {
+        if !Self::VALID_FIBONACCI_NUMBERS.contains(&complexity) {
+            return Err(format!(
+                "Complexity must be a Fibonacci number: {:?}",
+                Self::VALID_FIBONACCI_NUMBERS
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Sanitize text by removing potentially dangerous HTML/script tags
+    pub fn sanitize_text(text: &str) -> String {
+        text.replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#x27;")
+    }
+
+    /// Comprehensive validation of all task fields
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        if let Err(e) = Self::validate_id(&self.id) {
+            errors.push(e);
+        }
+
+        if let Err(e) = Self::validate_title(&self.title) {
+            errors.push(e);
+        }
+
+        if let Err(e) = Self::validate_description(&self.description) {
+            errors.push(e);
+        }
+
+        if self.complexity > 0 {
+            if let Err(e) = Self::validate_complexity(self.complexity) {
+                errors.push(e);
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
         }
     }
 
@@ -256,12 +359,6 @@ impl Task {
 
         path.pop();
         Ok(())
-    }
-}
-
-impl Default for TaskStatus {
-    fn default() -> Self {
-        TaskStatus::Pending
     }
 }
 
@@ -663,5 +760,140 @@ mod tests {
         let result = task4.would_create_cycle("TASK-1", &all_tasks);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Circular dependency"));
+    }
+
+    // Validation tests
+    #[test]
+    fn test_validate_id_success() {
+        assert!(Task::validate_id("TASK-123").is_ok());
+        assert!(Task::validate_id("task_456").is_ok());
+        assert!(Task::validate_id("Feature-789").is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_empty() {
+        let result = Task::validate_id("");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Task ID cannot be empty");
+    }
+
+    #[test]
+    fn test_validate_id_too_long() {
+        let long_id = "A".repeat(101);
+        let result = Task::validate_id(&long_id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too long"));
+    }
+
+    #[test]
+    fn test_validate_id_invalid_characters() {
+        assert!(Task::validate_id("TASK@123").is_err());
+        assert!(Task::validate_id("TASK 123").is_err());
+        assert!(Task::validate_id("TASK#123").is_err());
+        assert!(Task::validate_id("TASK.123").is_err());
+    }
+
+    #[test]
+    fn test_validate_title_success() {
+        assert!(Task::validate_title("Valid title").is_ok());
+        assert!(Task::validate_title("A").is_ok());
+    }
+
+    #[test]
+    fn test_validate_title_empty() {
+        let result = Task::validate_title("");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Task title cannot be empty");
+
+        let result = Task::validate_title("   ");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Task title cannot be empty");
+    }
+
+    #[test]
+    fn test_validate_title_too_long() {
+        let long_title = "A".repeat(201);
+        let result = Task::validate_title(&long_title);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too long"));
+    }
+
+    #[test]
+    fn test_validate_description_success() {
+        assert!(Task::validate_description("Valid description").is_ok());
+        assert!(Task::validate_description("").is_ok());
+    }
+
+    #[test]
+    fn test_validate_description_too_long() {
+        let long_desc = "A".repeat(5001);
+        let result = Task::validate_description(&long_desc);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too long"));
+    }
+
+    #[test]
+    fn test_validate_complexity_success() {
+        assert!(Task::validate_complexity(0).is_ok());
+        assert!(Task::validate_complexity(1).is_ok());
+        assert!(Task::validate_complexity(2).is_ok());
+        assert!(Task::validate_complexity(3).is_ok());
+        assert!(Task::validate_complexity(5).is_ok());
+        assert!(Task::validate_complexity(8).is_ok());
+        assert!(Task::validate_complexity(13).is_ok());
+        assert!(Task::validate_complexity(21).is_ok());
+    }
+
+    #[test]
+    fn test_validate_complexity_invalid() {
+        assert!(Task::validate_complexity(4).is_err());
+        assert!(Task::validate_complexity(6).is_err());
+        assert!(Task::validate_complexity(7).is_err());
+        assert!(Task::validate_complexity(100).is_err());
+    }
+
+    #[test]
+    fn test_sanitize_text() {
+        assert_eq!(
+            Task::sanitize_text("<script>alert('xss')</script>"),
+            "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
+        );
+        assert_eq!(
+            Task::sanitize_text("Normal text"),
+            "Normal text"
+        );
+        assert_eq!(
+            Task::sanitize_text("<div>Content</div>"),
+            "&lt;div&gt;Content&lt;/div&gt;"
+        );
+    }
+
+    #[test]
+    fn test_validate_success() {
+        let task = Task::new(
+            "TASK-1".to_string(),
+            "Valid title".to_string(),
+            "Valid description".to_string(),
+        );
+        assert!(task.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_multiple_errors() {
+        let mut task = Task::new(
+            "TASK@INVALID".to_string(),
+            "".to_string(),
+            "A".repeat(5001),
+        );
+        task.complexity = 100; // Invalid Fibonacci number
+
+        let result = task.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 4);
+        assert!(errors.iter().any(|e| e.contains("ID")));
+        assert!(errors.iter().any(|e| e.contains("title")));
+        assert!(errors.iter().any(|e| e.contains("description")));
+        assert!(errors.iter().any(|e| e.contains("Complexity")));
     }
 }
