@@ -18,6 +18,7 @@ docs/prd/
 docs/epics/
 docs/architecture/
 docs/retrospectives/
+log_docs/
 
 # Keep only documentation templates
 !docs/.gitkeep
@@ -26,12 +27,18 @@ docs/retrospectives/
 install-claude-code.sh
 install-opencode.sh
 
+# Rust build artifacts
+scud-cli/target/
+
 # Keep these for the package
 !bin/
 !src/
+!scud-cli/
 !.claude/
 !.opencode/
 !README.md
 !QUICKSTART.md
-!DETAILED_WALKTHROUGH.md
+!COMPLETE_GUIDE.md
+!QUICK_REFERENCE.md
+!PARALLEL_FEATURES.md
 !LICENSE

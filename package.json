@@ -32,21 +32,20 @@
     "url": "https://github.com/yourusername/scud/issues"
   },
   "homepage": "https://github.com/yourusername/scud#readme",
-  "peerDependencies": {
-    "task-master": ">=1.0.0"
-  },
   "engines": {
     "node": ">=16.0.0"
   },
   "files": [
     "bin/",
     "src/",
+    "scud-cli/",
     ".claude/",
     ".opencode/",
-    "docs/",
     "README.md",
     "QUICKSTART.md",
-    "DETAILED_WALKTHROUGH.md",
+    "COMPLETE_GUIDE.md",
+    "QUICK_REFERENCE.md",
+    "PARALLEL_FEATURES.md",
     "LICENSE"
   ]
 }
