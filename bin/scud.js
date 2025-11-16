@@ -13,11 +13,14 @@ const fs = require('fs');
 const command = process.argv[2];
 const args = process.argv.slice(3);
 
-// Task management commands (use built-in task manager)
+// Task management commands (use Rust CLI)
 const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', 'stats'];
 
-// AI-powered commands (delegate to external task-master CLI)
+// AI-powered commands (use Rust CLI)
 const aiCommands = ['parse-prd', 'analyze-complexity', 'expand', 'research'];
+
+// All commands handled by Rust CLI
+const rustCommands = [...taskCommands, ...aiCommands];
 
 const commands = {
   init: 'Initialize SCUD in current project',
@@ -61,12 +64,10 @@ Task Management (built-in, fast):
   next                       Find next available task
   stats                      Show task statistics
 
-AI-Powered (requires task-master CLI):
-  For these features, use: task-master <command>
-
+AI-Powered (built-in, requires ANTHROPIC_API_KEY):
   parse-prd <file> --tag=<tag>    Parse PRD into tasks
-  analyze-complexity              Analyze task complexity
-  expand --id=<id>                Expand task into subtasks
+  analyze-complexity [--task=<id>] Analyze task complexity
+  expand [<id>] [--all]           Expand task into subtasks
   research "<query>"              AI research
 
 Examples:
@@ -76,8 +77,10 @@ Examples:
   scud next                       # Find next available task
   scud set-status 3 in-progress   # Start task 3
 
-  task-master parse-prd epic.md --tag=epic-1   # Parse PRD (AI)
-  task-master expand --id=5                    # Expand task (AI)
+  scud parse-prd epic.md --tag epic-1   # Parse PRD (AI)
+  scud analyze-complexity               # Analyze all tasks (AI)
+  scud expand --all                     # Expand complex tasks (AI)
+  scud research "OAuth best practices"  # Research topic (AI)
 
 For more information, visit:
 https://github.com/yourusername/scud
@@ -137,11 +140,28 @@ function validate() {
   }
 }
 
-// Check if this is a task management command
-if (taskCommands.includes(command)) {
-  const taskManager = path.join(__dirname, '..', 'src', 'task-manager.js');
+// Check if this is a command handled by Rust CLI
+if (rustCommands.includes(command)) {
+  // Find the Rust binary
+  const rustBinary = path.join(__dirname, '..', 'scud-cli', 'target', 'release', 'scud');
+  const debugBinary = path.join(__dirname, '..', 'scud-cli', 'target', 'debug', 'scud');
+
+  // Use release binary if available, otherwise fall back to debug
+  const scudBinary = fs.existsSync(rustBinary) ? rustBinary : debugBinary;
+
+  if (!fs.existsSync(scudBinary)) {
+    console.error('❌ SCUD Rust CLI not found. Building...');
+    try {
+      const scudCliDir = path.join(__dirname, '..', 'scud-cli');
+      execSync('cargo build --release', { cwd: scudCliDir, stdio: 'inherit' });
+    } catch (error) {
+      console.error('Failed to build Rust CLI. Please run: cd scud-cli && cargo build --release');
+      process.exit(1);
+    }
+  }
+
   try {
-    execSync(`node "${taskManager}" ${command} ${args.join(' ')}`, { stdio: 'inherit' });
+    execSync(`"${scudBinary}" ${command} ${args.join(' ')}`, { stdio: 'inherit' });
     process.exit(0);
   } catch (error) {
     process.exit(1);
