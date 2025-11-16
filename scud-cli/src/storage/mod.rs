@@ -12,9 +12,7 @@ pub struct Storage {
 impl Storage {
     pub fn new(project_root: Option<PathBuf>) -> Self {
         let root = project_root.unwrap_or_else(|| std::env::current_dir().unwrap());
-        Storage {
-            project_root: root,
-        }
+        Storage { project_root: root }
     }
 
     pub fn taskmaster_dir(&self) -> PathBuf {
@@ -34,7 +32,9 @@ impl Storage {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.taskmaster_dir().exists() && self.tasks_file().exists() && self.workflow_file().exists()
+        self.taskmaster_dir().exists()
+            && self.tasks_file().exists()
+            && self.workflow_file().exists()
     }
 
     pub fn initialize(&self) -> Result<()> {
@@ -89,10 +89,7 @@ impl Storage {
     pub fn load_tasks(&self) -> Result<HashMap<String, Epic>> {
         let path = self.tasks_file();
         if !path.exists() {
-            anyhow::bail!(
-                "Tasks file not found: {}\nRun: scud init",
-                path.display()
-            );
+            anyhow::bail!("Tasks file not found: {}\nRun: scud init", path.display());
         }
 
         let content = fs::read_to_string(&path)
@@ -166,8 +163,7 @@ impl Storage {
     }
 
     pub fn read_file(&self, path: &Path) -> Result<String> {
-        fs::read_to_string(path)
-            .with_context(|| format!("Failed to read file: {}", path.display()))
+        fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
     }
 
     // Epic Groups management

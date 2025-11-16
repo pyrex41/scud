@@ -1,10 +1,6 @@
-mod commands;
-mod llm;
-mod models;
-mod storage;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use scud::{commands, llm, models, storage};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -193,14 +189,12 @@ async fn main() -> Result<()> {
         } => commands::create_group::run(cli.project, &name, &epics, description.as_deref()),
         Commands::ListGroups => commands::list_groups::run(cli.project),
         Commands::GroupStatus { group_id } => commands::group_status::run(cli.project, &group_id),
-        Commands::AddToGroup {
-            group_id,
-            epic_tag,
-        } => commands::add_to_group::run(cli.project, &group_id, &epic_tag),
-        Commands::Assign {
-            task_id,
-            assignee,
-        } => commands::assign::run(cli.project, &task_id, &assignee),
+        Commands::AddToGroup { group_id, epic_tag } => {
+            commands::add_to_group::run(cli.project, &group_id, &epic_tag)
+        }
+        Commands::Assign { task_id, assignee } => {
+            commands::assign::run(cli.project, &task_id, &assignee)
+        }
         Commands::Claim { task_id, name } => commands::claim::run(cli.project, &task_id, &name),
         Commands::Release { task_id, force } => {
             commands::release::run(cli.project, &task_id, force)

@@ -41,11 +41,7 @@ pub fn run(project_root: Option<PathBuf>, task_id: &str, force: bool) -> Result<
     task.release();
     storage.save_tasks(&all_tasks)?;
 
-    println!(
-        "{} Task {} released",
-        "✓".green(),
-        task_id.cyan()
-    );
+    println!("{} Task {} released", "✓".green(), task_id.cyan());
     if let Some(locked_by) = was_locked_by {
         println!("  Previously locked by: {}", locked_by);
     }

@@ -58,11 +58,8 @@ pub async fn run(project_root: Option<PathBuf>, task_id: Option<&str>) -> Result
         spinner.set_message(format!("Analyzing task {}: {}", id, task.title));
         spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-        let prompt = Prompts::analyze_complexity(
-            &task.title,
-            &task.description,
-            task.details.as_deref(),
-        );
+        let prompt =
+            Prompts::analyze_complexity(&task.title, &task.description, task.details.as_deref());
 
         let analysis: ComplexityAnalysis = client.complete_json(&prompt).await?;
 
@@ -101,7 +98,11 @@ pub async fn run(project_root: Option<PathBuf>, task_id: Option<&str>) -> Result
 
     // Show summary
     println!();
-    println!("{:<25} {}", "Total complexity:".yellow(), stats.total_complexity);
+    println!(
+        "{:<25} {}",
+        "Total complexity:".yellow(),
+        stats.total_complexity
+    );
 
     if !tasks_needing_expansion.is_empty() {
         println!();

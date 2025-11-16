@@ -36,8 +36,8 @@ impl LLMClient {
         let api_key = env::var("ANTHROPIC_API_KEY")
             .context("ANTHROPIC_API_KEY environment variable not set")?;
 
-        let model = env::var("SCUD_MODEL")
-            .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
+        let model =
+            env::var("SCUD_MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
 
         Ok(LLMClient {
             api_key,

@@ -19,7 +19,12 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
     for (tag, epic) in tasks.iter() {
         let task_count = epic.tasks.len();
         if Some(tag) == active_epic.as_ref() {
-            println!("  {} {} ({} tasks)", "●".green(), tag.green().bold(), task_count);
+            println!(
+                "  {} {} ({} tasks)",
+                "●".green(),
+                tag.green().bold(),
+                task_count
+            );
         } else {
             println!("  {} {} ({} tasks)", "○".white(), tag, task_count);
         }

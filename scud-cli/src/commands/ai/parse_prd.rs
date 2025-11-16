@@ -46,7 +46,11 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
     let prompt = Prompts::parse_prd(&epic_content);
     let parsed_tasks: Vec<ParsedTask> = client.complete_json(&prompt).await?;
 
-    spinner.finish_with_message(format!("{} Parsed {} tasks", "✓".green(), parsed_tasks.len()));
+    spinner.finish_with_message(format!(
+        "{} Parsed {} tasks",
+        "✓".green(),
+        parsed_tasks.len()
+    ));
 
     // Convert to our task model
     let mut epic = Epic::new(tag.to_string());
@@ -60,7 +64,11 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
             _ => Priority::Medium,
         };
 
-        let mut task = Task::new(task_id.clone(), parsed.title.clone(), parsed.description.clone());
+        let mut task = Task::new(
+            task_id.clone(),
+            parsed.title.clone(),
+            parsed.description.clone(),
+        );
         task.complexity = parsed.complexity;
         task.priority = priority;
         task.dependencies = parsed.dependencies.clone();
@@ -84,7 +92,10 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
     // Set as active epic
     storage.set_active_epic(tag)?;
 
-    println!("\n{}", "✅ Epic parsed and created successfully!".green().bold());
+    println!(
+        "\n{}",
+        "✅ Epic parsed and created successfully!".green().bold()
+    );
     println!();
     println!("{:<20} {}", "Tag:".yellow(), tag.cyan());
     println!("{:<20} {}", "Tasks created:".yellow(), parsed_tasks.len());

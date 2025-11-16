@@ -24,7 +24,12 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
             crate::models::GroupStatus::Archived => "□".white(),
         };
 
-        println!("{} {} {}", status_icon, group.name.bold(), format!("({})", group.id).white());
+        println!(
+            "{} {} {}",
+            status_icon,
+            group.name.bold(),
+            format!("({})", group.id).white()
+        );
         println!("  Epics: {}", group.epic_tags.join(", ").cyan());
         if let Some(ref desc) = group.description {
             println!("  {}", desc.white());

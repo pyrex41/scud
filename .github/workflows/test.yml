@@ -1,0 +1,67 @@
+name: Test
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: scud-cli/target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run tests
+        run: |
+          cd scud-cli
+          cargo test --all-features
+
+      - name: Run clippy
+        run: |
+          cd scud-cli
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Check formatting
+        run: |
+          cd scud-cli
+          cargo fmt -- --check
+
+      - name: Build release binary
+        run: |
+          cd scud-cli
+          cargo build --release
+
+      - name: Test Node.js wrapper
+        run: |
+          npm install
+          ./bin/scud.js --help

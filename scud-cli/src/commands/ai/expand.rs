@@ -53,11 +53,7 @@ pub async fn run(
         return Ok(());
     }
 
-    println!(
-        "{} {} task(s)...",
-        "Expanding".blue(),
-        task_ids.len()
-    );
+    println!("{} {} task(s)...", "Expanding".blue(), task_ids.len());
 
     for id in task_ids {
         let task = epic

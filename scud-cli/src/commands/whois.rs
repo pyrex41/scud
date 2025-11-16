@@ -19,22 +19,13 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
                 assignments
                     .entry(assigned.clone())
                     .or_insert_with(Vec::new)
-                    .push((
-                        epic_tag.clone(),
-                        task.id.clone(),
-                        task.title.clone(),
-                    ));
+                    .push((epic_tag.clone(), task.id.clone(), task.title.clone()));
             }
 
             // Check for stale locks
             if task.is_stale_lock(24.0) {
                 if let (Some(locked_by), Some(age)) = (&task.locked_by, task.lock_age_hours()) {
-                    stale_locks.push((
-                        epic_tag.clone(),
-                        task.id.clone(),
-                        locked_by.clone(),
-                        age,
-                    ));
+                    stale_locks.push((epic_tag.clone(), task.id.clone(), locked_by.clone(), age));
                 }
             }
         }

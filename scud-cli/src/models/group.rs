@@ -59,9 +59,7 @@ pub struct EpicGroups {
 
 impl EpicGroups {
     pub fn new() -> Self {
-        EpicGroups {
-            groups: Vec::new(),
-        }
+        EpicGroups { groups: Vec::new() }
     }
 
     pub fn add_group(&mut self, group: EpicGroup) {

@@ -39,7 +39,11 @@ Return ONLY the JSON array, no additional explanation."#,
         )
     }
 
-    pub fn analyze_complexity(task_title: &str, task_description: &str, existing_details: Option<&str>) -> String {
+    pub fn analyze_complexity(
+        task_title: &str,
+        task_description: &str,
+        existing_details: Option<&str>,
+    ) -> String {
         let context = existing_details
             .map(|d| format!("\nExisting Technical Details:\n{}\n", d))
             .unwrap_or_default();
@@ -82,7 +86,12 @@ Return ONLY the JSON object, no additional explanation."#,
         )
     }
 
-    pub fn expand_task(task_title: &str, task_description: &str, complexity: u32, existing_details: Option<&str>) -> String {
+    pub fn expand_task(
+        task_title: &str,
+        task_description: &str,
+        complexity: u32,
+        existing_details: Option<&str>,
+    ) -> String {
         let context = existing_details
             .map(|d| format!("\nExisting Technical Details:\n{}\n", d))
             .unwrap_or_default();

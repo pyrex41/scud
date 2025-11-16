@@ -6,14 +6,17 @@ use crate::storage::Storage;
 
 pub fn run(project_root: Option<PathBuf>, task_id: &str) -> Result<()> {
     let storage = Storage::new(project_root);
-    let active_epic = storage.get_active_epic()?
+    let active_epic = storage
+        .get_active_epic()?
         .ok_or_else(|| anyhow::anyhow!("No active epic. Run: scud use-tag <epic-tag>"))?;
 
     let tasks = storage.load_tasks()?;
-    let epic = tasks.get(&active_epic)
+    let epic = tasks
+        .get(&active_epic)
         .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", active_epic))?;
 
-    let task = epic.get_task(task_id)
+    let task = epic
+        .get_task(task_id)
         .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, active_epic))?;
 
     println!("\n{}", "Task Details".blue().bold());

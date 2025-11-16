@@ -6,6 +6,10 @@ authors = ["SCUD Team"]
 description = "Fast, simple task master for AI-driven development"
 license = "MIT"
 
+[lib]
+name = "scud"
+path = "src/lib.rs"
+
 [[bin]]
 name = "scud"
 path = "src/main.rs"
@@ -22,3 +26,10 @@ chrono = { version = "0.4", features = ["serde"] }
 colored = "2.1"
 indicatif = "0.17"
 dirs = "5.0"
+fs2 = "0.4"  # File locking for concurrent access
+
+[dev-dependencies]
+tempfile = "3.8"  # Temporary directories for tests
+mockall = "0.12"  # Mock objects for testing
+tokio-test = "0.4"  # Testing utilities for tokio
+criterion = "0.5"  # Benchmarking framework

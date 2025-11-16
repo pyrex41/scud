@@ -61,17 +61,17 @@ pub fn run(project_root: Option<PathBuf>, group_id: &str) -> Result<()> {
     } else {
         0
     };
-    println!("{:<20} {}%", "Completion:".yellow(), completion_pct.to_string().green());
+    println!(
+        "{:<20} {}%",
+        "Completion:".yellow(),
+        completion_pct.to_string().green()
+    );
 
     // Progress bar
     let bar_length = 50;
     let filled = (completion_pct as f32 / 100.0 * bar_length as f32) as usize;
     let empty = bar_length - filled;
-    let bar = format!(
-        "[{}{}]",
-        "=".repeat(filled).green(),
-        " ".repeat(empty)
-    );
+    let bar = format!("[{}{}]", "=".repeat(filled).green(), " ".repeat(empty));
     println!("\n{}", bar);
     println!();
 
