@@ -93,6 +93,72 @@ enum Commands {
         /// Research query
         query: String,
     },
+
+    // Epic Group commands
+    /// Create a new epic group
+    CreateGroup {
+        /// Group name
+        name: String,
+
+        /// Comma-separated list of epic tags
+        #[arg(short, long)]
+        epics: String,
+
+        /// Optional description
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+
+    /// List all epic groups
+    ListGroups,
+
+    /// Show group status and aggregated stats
+    GroupStatus {
+        /// Group ID
+        group_id: String,
+    },
+
+    /// Add epic to a group
+    AddToGroup {
+        /// Group ID
+        group_id: String,
+
+        /// Epic tag to add
+        epic_tag: String,
+    },
+
+    // Task Assignment commands
+    /// Assign task to a developer
+    Assign {
+        /// Task ID
+        task_id: String,
+
+        /// Assignee name
+        assignee: String,
+    },
+
+    /// Claim a task for yourself
+    Claim {
+        /// Task ID
+        task_id: String,
+
+        /// Your name/identifier
+        #[arg(short, long)]
+        name: String,
+    },
+
+    /// Release task assignment/lock
+    Release {
+        /// Task ID
+        task_id: String,
+
+        /// Force release even if locked by someone else
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Show who is working on what
+    WhoIs,
 }
 
 #[tokio::main]
@@ -120,5 +186,25 @@ async fn main() -> Result<()> {
             commands::ai::expand::run(cli.project, task_id.as_deref(), all).await
         }
         Commands::Research { query } => commands::ai::research::run(cli.project, &query).await,
+        Commands::CreateGroup {
+            name,
+            epics,
+            description,
+        } => commands::create_group::run(cli.project, &name, &epics, description.as_deref()),
+        Commands::ListGroups => commands::list_groups::run(cli.project),
+        Commands::GroupStatus { group_id } => commands::group_status::run(cli.project, &group_id),
+        Commands::AddToGroup {
+            group_id,
+            epic_tag,
+        } => commands::add_to_group::run(cli.project, &group_id, &epic_tag),
+        Commands::Assign {
+            task_id,
+            assignee,
+        } => commands::assign::run(cli.project, &task_id, &assignee),
+        Commands::Claim { task_id, name } => commands::claim::run(cli.project, &task_id, &name),
+        Commands::Release { task_id, force } => {
+            commands::release::run(cli.project, &task_id, force)
+        }
+        Commands::WhoIs => commands::whois::run(cli.project),
     }
 }

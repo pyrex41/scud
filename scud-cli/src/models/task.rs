@@ -89,6 +89,16 @@ pub struct Task {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+
+    // Parallel execution support
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_to: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_by: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_at: Option<String>,
 }
 
 impl Task {
@@ -107,6 +117,9 @@ impl Task {
             complexity_analysis: None,
             created_at: Some(now.clone()),
             updated_at: Some(now),
+            assigned_to: None,
+            locked_by: None,
+            locked_at: None,
         }
     }
 
@@ -131,6 +144,62 @@ impl Task {
 
     pub fn needs_expansion(&self) -> bool {
         self.complexity > 13
+    }
+
+    // Assignment and locking methods
+    pub fn assign(&mut self, assignee: &str) {
+        self.assigned_to = Some(assignee.to_string());
+        self.update();
+    }
+
+    pub fn claim(&mut self, assignee: &str) -> Result<(), String> {
+        if let Some(ref locked_by) = self.locked_by {
+            if locked_by != assignee {
+                return Err(format!("Task is locked by {}", locked_by));
+            }
+        }
+
+        self.assigned_to = Some(assignee.to_string());
+        self.locked_by = Some(assignee.to_string());
+        self.locked_at = Some(chrono::Utc::now().to_rfc3339());
+        self.update();
+        Ok(())
+    }
+
+    pub fn release(&mut self) {
+        self.locked_by = None;
+        self.locked_at = None;
+        self.update();
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked_by.is_some()
+    }
+
+    pub fn is_locked_by(&self, assignee: &str) -> bool {
+        self.locked_by.as_ref().map(|s| s == assignee).unwrap_or(false)
+    }
+
+    pub fn is_assigned_to(&self, assignee: &str) -> bool {
+        self.assigned_to.as_ref().map(|s| s == assignee).unwrap_or(false)
+    }
+
+    pub fn lock_age_hours(&self) -> Option<f64> {
+        self.locked_at.as_ref().and_then(|locked_at| {
+            chrono::DateTime::parse_from_rfc3339(locked_at)
+                .ok()
+                .map(|dt| {
+                    let now = chrono::Utc::now();
+                    let duration = now.signed_duration_since(dt);
+                    duration.num_seconds() as f64 / 3600.0
+                })
+        })
+    }
+
+    pub fn is_stale_lock(&self, hours_threshold: f64) -> bool {
+        self.lock_age_hours()
+            .map(|hours| hours > hours_threshold)
+            .unwrap_or(false)
     }
 }
 

@@ -169,4 +169,33 @@ impl Storage {
         fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))
     }
+
+    // Epic Groups management
+    pub fn groups_file(&self) -> PathBuf {
+        self.taskmaster_dir().join("epic-groups.json")
+    }
+
+    pub fn load_groups(&self) -> Result<crate::models::EpicGroups> {
+        let path = self.groups_file();
+        if !path.exists() {
+            return Ok(crate::models::EpicGroups::new());
+        }
+
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read groups from {}", path.display()))?;
+
+        let groups: crate::models::EpicGroups = serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse epic-groups.json"))?;
+
+        Ok(groups)
+    }
+
+    pub fn save_groups(&self, groups: &crate::models::EpicGroups) -> Result<()> {
+        let path = self.groups_file();
+        let content = serde_json::to_string_pretty(groups)?;
+        fs::write(&path, content)
+            .with_context(|| format!("Failed to write groups to {}", path.display()))?;
+
+        Ok(())
+    }
 }
