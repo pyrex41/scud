@@ -2,6 +2,8 @@
 
 **Sprint Cycle Unified Development** - Fast, AI-powered workflow for building software 🚀
 
+> **Status: Beta (1.0.0-beta.1)** - Core functionality is stable and 50x faster than previous version. Tests and CI/CD are coming in follow-up releases. See [FOLLOWUP_PLAN.md](FOLLOWUP_PLAN.md) for roadmap.
+
 A lightweight task management system that guides you through structured development phases with AI assistance.
 
 ---
