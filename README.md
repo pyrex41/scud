@@ -2,7 +2,7 @@
 
 **Sprint Cycle Unified Development** - Fast, AI-powered workflow for building software 🚀
 
-> **Status: Beta (1.0.0-beta.1)** - Core functionality is stable and 50x faster than previous version. Tests and CI/CD are coming in follow-up releases. See [FOLLOWUP_PLAN.md](FOLLOWUP_PLAN.md) for roadmap.
+> **Status: Beta (1.0.0-beta.1)** - Core functionality is stable and 50x faster than previous version. Tests and CI/CD are coming in follow-up releases. See [log_docs/FOLLOWUP_PLAN.md](log_docs/FOLLOWUP_PLAN.md) for roadmap.
 
 A lightweight task management system that guides you through structured development phases with AI assistance.
 
@@ -27,7 +27,7 @@ scud init
 /tm-retrospective          # Learn & improve
 ```
 
-**Full guide:** [QUICKSTART.md](QUICKSTART.md)
+**Full guide:** [docs/guides/COMPLETE_GUIDE.md](docs/guides/COMPLETE_GUIDE.md)
 
 ---
 
@@ -69,15 +69,17 @@ Each phase has a dedicated AI agent that guides you through best practices:
 
 ## Documentation
 
-**Getting Started:**
-- [Quickstart Guide](QUICKSTART.md) - Get up and running in 5 minutes
-- [Complete Guide](COMPLETE_GUIDE.md) - Comprehensive reference (25,000 words)
-- [Quick Reference](QUICK_REFERENCE.md) - Command cheat sheet
+**Guides:**
+- [Complete Guide](docs/guides/COMPLETE_GUIDE.md) - Comprehensive reference (25,000 words)
+- [Migration Guide](docs/guides/MIGRATION.md) - Upgrading from BMAD-TM Lite
+
+**Reference:**
+- [Quick Reference](docs/reference/QUICK_REFERENCE.md) - Command cheat sheet
 
 **Features:**
-- [Parallel Features](PARALLEL_FEATURES.md) - Epic groups & task assignment
+- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Epic groups & task assignment
 
-**Implementation:**
+**Development:**
 - [Development Logs](log_docs/) - Implementation details & history
 
 ---
@@ -237,9 +239,9 @@ MIT
 
 ## Learn More
 
-- **Complete Guide:** [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md)
-- **Quick Reference:** [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
-- **Parallel Features:** [PARALLEL_FEATURES.md](PARALLEL_FEATURES.md)
+- **Complete Guide:** [docs/guides/COMPLETE_GUIDE.md](docs/guides/COMPLETE_GUIDE.md)
+- **Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
+- **Parallel Features:** [docs/features/PARALLEL_FEATURES.md](docs/features/PARALLEL_FEATURES.md)
 - **Implementation Logs:** [log_docs/](log_docs/)
 
 **Happy building! 🚀**

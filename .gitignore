@@ -10,7 +10,10 @@ package-lock.json
 
 # SCUD task management (user data)
 .taskmaster/
-docs/
+docs/prd/
+docs/epics/
+docs/architecture/
+docs/retrospectives/
 
 # Editor files
 .vscode/
