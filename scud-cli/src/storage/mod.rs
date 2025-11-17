@@ -447,6 +447,265 @@ mod tests {
         let result = handle.join().unwrap();
         assert!(result.is_ok());
     }
+
+    // ==================== Error Handling Tests ====================
+
+    #[test]
+    fn test_load_tasks_with_malformed_json() {
+        let (storage, _temp_dir) = create_test_storage();
+        let tasks_file = storage.tasks_file();
+
+        // Write malformed JSON
+        fs::write(&tasks_file, r#"{"invalid": json here}"#).unwrap();
+
+        // Should return error
+        let result = storage.load_tasks();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_workflow_state_with_malformed_json() {
+        let (storage, _temp_dir) = create_test_storage();
+        let workflow_file = storage.workflow_file();
+
+        // Write malformed JSON
+        fs::write(&workflow_file, r#"not valid json at all"#).unwrap();
+
+        // Should return error
+        let result = storage.load_workflow_state();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_groups_with_malformed_json() {
+        let (storage, _temp_dir) = create_test_storage();
+        let groups_file = storage.groups_file();
+
+        // Write malformed JSON
+        fs::write(&groups_file, r#"{unclosed bracket"#).unwrap();
+
+        // Should return error
+        let result = storage.load_groups();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_tasks_with_empty_file() {
+        let (storage, _temp_dir) = create_test_storage();
+        let tasks_file = storage.tasks_file();
+
+        // Write empty file
+        fs::write(&tasks_file, "").unwrap();
+
+        // Should return error
+        let result = storage.load_tasks();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_tasks_missing_file_creates_default() {
+        let (storage, _temp_dir) = create_test_storage();
+        // Don't create tasks file
+
+        // Should return empty HashMap (default)
+        let tasks = storage.load_tasks().unwrap();
+        assert_eq!(tasks.len(), 0);
+    }
+
+    #[test]
+    fn test_load_workflow_state_missing_file_creates_default() {
+        let (storage, _temp_dir) = create_test_storage();
+        // Don't create workflow state file
+
+        // Should return default WorkflowState
+        let state = storage.load_workflow_state().unwrap();
+        assert_eq!(state.current_phase, "ideation");
+        assert_eq!(state.active_epic, None);
+    }
+
+    #[test]
+    fn test_load_groups_missing_file_creates_default() {
+        let (storage, _temp_dir) = create_test_storage();
+        // Don't create groups file
+
+        // Should return empty EpicGroups
+        let groups = storage.load_groups().unwrap();
+        assert_eq!(groups.groups.len(), 0);
+    }
+
+    #[test]
+    fn test_save_tasks_creates_directory_if_missing() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::new(Some(temp_dir.path().to_path_buf()));
+        // Don't call initialize()
+
+        let mut tasks = HashMap::new();
+        let epic = crate::models::Epic::new("TEST-1".to_string());
+        tasks.insert("TEST-1".to_string(), epic);
+
+        // Should create directory and file
+        let result = storage.save_tasks(&tasks);
+        assert!(result.is_ok());
+
+        assert!(storage.taskmaster_dir().exists());
+        assert!(storage.tasks_file().exists());
+    }
+
+    #[test]
+    fn test_write_with_lock_handles_directory_creation() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::new(Some(temp_dir.path().to_path_buf()));
+
+        let nested_file = temp_dir
+            .path()
+            .join("deeply")
+            .join("nested")
+            .join("test.json");
+
+        // Should create all parent directories
+        let result = storage.write_with_lock(&nested_file, || Ok("{}".to_string()));
+        assert!(result.is_ok());
+        assert!(nested_file.exists());
+    }
+
+    #[test]
+    fn test_load_tasks_with_invalid_structure() {
+        let (storage, _temp_dir) = create_test_storage();
+        let tasks_file = storage.tasks_file();
+
+        // Write valid JSON but invalid structure (array instead of object)
+        fs::write(&tasks_file, r#"["not", "an", "object"]"#).unwrap();
+
+        // Should return error
+        let result = storage.load_tasks();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_workflow_state_with_missing_fields() {
+        let (storage, _temp_dir) = create_test_storage();
+        let workflow_file = storage.workflow_file();
+
+        // Write JSON with missing required fields
+        fs::write(&workflow_file, r#"{"version": "1.0.0"}"#).unwrap();
+
+        // Should return error (missing current_phase, etc.)
+        let result = storage.load_workflow_state();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_save_and_load_with_unicode_content() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut tasks = HashMap::new();
+        let mut epic = crate::models::Epic::new("TEST-UNICODE".to_string());
+
+        // Add task with unicode content
+        let task = crate::models::Task::new(
+            "task-1".to_string(),
+            "测试 Unicode 🚀".to_string(),
+            "Descripción en español 日本語".to_string(),
+        );
+        epic.add_task(task);
+
+        tasks.insert("TEST-UNICODE".to_string(), epic);
+
+        // Save and load
+        storage.save_tasks(&tasks).unwrap();
+        let loaded_tasks = storage.load_tasks().unwrap();
+
+        let loaded_epic = loaded_tasks.get("TEST-UNICODE").unwrap();
+        let loaded_task = loaded_epic.get_task("task-1").unwrap();
+        assert_eq!(loaded_task.title, "测试 Unicode 🚀");
+        assert_eq!(loaded_task.description, "Descripción en español 日本語");
+    }
+
+    #[test]
+    fn test_save_and_load_with_large_dataset() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut tasks = HashMap::new();
+
+        // Create 100 epics with 50 tasks each
+        for i in 0..100 {
+            let mut epic = crate::models::Epic::new(format!("EPIC-{}", i));
+
+            for j in 0..50 {
+                let task = crate::models::Task::new(
+                    format!("task-{}-{}", i, j),
+                    format!("Task {} of Epic {}", j, i),
+                    format!("Description for task {}-{}", i, j),
+                );
+                epic.add_task(task);
+            }
+
+            tasks.insert(format!("EPIC-{}", i), epic);
+        }
+
+        // Save and load
+        storage.save_tasks(&tasks).unwrap();
+        let loaded_tasks = storage.load_tasks().unwrap();
+
+        assert_eq!(loaded_tasks.len(), 100);
+        for i in 0..100 {
+            let epic = loaded_tasks.get(&format!("EPIC-{}", i)).unwrap();
+            assert_eq!(epic.tasks.len(), 50);
+        }
+    }
+
+    #[test]
+    fn test_concurrent_read_and_write() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let (storage, _temp_dir) = create_test_storage();
+        let storage = Arc::new(storage);
+
+        // Initialize with some data
+        let mut tasks = HashMap::new();
+        let epic = crate::models::Epic::new("INITIAL".to_string());
+        tasks.insert("INITIAL".to_string(), epic);
+        storage.save_tasks(&tasks).unwrap();
+
+        let mut handles = vec![];
+
+        // Spawn 5 readers
+        for _ in 0..5 {
+            let storage_clone = Arc::clone(&storage);
+            let handle = thread::spawn(move || {
+                for _ in 0..10 {
+                    let _ = storage_clone.load_tasks();
+                    thread::sleep(Duration::from_millis(1));
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Spawn 2 writers
+        for i in 0..2 {
+            let storage_clone = Arc::clone(&storage);
+            let handle = thread::spawn(move || {
+                for j in 0..5 {
+                    let mut tasks = HashMap::new();
+                    let epic = crate::models::Epic::new(format!("WRITER-{}-{}", i, j));
+                    tasks.insert(format!("WRITER-{}-{}", i, j), epic);
+                    storage_clone.save_tasks(&tasks).unwrap();
+                    thread::sleep(Duration::from_millis(2));
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // File should still be valid
+        let tasks = storage.load_tasks().unwrap();
+        assert_eq!(tasks.len(), 1); // Last write wins
+    }
 }
 
 impl Clone for Storage {
