@@ -7,38 +7,38 @@ use crate::storage::Storage;
 
 pub fn run(project_root: Option<PathBuf>, status_filter: Option<&str>) -> Result<()> {
     let storage = Storage::new(project_root);
-    let active_epic = storage
-        .get_active_epic()?
-        .ok_or_else(|| anyhow::anyhow!("No active epic. Run: scud use-tag <epic-tag>"))?;
 
-    let tasks = storage.load_tasks()?;
-    let epic = tasks
-        .get(&active_epic)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", active_epic))?;
+    // OPTIMIZED: Load only active epic (uses cache + lazy loading)
+    let epic = storage.load_active_epic()?;
 
-    let mut task_list = epic.tasks.clone();
+    // Parse filter status once
+    let filter_status = status_filter
+        .map(|s| {
+            TaskStatus::from_str(s).ok_or_else(|| {
+                anyhow::anyhow!("Invalid status: {}. Valid: {:?}", s, TaskStatus::all())
+            })
+        })
+        .transpose()?;
 
-    // Filter by status if provided
-    if let Some(status_str) = status_filter {
-        let filter_status = TaskStatus::from_str(status_str).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Invalid status: {}. Valid: {:?}",
-                status_str,
-                TaskStatus::all()
-            )
-        })?;
-        task_list.retain(|t| t.status == filter_status);
-    }
+    // OPTIMIZED: Use iterator instead of clone
+    let task_iter = epic
+        .tasks
+        .iter()
+        .filter(|t| filter_status.as_ref().map(|fs| t.status == *fs).unwrap_or(true));
 
-    if task_list.is_empty() {
+    if task_iter.clone().count() == 0 {
         println!("{}", "No tasks found".yellow());
         return Ok(());
     }
 
-    println!("{} {}", "Tasks in epic:".blue().bold(), active_epic.green());
+    println!(
+        "{} {}",
+        "Tasks in epic:".blue().bold(),
+        epic.name.green()
+    );
     println!();
 
-    for task in task_list {
+    for task in task_iter {
         let status_color = match task.status {
             TaskStatus::Done => "done".green(),
             TaskStatus::InProgress => "in-progress".yellow(),

@@ -3,6 +3,7 @@ use fs2::FileExt;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 use std::thread;
 use std::time::Duration;
 
@@ -10,12 +11,19 @@ use crate::models::{Epic, WorkflowState};
 
 pub struct Storage {
     project_root: PathBuf,
+    /// Cache for active epic to avoid repeated workflow state loads
+    /// Option<Option<String>> represents: None = not cached, Some(None) = no active epic, Some(Some(tag)) = cached tag
+    /// Uses RwLock for thread safety (useful for tests and potential daemon mode)
+    active_epic_cache: RwLock<Option<Option<String>>>,
 }
 
 impl Storage {
     pub fn new(project_root: Option<PathBuf>) -> Self {
         let root = project_root.unwrap_or_else(|| std::env::current_dir().unwrap());
-        Storage { project_root: root }
+        Storage {
+            project_root: root,
+            active_epic_cache: RwLock::new(None),
+        }
     }
 
     /// Acquire an exclusive file lock with retry logic
@@ -213,8 +221,22 @@ impl Storage {
     }
 
     pub fn get_active_epic(&self) -> Result<Option<String>> {
+        // Check cache first (read lock)
+        {
+            let cache = self.active_epic_cache.read().unwrap();
+            if let Some(cached) = cache.as_ref() {
+                return Ok(cached.clone());
+            }
+        }
+
+        // Load from file and cache (write lock)
         let state = self.load_workflow_state()?;
-        Ok(state.active_epic)
+        let active = state.active_epic.clone();
+
+        // Store in cache
+        *self.active_epic_cache.write().unwrap() = Some(active.clone());
+
+        Ok(active)
     }
 
     pub fn set_active_epic(&self, epic_tag: &str) -> Result<()> {
@@ -228,7 +250,67 @@ impl Storage {
         state.update();
         self.save_workflow_state(&state)?;
 
+        // Update cache
+        *self.active_epic_cache.write().unwrap() = Some(Some(epic_tag.to_string()));
+
         Ok(())
+    }
+
+    /// Clear the active epic cache
+    /// Useful when workflow state is modified externally or for testing
+    pub fn clear_cache(&self) {
+        *self.active_epic_cache.write().unwrap() = None;
+    }
+
+    /// Load a single epic by tag without deserializing all epics
+    /// More efficient than load_tasks() when only one epic is needed
+    pub fn load_epic(&self, epic_tag: &str) -> Result<Epic> {
+        let path = self.tasks_file();
+        let content = self.read_with_lock(&path)?;
+
+        // Parse as generic JSON value for targeted extraction
+        let value: serde_json::Value = serde_json::from_str(&content)
+            .with_context(|| "Failed to parse tasks.json")?;
+
+        // Extract specific epic
+        if let Some(epic_value) = value.get(epic_tag) {
+            let epic: Epic = serde_json::from_value(epic_value.clone())
+                .with_context(|| format!("Failed to deserialize epic '{}'", epic_tag))?;
+            Ok(epic)
+        } else {
+            anyhow::bail!("Epic '{}' not found", epic_tag)
+        }
+    }
+
+    /// Load the active epic directly (optimized)
+    /// Combines get_active_epic() and load_epic() in one call
+    pub fn load_active_epic(&self) -> Result<Epic> {
+        let active_tag = self
+            .get_active_epic()?
+            .ok_or_else(|| anyhow::anyhow!("No active epic. Run: scud use-tag <epic-tag>"))?;
+
+        self.load_epic(&active_tag)
+    }
+
+    /// Update a single epic without loading/saving all epics
+    /// More efficient than load_tasks() + save_tasks() for single epic updates
+    pub fn update_epic(&self, epic_tag: &str, epic: &Epic) -> Result<()> {
+        let path = self.tasks_file();
+
+        // Read current content first (before write lock)
+        let content = self.read_with_lock(&path)?;
+
+        self.write_with_lock(&path, || {
+            let mut value: serde_json::Value = serde_json::from_str(&content)?;
+
+            // Update specific epic
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert(epic_tag.to_string(), serde_json::to_value(epic)?);
+            }
+
+            serde_json::to_string_pretty(&value)
+                .with_context(|| "Failed to serialize tasks to JSON")
+        })
     }
 
     pub fn read_file(&self, path: &Path) -> Result<String> {
@@ -410,7 +492,10 @@ mod tests {
 
     #[test]
     fn test_lock_retry_on_contention() {
+        use std::sync::Arc;
+
         let (storage, _temp_dir) = create_test_storage();
+        let storage = Arc::new(storage);
         let test_file = storage.taskmaster_dir().join("lock-test.json");
 
         // Create file
@@ -426,14 +511,13 @@ mod tests {
         file.lock_exclusive().unwrap();
 
         // Try to acquire lock with retry in another thread
-        let storage_clone = storage.clone();
+        let storage_clone = Arc::clone(&storage);
         let test_file_clone = test_file.clone();
         let handle = thread::spawn(move || {
-            // This should retry and eventually fail after max retries
-            let result = storage_clone.write_with_lock(&test_file_clone, || {
+            // This should retry and succeed after lock release
+            storage_clone.write_with_lock(&test_file_clone, || {
                 Ok(r#"{"updated": "data"}"#.to_string())
-            });
-            result
+            })
         });
 
         // Keep lock for a bit
@@ -706,12 +790,191 @@ mod tests {
         let tasks = storage.load_tasks().unwrap();
         assert_eq!(tasks.len(), 1); // Last write wins
     }
-}
 
-impl Clone for Storage {
-    fn clone(&self) -> Self {
-        Storage {
-            project_root: self.project_root.clone(),
+    // ==================== Active Epic Cache Tests ====================
+
+    #[test]
+    fn test_active_epic_cached_on_second_call() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Set active epic
+        let mut tasks = HashMap::new();
+        tasks.insert("TEST-1".to_string(), Epic::new("TEST-1".to_string()));
+        storage.save_tasks(&tasks).unwrap();
+        storage.set_active_epic("TEST-1").unwrap();
+
+        // First call - loads from file
+        let active1 = storage.get_active_epic().unwrap();
+        assert_eq!(active1, Some("TEST-1".to_string()));
+
+        // Modify file directly (bypass storage methods)
+        let workflow_file = storage.workflow_file();
+        let mut state = storage.load_workflow_state().unwrap();
+        state.active_epic = Some("DIFFERENT".to_string());
+        fs::write(
+            &workflow_file,
+            serde_json::to_string(&state).unwrap(),
+        )
+        .unwrap();
+
+        // Second call - should return cached value (not file value)
+        let active2 = storage.get_active_epic().unwrap();
+        assert_eq!(active2, Some("TEST-1".to_string())); // Still cached
+
+        // After cache clear - should reload from file
+        storage.clear_cache();
+        let active3 = storage.get_active_epic().unwrap();
+        assert_eq!(active3, Some("DIFFERENT".to_string())); // From file
+    }
+
+    #[test]
+    fn test_cache_invalidated_on_set_active_epic() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut tasks = HashMap::new();
+        tasks.insert("EPIC-1".to_string(), Epic::new("EPIC-1".to_string()));
+        tasks.insert("EPIC-2".to_string(), Epic::new("EPIC-2".to_string()));
+        storage.save_tasks(&tasks).unwrap();
+
+        storage.set_active_epic("EPIC-1").unwrap();
+        assert_eq!(
+            storage.get_active_epic().unwrap(),
+            Some("EPIC-1".to_string())
+        );
+
+        // Change active epic - should update cache
+        storage.set_active_epic("EPIC-2").unwrap();
+        assert_eq!(
+            storage.get_active_epic().unwrap(),
+            Some("EPIC-2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_cache_with_no_active_epic() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Load when no active epic is set
+        let active = storage.get_active_epic().unwrap();
+        assert_eq!(active, None);
+
+        // Should cache the None value
+        let active2 = storage.get_active_epic().unwrap();
+        assert_eq!(active2, None);
+    }
+
+    // ==================== Lazy Epic Loading Tests ====================
+
+    #[test]
+    fn test_load_single_epic_from_many() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Create 50 epics
+        let mut tasks = HashMap::new();
+        for i in 0..50 {
+            tasks.insert(
+                format!("EPIC-{}", i),
+                Epic::new(format!("EPIC-{}", i)),
+            );
         }
+        storage.save_tasks(&tasks).unwrap();
+
+        // Load single epic - should only deserialize that one
+        let epic = storage.load_epic("EPIC-25").unwrap();
+        assert_eq!(epic.name, "EPIC-25");
+    }
+
+    #[test]
+    fn test_load_epic_not_found() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let tasks = HashMap::new();
+        storage.save_tasks(&tasks).unwrap();
+
+        let result = storage.load_epic("NONEXISTENT");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_load_epic_matches_full_load() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut tasks = HashMap::new();
+        let mut epic = Epic::new("TEST-1".to_string());
+        epic.add_task(crate::models::Task::new(
+            "task-1".to_string(),
+            "Test".to_string(),
+            "Desc".to_string(),
+        ));
+        tasks.insert("TEST-1".to_string(), epic.clone());
+        storage.save_tasks(&tasks).unwrap();
+
+        // Load via both methods
+        let epic_lazy = storage.load_epic("TEST-1").unwrap();
+        let tasks_full = storage.load_tasks().unwrap();
+        let epic_full = tasks_full.get("TEST-1").unwrap();
+
+        // Should be identical
+        assert_eq!(epic_lazy.name, epic_full.name);
+        assert_eq!(epic_lazy.tasks.len(), epic_full.tasks.len());
+    }
+
+    #[test]
+    fn test_load_active_epic() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut tasks = HashMap::new();
+        let mut epic = Epic::new("ACTIVE-1".to_string());
+        epic.add_task(crate::models::Task::new(
+            "task-1".to_string(),
+            "Test".to_string(),
+            "Desc".to_string(),
+        ));
+        tasks.insert("ACTIVE-1".to_string(), epic);
+        storage.save_tasks(&tasks).unwrap();
+        storage.set_active_epic("ACTIVE-1").unwrap();
+
+        // Load active epic directly
+        let epic = storage.load_active_epic().unwrap();
+        assert_eq!(epic.name, "ACTIVE-1");
+        assert_eq!(epic.tasks.len(), 1);
+    }
+
+    #[test]
+    fn test_load_active_epic_when_none_set() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Should error when no active epic
+        let result = storage.load_active_epic();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No active epic"));
+    }
+
+    #[test]
+    fn test_update_epic_without_loading_all() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut tasks = HashMap::new();
+        tasks.insert("EPIC-1".to_string(), Epic::new("EPIC-1".to_string()));
+        tasks.insert("EPIC-2".to_string(), Epic::new("EPIC-2".to_string()));
+        storage.save_tasks(&tasks).unwrap();
+
+        // Update only EPIC-1
+        let mut epic1 = storage.load_epic("EPIC-1").unwrap();
+        epic1.add_task(crate::models::Task::new(
+            "new-task".to_string(),
+            "New".to_string(),
+            "Desc".to_string(),
+        ));
+        storage.update_epic("EPIC-1", &epic1).unwrap();
+
+        // Verify update
+        let loaded = storage.load_epic("EPIC-1").unwrap();
+        assert_eq!(loaded.tasks.len(), 1);
+
+        // Verify EPIC-2 unchanged
+        let epic2 = storage.load_epic("EPIC-2").unwrap();
+        assert_eq!(epic2.tasks.len(), 0);
     }
 }
