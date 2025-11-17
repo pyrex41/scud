@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "scud": {
+      "command": "scud-mcp",
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-your-api-key-here"
+      }
+    }
+  }
+}

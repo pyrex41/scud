@@ -1,0 +1,40 @@
+{
+  "name": "scud-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for SCUD task management",
+  "type": "module",
+  "bin": {
+    "scud-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "scud",
+    "task-management",
+    "ai",
+    "workflow",
+    "sprint",
+    "agile"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/bmad-tm"
+  }
+}
