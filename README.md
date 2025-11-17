@@ -31,6 +31,107 @@ scud init
 
 ---
 
+## Usage Modes
+
+SCUD offers two ways to work with AI assistants, each with different trade-offs:
+
+### Mode 1: Direct CLI + Skills/Commands (Recommended)
+
+**How it works:**
+- AI assistant uses SCUD CLI directly via bash
+- Slash commands (Claude Code) or skills (OpenCode) provide structured prompts
+- Assistant reads/writes files and executes `scud` commands
+
+**Setup:**
+```bash
+npm install -g scud
+cd your-project
+scud init
+
+# In Claude Code, use:
+/scud-pm        # Product manager agent
+/scud-sm        # Scrum master agent
+/scud-dev       # Developer agent
+```
+
+**Pros:**
+- ✅ Full file system access (can edit tasks JSON directly if needed)
+- ✅ Can see all project files for context
+- ✅ More flexible - can use any tool/command
+- ✅ Better error messages (sees full CLI output)
+- ✅ Can combine SCUD with other tools seamlessly
+
+**Cons:**
+- ❌ Requires bash/shell access
+- ❌ AI must learn CLI commands
+- ❌ More verbose (multi-step operations)
+
+**Best for:** Power users, complex workflows, file-heavy operations
+
+---
+
+### Mode 2: MCP Server (For Claude Desktop Users)
+
+**How it works:**
+- Lightweight TypeScript server wraps SCUD CLI
+- Exposes 20 MCP tools AI can call directly
+- Natural language → structured tool calls
+
+**Setup:**
+```bash
+npm install -g scud scud-mcp
+
+# Configure Claude Desktop (~/Library/Application Support/Claude/claude_desktop_config.json):
+{
+  "mcpServers": {
+    "scud": {
+      "command": "scud-mcp",
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
+    }
+  }
+}
+
+# Restart Claude Desktop, then:
+"Initialize SCUD and parse my PRD at docs/epics/epic-1-auth.md"
+```
+
+**Pros:**
+- ✅ Natural language interface (just describe what you want)
+- ✅ Structured tool calls (cleaner protocol)
+- ✅ Works in Claude Desktop (no bash needed)
+- ✅ Faster for simple operations (one tool call)
+- ✅ Better for non-technical users
+
+**Cons:**
+- ❌ Limited to SCUD operations (can't edit other files)
+- ❌ No file system access beyond SCUD data
+- ❌ Requires separate MCP server installation
+- ❌ Only works with MCP-compatible clients
+
+**Best for:** Claude Desktop users, simple workflows, natural language interactions
+
+---
+
+### Which Mode Should You Use?
+
+**Use Direct CLI + Skills if:**
+- You're using Claude Code or Cursor
+- You need full project access
+- You want maximum flexibility
+- You're comfortable with command-line tools
+
+**Use MCP Server if:**
+- You're using Claude Desktop
+- You want natural language interface
+- You only need task management (not full project access)
+- You prefer structured tool calls over bash
+
+**Can you use both?** Yes! The MCP server just wraps the CLI, so they're fully compatible. You can use MCP in Claude Desktop and CLI in your terminal.
+
+---
+
 ## The 5-Phase Workflow
 
 ```
@@ -72,6 +173,7 @@ Each phase has a dedicated AI agent that guides you through best practices:
 **Guides:**
 - [Complete Guide](docs/guides/COMPLETE_GUIDE.md) - Comprehensive reference (25,000 words)
 - [Migration Guide](docs/guides/MIGRATION.md) - Upgrading from BMAD-TM Lite
+- [MCP Server Guide](scud-mcp/README.md) - Model Context Protocol integration
 
 **Reference:**
 - [Quick Reference](docs/reference/QUICK_REFERENCE.md) - Command cheat sheet
