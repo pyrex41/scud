@@ -26,3 +26,6 @@ docs/retrospectives/
 # Temporary files
 *.tmp
 *.log
+
+# Coverage reports
+coverage/
