@@ -70,18 +70,19 @@ scud init
 
 ---
 
-### Mode 2: MCP Server (For Claude Desktop Users)
+### Mode 2: MCP Server (Universal Protocol)
 
 **How it works:**
 - Lightweight TypeScript server wraps SCUD CLI
-- Exposes 20 MCP tools AI can call directly
-- Natural language → structured tool calls
+- Exposes 20 MCP tools + 3 resources via standardized protocol
+- Works with any MCP-compatible client (Claude Desktop, Cursor, Claude Code, etc.)
 
 **Setup:**
 ```bash
 npm install -g scud scud-mcp
 
-# Configure Claude Desktop (~/Library/Application Support/Claude/claude_desktop_config.json):
+# Configure your MCP client (example for Claude Desktop):
+# ~/Library/Application Support/Claude/claude_desktop_config.json
 {
   "mcpServers": {
     "scud": {
@@ -93,42 +94,41 @@ npm install -g scud scud-mcp
   }
 }
 
-# Restart Claude Desktop, then:
-"Initialize SCUD and parse my PRD at docs/epics/epic-1-auth.md"
+# For Cursor/other clients, see scud-mcp/README.md for config
+# Then use naturally: "Initialize SCUD and parse my PRD"
 ```
 
 **Pros:**
-- ✅ Natural language interface (just describe what you want)
-- ✅ Structured tool calls (cleaner protocol)
-- ✅ Works in Claude Desktop (no bash needed)
-- ✅ Faster for simple operations (one tool call)
-- ✅ Better for non-technical users
+- ✅ Structured protocol (well-defined tool schemas)
+- ✅ Works across multiple AI clients (Claude Desktop, Cursor, etc.)
+- ✅ Cleaner interface (named tools vs bash commands)
+- ✅ Type-safe tool calls with validation
+- ✅ Can add file access via MCP resources (extensible)
 
 **Cons:**
-- ❌ Limited to SCUD operations (can't edit other files)
-- ❌ No file system access beyond SCUD data
-- ❌ Requires separate MCP server installation
-- ❌ Only works with MCP-compatible clients
+- ❌ Requires MCP server installation (extra dependency)
+- ❌ Less ad-hoc than direct bash (predefined tools only)
+- ❌ Client must support MCP protocol
 
-**Best for:** Claude Desktop users, simple workflows, natural language interactions
+**Best for:** Multi-client usage, structured workflows, type-safe operations
 
 ---
 
 ### Which Mode Should You Use?
 
 **Use Direct CLI + Skills if:**
-- You're using Claude Code or Cursor
-- You need full project access
-- You want maximum flexibility
-- You're comfortable with command-line tools
+- You want maximum flexibility (any bash command)
+- You prefer ad-hoc operations over predefined tools
+- You're already comfortable with CLI workflows
+- You want zero external dependencies (just the CLI)
 
 **Use MCP Server if:**
-- You're using Claude Desktop
-- You want natural language interface
-- You only need task management (not full project access)
-- You prefer structured tool calls over bash
+- You use multiple AI clients (Claude Desktop, Cursor, etc.)
+- You want structured, type-safe tool calls
+- You prefer protocol-based integration
+- You want extensible architecture (can add custom tools/resources)
 
-**Can you use both?** Yes! The MCP server just wraps the CLI, so they're fully compatible. You can use MCP in Claude Desktop and CLI in your terminal.
+**Can you use both?** Yes! The MCP server wraps the CLI, so they're fully compatible. Use MCP for structured operations and CLI for ad-hoc tasks. Both modes work in Claude Code, Cursor, and Claude Desktop.
 
 ---
 
