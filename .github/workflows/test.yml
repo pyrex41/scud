@@ -64,4 +64,4 @@ jobs:
       - name: Test Node.js wrapper
         run: |
           npm install
-          ./bin/scud.js --help
+          ./bin/scud.js help
