@@ -21,21 +21,19 @@ pub fn run(project_root: Option<PathBuf>, status_filter: Option<&str>) -> Result
         .transpose()?;
 
     // OPTIMIZED: Use iterator instead of clone
-    let task_iter = epic
-        .tasks
-        .iter()
-        .filter(|t| filter_status.as_ref().map(|fs| t.status == *fs).unwrap_or(true));
+    let task_iter = epic.tasks.iter().filter(|t| {
+        filter_status
+            .as_ref()
+            .map(|fs| t.status == *fs)
+            .unwrap_or(true)
+    });
 
     if task_iter.clone().count() == 0 {
         println!("{}", "No tasks found".yellow());
         return Ok(());
     }
 
-    println!(
-        "{} {}",
-        "Tasks in epic:".blue().bold(),
-        epic.name.green()
-    );
+    println!("{} {}", "Tasks in epic:".blue().bold(), epic.name.green());
     println!();
 
     for task in task_iter {

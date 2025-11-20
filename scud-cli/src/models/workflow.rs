@@ -180,10 +180,7 @@ mod tests {
             Phase::from_str("implementation"),
             Some(Phase::Implementation)
         );
-        assert_eq!(
-            Phase::from_str("retrospective"),
-            Some(Phase::Retrospective)
-        );
+        assert_eq!(Phase::from_str("retrospective"), Some(Phase::Retrospective));
     }
 
     #[test]

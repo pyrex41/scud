@@ -1,6 +1,6 @@
 [package]
 name = "scud"
-version = "0.1.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["SCUD Team"]
 description = "Fast, simple task master for AI-driven development"

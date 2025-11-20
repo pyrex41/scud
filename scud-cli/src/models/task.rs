@@ -858,10 +858,7 @@ mod tests {
             Task::sanitize_text("<script>alert('xss')</script>"),
             "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
         );
-        assert_eq!(
-            Task::sanitize_text("Normal text"),
-            "Normal text"
-        );
+        assert_eq!(Task::sanitize_text("Normal text"), "Normal text");
         assert_eq!(
             Task::sanitize_text("<div>Content</div>"),
             "&lt;div&gt;Content&lt;/div&gt;"
@@ -880,11 +877,7 @@ mod tests {
 
     #[test]
     fn test_validate_multiple_errors() {
-        let mut task = Task::new(
-            "TASK@INVALID".to_string(),
-            "".to_string(),
-            "A".repeat(5001),
-        );
+        let mut task = Task::new("TASK@INVALID".to_string(), "".to_string(), "A".repeat(5001));
         task.complexity = 100; // Invalid Fibonacci number
 
         let result = task.validate();

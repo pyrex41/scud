@@ -24,9 +24,9 @@ pub fn run(project_root: Option<PathBuf>, task_id: &str, status_str: &str) -> Re
     // OPTIMIZED: Load only active epic
     let mut epic = storage.load_epic(&active_tag)?;
 
-    let task = epic.get_task_mut(task_id).ok_or_else(|| {
-        anyhow::anyhow!("Task {} not found in epic '{}'", task_id, active_tag)
-    })?;
+    let task = epic
+        .get_task_mut(task_id)
+        .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, active_tag))?;
 
     task.set_status(new_status);
 

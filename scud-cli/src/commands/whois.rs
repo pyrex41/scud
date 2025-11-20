@@ -16,10 +16,11 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
     for (epic_tag, epic) in tasks.iter() {
         for task in &epic.tasks {
             if let Some(ref assigned) = task.assigned_to {
-                assignments
-                    .entry(assigned.clone())
-                    .or_default()
-                    .push((epic_tag.clone(), task.id.clone(), task.title.clone()));
+                assignments.entry(assigned.clone()).or_default().push((
+                    epic_tag.clone(),
+                    task.id.clone(),
+                    task.title.clone(),
+                ));
             }
 
             // Check for stale locks

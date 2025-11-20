@@ -10,9 +10,9 @@ pub fn run(project_root: Option<PathBuf>, task_id: &str) -> Result<()> {
     // OPTIMIZED: Load only active epic (uses cache + lazy loading)
     let epic = storage.load_active_epic()?;
 
-    let task = epic.get_task(task_id).ok_or_else(|| {
-        anyhow::anyhow!("Task {} not found in epic '{}'", task_id, epic.name)
-    })?;
+    let task = epic
+        .get_task(task_id)
+        .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, epic.name))?;
 
     println!("\n{}", "Task Details".blue().bold());
     println!("{}", "=============".blue());

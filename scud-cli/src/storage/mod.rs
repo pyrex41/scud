@@ -269,8 +269,8 @@ impl Storage {
         let content = self.read_with_lock(&path)?;
 
         // Parse as generic JSON value for targeted extraction
-        let value: serde_json::Value = serde_json::from_str(&content)
-            .with_context(|| "Failed to parse tasks.json")?;
+        let value: serde_json::Value =
+            serde_json::from_str(&content).with_context(|| "Failed to parse tasks.json")?;
 
         // Extract specific epic
         if let Some(epic_value) = value.get(epic_tag) {
@@ -391,10 +391,7 @@ mod tests {
 
         let result = storage.read_with_lock(&test_file);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("File not found"));
+        assert!(result.unwrap_err().to_string().contains("File not found"));
     }
 
     #[test]
@@ -504,10 +501,7 @@ mod tests {
             .unwrap();
 
         // Open and lock the file
-        let file = OpenOptions::new()
-            .write(true)
-            .open(&test_file)
-            .unwrap();
+        let file = OpenOptions::new().write(true).open(&test_file).unwrap();
         file.lock_exclusive().unwrap();
 
         // Try to acquire lock with retry in another thread
@@ -811,11 +805,7 @@ mod tests {
         let workflow_file = storage.workflow_file();
         let mut state = storage.load_workflow_state().unwrap();
         state.active_epic = Some("DIFFERENT".to_string());
-        fs::write(
-            &workflow_file,
-            serde_json::to_string(&state).unwrap(),
-        )
-        .unwrap();
+        fs::write(&workflow_file, serde_json::to_string(&state).unwrap()).unwrap();
 
         // Second call - should return cached value (not file value)
         let active2 = storage.get_active_epic().unwrap();
@@ -872,10 +862,7 @@ mod tests {
         // Create 50 epics
         let mut tasks = HashMap::new();
         for i in 0..50 {
-            tasks.insert(
-                format!("EPIC-{}", i),
-                Epic::new(format!("EPIC-{}", i)),
-            );
+            tasks.insert(format!("EPIC-{}", i), Epic::new(format!("EPIC-{}", i)));
         }
         storage.save_tasks(&tasks).unwrap();
 
