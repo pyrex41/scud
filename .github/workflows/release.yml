@@ -55,7 +55,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
           path: scud-cli/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
@@ -64,11 +64,13 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
