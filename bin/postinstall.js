@@ -21,7 +21,6 @@ function getPlatformInfo() {
     'darwin-x64': 'scud-macos-x64',
     'darwin-arm64': 'scud-macos-arm64',
     'linux-x64': 'scud-linux-x64',
-    'linux-arm64': 'scud-linux-arm64',
     'win32-x64': 'scud-windows-x64.exe',
   };
 
