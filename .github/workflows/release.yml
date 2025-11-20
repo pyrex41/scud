@@ -77,10 +77,16 @@ jobs:
 
       - name: Upload Release Assets
         run: |
-          for asset in ./artifacts/*/scud*; do
-            asset_name=$(basename $(dirname $asset))
-            echo "Uploading $asset as $asset_name"
-            gh release upload ${{ github.ref_name }} "$asset#$asset_name" --clobber
+          for asset_dir in ./artifacts/*; do
+            if [ -d "$asset_dir" ]; then
+              asset_name=$(basename "$asset_dir")
+              asset_file=$(find "$asset_dir" -type f -name "scud*" | head -1)
+              if [ -n "$asset_file" ]; then
+                echo "Uploading $asset_file as $asset_name"
+                cp "$asset_file" "./$asset_name"
+                gh release upload ${{ github.ref_name }} "./$asset_name" --clobber
+              fi
+            fi
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
