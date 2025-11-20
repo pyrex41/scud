@@ -1,5 +1,5 @@
 {
-  "name": "scud",
+  "name": "scud-task",
   "version": "1.0.0",
   "description": "Sprint Cycle Unified Development - Lightweight workflow orchestration for building software with Task Master and AI agents",
   "main": "src/validators/taskmaster-validator.js",
@@ -22,25 +22,29 @@
     "scrum",
     "claude-code"
   ],
-  "author": "Your Name",
+  "author": "pyrex41",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/scud.git"
+    "url": "https://github.com/pyrex41/scud.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/scud/issues"
+    "url": "https://github.com/pyrex41/scud/issues"
   },
-  "homepage": "https://github.com/yourusername/scud#readme",
+  "homepage": "https://github.com/pyrex41/scud#readme",
   "engines": {
     "node": ">=16.0.0"
   },
   "files": [
     "bin/",
     "src/",
-    "scud-cli/",
-    ".claude/",
-    ".opencode/",
+    "scud-cli/Cargo.toml",
+    "scud-cli/src/",
+    ".claude/commands/",
+    ".claude/settings.local.json",
+    ".opencode/skills/",
+    ".opencode/taskmaster-commands.md",
+    ".opencode/package.json",
     "README.md",
     "QUICKSTART.md",
     "COMPLETE_GUIDE.md",

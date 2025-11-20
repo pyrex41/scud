@@ -14,14 +14,9 @@ node_modules/
 
 # Project-specific (not needed in package)
 .taskmaster/
-docs/prd/
-docs/epics/
-docs/architecture/
-docs/retrospectives/
+docs/
 log_docs/
-
-# Keep only documentation templates
-!docs/.gitkeep
+repomix-output.xml
 
 # Installation scripts (already in project)
 install-claude-code.sh
@@ -30,15 +25,8 @@ install-opencode.sh
 # Rust build artifacts
 scud-cli/target/
 
-# Keep these for the package
-!bin/
-!src/
-!scud-cli/
-!.claude/
-!.opencode/
-!README.md
-!QUICKSTART.md
-!COMPLETE_GUIDE.md
-!QUICK_REFERENCE.md
-!PARALLEL_FEATURES.md
-!LICENSE
+# MCP server (separate package)
+scud-mcp/
+
+# OpenCode node_modules
+.opencode/node_modules/
