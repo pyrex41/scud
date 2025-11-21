@@ -121,6 +121,9 @@ function buildFromSource() {
 }
 
 async function main() {
+  // Detect if running under Bun and postinstall was skipped
+  const isBun = process.versions.bun !== undefined;
+
   try {
     const { assetName, binaryName, platform, arch } = getPlatformInfo();
 
@@ -141,7 +144,15 @@ async function main() {
       if (!buildFromSource()) {
         console.log('\n⚠️  SCUD installed with limited functionality');
         console.log('   Some commands (tags, list, parse-prd, etc.) require the Rust CLI');
-        console.log('   Install Rust and run: cd scud-cli && cargo build --release');
+
+        if (isBun) {
+          console.log('\n💡 Bun detected: Postinstall scripts are blocked by default.');
+          console.log('   To fix this, run: npm install -g scud-task');
+          console.log('   Or manually download the binary from:');
+          console.log('   https://github.com/pyrex41/scud/releases/latest');
+        } else {
+          console.log('   Install Rust and run: cd scud-cli && cargo build --release');
+        }
       }
     }
 

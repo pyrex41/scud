@@ -11,10 +11,23 @@ A lightweight task management system that guides you through structured developm
 ## Quick Start
 
 ### Install
+
+**Using npm (recommended):**
 ```bash
-npm install -g scud
+npm install -g scud-task
 cd your-project
 scud init
+```
+
+**Using Bun:**
+```bash
+# Bun blocks postinstall scripts by default
+npm install -g scud-task
+
+# Or if you prefer Bun, you'll need to manually run the postinstall:
+bun install -g scud-task
+cd ~/.bun/install/global/node_modules/scud-task
+node bin/postinstall.js
 ```
 
 ### Use with Claude Code
@@ -44,7 +57,7 @@ SCUD offers two ways to work with AI assistants, each with different trade-offs:
 
 **Setup:**
 ```bash
-npm install -g scud
+npm install -g scud-task
 cd your-project
 scud init
 
