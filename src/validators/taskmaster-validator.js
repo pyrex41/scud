@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * BMAD-TM Validator
+ * SCUD Validator
  *
  * Validates Task Master state and enforces workflow rules.
  * Used by slash commands to ensure correct workflow usage.

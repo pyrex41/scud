@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * BMAD-TM Lite Installation Script
+ * SCUD Installation Script
  * Handles initialization and setup in user projects
  */
 
@@ -35,7 +35,7 @@ function checkTaskMaster() {
 }
 
 function initProject() {
-  log('\n🚀 Initializing BMAD-TM Lite in your project\n', 'blue');
+  log('\n🚀 Initializing SCUD in your project\n', 'blue');
 
   // Check Task Master
   log('Step 1: Checking Task Master CLI...', 'blue');
@@ -80,31 +80,31 @@ function initProject() {
         ideation: {
           status: 'active',
           completed_at: null,
-          agent: 'tm-pm',
+          agent: 'scud-pm',
           description: 'Product definition and PRD creation'
         },
         planning: {
           status: 'pending',
           completed_at: null,
-          agent: 'tm-sm',
+          agent: 'scud-sm',
           description: 'Epic parsing and task breakdown'
         },
         architecture: {
           status: 'pending',
           completed_at: null,
-          agent: 'tm-architect',
+          agent: 'scud-architect',
           description: 'Technical design and architecture planning'
         },
         implementation: {
           status: 'pending',
           completed_at: null,
-          agent: 'tm-dev',
+          agent: 'scud-dev',
           description: 'Task execution and development'
         },
         retrospective: {
           status: 'pending',
           completed_at: null,
-          agent: 'tm-retrospective',
+          agent: 'scud-retrospective',
           description: 'Post-epic analysis and learning capture'
         }
       },
@@ -139,11 +139,11 @@ function initProject() {
     copyDir(sourceCommands, targetCommands);
     log('✓ Slash commands installed to .claude/commands/', 'green');
     log('  • /status', 'blue');
-    log('  • /tm-pm', 'blue');
-    log('  • /tm-sm', 'blue');
-    log('  • /tm-architect', 'blue');
-    log('  • /tm-dev', 'blue');
-    log('  • /tm-retrospective', 'blue');
+    log('  • /scud-pm', 'blue');
+    log('  • /scud-sm', 'blue');
+    log('  • /scud-architect', 'blue');
+    log('  • /scud-dev', 'blue');
+    log('  • /scud-retrospective', 'blue');
   } else {
     log('⚠ Could not find source commands', 'yellow');
   }
@@ -151,7 +151,7 @@ function initProject() {
   // Create .gitignore entry
   log('\nStep 6: Updating .gitignore...', 'blue');
   const gitignorePath = path.join(cwd, '.gitignore');
-  const gitignoreEntry = '\n# BMAD-TM Lite\n.taskmaster/\n';
+  const gitignoreEntry = '\n# SCUD\n.taskmaster/\n';
 
   if (fs.existsSync(gitignorePath)) {
     const content = fs.readFileSync(gitignorePath, 'utf8');
@@ -167,10 +167,10 @@ function initProject() {
   }
 
   // Success message
-  log('\n✅ BMAD-TM Lite initialized successfully!\n', 'green');
+  log('\n✅ SCUD initialized successfully!\n', 'green');
   log('Next steps:', 'blue');
-  log('  1. Run: bmad-tm status');
-  log('  2. Start with: /tm-pm (or use Claude Code slash command)\n');
+  log('  1. Run: scud status');
+  log('  2. Start with: /scud-pm (or use Claude Code slash command)\n');
 }
 
 function copyDir(src, dest) {
