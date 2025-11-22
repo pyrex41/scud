@@ -38,12 +38,12 @@ impl Config {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize config to TOML")?;
+        let content = toml::to_string_pretty(self).context("Failed to serialize config to TOML")?;
 
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create config directory: {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create config directory: {}", parent.display())
+            })?;
         }
 
         fs::write(path, content)
@@ -113,13 +113,22 @@ mod tests {
         let mut config = Config::default();
 
         config.llm.provider = "anthropic".to_string();
-        assert_eq!(config.api_endpoint(), "https://api.anthropic.com/v1/messages");
+        assert_eq!(
+            config.api_endpoint(),
+            "https://api.anthropic.com/v1/messages"
+        );
 
         config.llm.provider = "xai".to_string();
-        assert_eq!(config.api_endpoint(), "https://api.x.ai/v1/chat/completions");
+        assert_eq!(
+            config.api_endpoint(),
+            "https://api.x.ai/v1/chat/completions"
+        );
 
         config.llm.provider = "openai".to_string();
-        assert_eq!(config.api_endpoint(), "https://api.openai.com/v1/chat/completions");
+        assert_eq!(
+            config.api_endpoint(),
+            "https://api.openai.com/v1/chat/completions"
+        );
     }
 
     #[test]
@@ -146,8 +155,14 @@ mod tests {
 
     #[test]
     fn test_default_models() {
-        assert_eq!(Config::default_model_for_provider("anthropic"), "claude-sonnet-4-20250514");
-        assert_eq!(Config::default_model_for_provider("xai"), "grok-code-fast-1");
+        assert_eq!(
+            Config::default_model_for_provider("anthropic"),
+            "claude-sonnet-4-20250514"
+        );
+        assert_eq!(
+            Config::default_model_for_provider("xai"),
+            "grok-code-fast-1"
+        );
         assert_eq!(Config::default_model_for_provider("openai"), "gpt-4-turbo");
     }
 }

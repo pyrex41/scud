@@ -20,14 +20,25 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     let (provider, model) = if let Some(provider_name) = provider_arg {
         // Non-interactive mode with command-line argument
         let provider = provider_name.to_lowercase();
-        if !matches!(provider.as_str(), "xai" | "anthropic" | "openai" | "openrouter") {
-            anyhow::bail!("Invalid provider: {}. Valid options: xai, anthropic, openai, openrouter", provider);
+        if !matches!(
+            provider.as_str(),
+            "xai" | "anthropic" | "openai" | "openrouter"
+        ) {
+            anyhow::bail!(
+                "Invalid provider: {}. Valid options: xai, anthropic, openai, openrouter",
+                provider
+            );
         }
         let model = Config::default_model_for_provider(&provider).to_string();
         (provider, model)
     } else {
         // Interactive mode - prompt for LLM provider
-        let providers = vec!["xAI (Grok)", "Anthropic (Claude)", "OpenAI (GPT)", "OpenRouter"];
+        let providers = vec![
+            "xAI (Grok)",
+            "Anthropic (Claude)",
+            "OpenAI (GPT)",
+            "OpenRouter",
+        ];
         let provider_selection = Select::new()
             .with_prompt("Select your LLM provider")
             .items(&providers)
@@ -38,7 +49,10 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             0 => ("xai", Config::default_model_for_provider("xai")),
             1 => ("anthropic", Config::default_model_for_provider("anthropic")),
             2 => ("openai", Config::default_model_for_provider("openai")),
-            3 => ("openrouter", Config::default_model_for_provider("openrouter")),
+            3 => (
+                "openrouter",
+                Config::default_model_for_provider("openrouter"),
+            ),
             _ => ("anthropic", Config::default_model_for_provider("anthropic")),
         };
 
@@ -60,7 +74,10 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     println!("  Provider: {}", config.llm.provider.yellow());
     println!("  Model: {}", config.llm.model.yellow());
     println!("\n{}", "Environment variable required:".blue());
-    println!("  export {}=your-api-key", config.api_key_env_var().yellow());
+    println!(
+        "  export {}=your-api-key",
+        config.api_key_env_var().yellow()
+    );
     println!("\n{}", "Next steps:".blue());
     println!("  1. Set your API key environment variable");
     println!("  2. Run: scud tags");

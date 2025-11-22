@@ -70,8 +70,9 @@ impl LLMClient {
         let storage = Storage::new(None);
         let config = storage.load_config()?;
 
-        let api_key = env::var(config.api_key_env_var())
-            .with_context(|| format!("{} environment variable not set", config.api_key_env_var()))?;
+        let api_key = env::var(config.api_key_env_var()).with_context(|| {
+            format!("{} environment variable not set", config.api_key_env_var())
+        })?;
 
         Ok(LLMClient {
             config,
@@ -84,8 +85,9 @@ impl LLMClient {
         let storage = Storage::new(Some(project_root));
         let config = storage.load_config()?;
 
-        let api_key = env::var(config.api_key_env_var())
-            .with_context(|| format!("{} environment variable not set", config.api_key_env_var()))?;
+        let api_key = env::var(config.api_key_env_var()).with_context(|| {
+            format!("{} environment variable not set", config.api_key_env_var())
+        })?;
 
         Ok(LLMClient {
             config,
@@ -168,18 +170,24 @@ impl LLMClient {
             .json(&request)
             .send()
             .await
-            .with_context(|| format!("Failed to send request to {} API", self.config.llm.provider))?;
+            .with_context(|| {
+                format!("Failed to send request to {} API", self.config.llm.provider)
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("{} API error ({}): {}", self.config.llm.provider, status, error_text);
+            anyhow::bail!(
+                "{} API error ({}): {}",
+                self.config.llm.provider,
+                status,
+                error_text
+            );
         }
 
-        let api_response: OpenAIResponse = response
-            .json()
-            .await
-            .with_context(|| format!("Failed to parse {} API response", self.config.llm.provider))?;
+        let api_response: OpenAIResponse = response.json().await.with_context(|| {
+            format!("Failed to parse {} API response", self.config.llm.provider)
+        })?;
 
         Ok(api_response
             .choices
