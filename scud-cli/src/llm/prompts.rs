@@ -106,7 +106,7 @@ Description: {}{}
 Break this task down into approximately {} subtasks based on its complexity.
 
 Create subtasks that:
-- Each have complexity ≤ 8 (ideally ≤ 5)
+- Are small, focused, and independently completable
 - Are independently testable
 - Have clear dependencies between them
 - Cover all aspects of the original task
@@ -118,8 +118,7 @@ Return a JSON array of subtasks:
     "title": "Subtask name",
     "description": "What needs to be done",
     "priority": "high|medium|low",
-    "complexity": <1-8>,
-    "dependencies": []  // IDs of other subtasks this depends on
+    "dependencies": []  // Numbers (1, 2, 3) for subtask dependencies, or task IDs for external dependencies
   }}
 ]
 
@@ -129,8 +128,9 @@ Guidelines:
 - Then add UI/API layers
 - Finally add tests and documentation
 - Each subtask should be independently completable
-- Use dependencies to enforce correct order
+- Use dependencies to enforce correct order (e.g., [1] means depends on first subtask)
 - Aim for {} subtasks total (can vary by 1-2 if needed for logical breakdown)
+- DO NOT include "complexity" field - subtasks are all assumed to be small and manageable
 
 Return ONLY the JSON array, no additional explanation."#,
             complexity, task_title, task_description, context, recommended_subtasks, recommended_subtasks

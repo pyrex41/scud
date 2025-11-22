@@ -12,8 +12,8 @@ use crate::storage::Storage;
 struct ExpandedTask {
     title: String,
     description: String,
+    #[serde(default)]
     priority: String,
-    complexity: u32,
     #[serde(default)]
     dependencies: Vec<String>,
 }
@@ -95,7 +95,40 @@ pub async fn run(
             recommended_subtasks,
         );
 
-        let expanded_tasks: Vec<ExpandedTask> = client.complete_json(&prompt).await?;
+        // Retry logic for LLM calls
+        let mut expanded_tasks: Option<Vec<ExpandedTask>> = None;
+        let mut last_error = None;
+
+        for attempt in 1..=3 {
+            match client.complete_json::<Vec<ExpandedTask>>(&prompt).await {
+                Ok(tasks) => {
+                    expanded_tasks = Some(tasks);
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < 3 {
+                        spinner.set_message(format!(
+                            "Expanding task {} (attempt {}/3): {}",
+                            id, attempt + 1, task.title
+                        ));
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                }
+            }
+        }
+
+        let expanded_tasks = match expanded_tasks {
+            Some(tasks) => tasks,
+            None => {
+                spinner.finish_with_message(format!(
+                    "{} Task {} failed after 3 attempts",
+                    "✗".red(),
+                    id.cyan()
+                ));
+                return Err(last_error.unwrap());
+            }
+        };
 
         spinner.finish_with_message(format!(
             "{} Task {} expanded into {} subtasks",
@@ -104,23 +137,22 @@ pub async fn run(
             expanded_tasks.len()
         ));
 
-        // Get the highest current task ID to start numbering from
-        let max_id: u32 = epic
-            .tasks
-            .iter()
-            .filter_map(|t| t.id.parse::<u32>().ok())
-            .max()
-            .unwrap_or(0);
+        // Clone parent task priority before the loop
+        let parent_priority = task.priority.clone();
 
-        // Create new subtasks
+        // Create new subtasks with nested IDs (e.g., 1.1, 1.2, 1.3)
         let mut new_subtask_ids = Vec::new();
         for (idx, expanded) in expanded_tasks.iter().enumerate() {
-            let new_id = (max_id + idx as u32 + 1).to_string();
+            let new_id = format!("{}.{}", id, idx + 1);
 
-            let priority = match expanded.priority.to_lowercase().as_str() {
-                "high" => Priority::High,
-                "low" => Priority::Low,
-                _ => Priority::Medium,
+            let priority = if !expanded.priority.is_empty() {
+                match expanded.priority.to_lowercase().as_str() {
+                    "high" => Priority::High,
+                    "low" => Priority::Low,
+                    _ => Priority::Medium,
+                }
+            } else {
+                parent_priority.clone()
             };
 
             let mut new_task = Task::new(
@@ -128,18 +160,23 @@ pub async fn run(
                 expanded.title.clone(),
                 expanded.description.clone(),
             );
-            new_task.complexity = expanded.complexity;
             new_task.priority = priority;
+            new_task.complexity = 0; // Subtasks don't have complexity
 
-            // Map dependency references
-            // If dependencies refer to indices in the expanded array, map them to actual IDs
+            // Map dependency references to nested IDs
             new_task.dependencies = expanded
                 .dependencies
                 .iter()
                 .filter_map(|dep| {
+                    // If dependency is a number, it refers to a subtask index
                     if let Ok(dep_idx) = dep.parse::<usize>() {
-                        new_subtask_ids.get(dep_idx).cloned()
+                        if dep_idx > 0 && dep_idx <= idx + 1 {
+                            Some(format!("{}.{}", id, dep_idx))
+                        } else {
+                            None
+                        }
                     } else {
+                        // Otherwise it's a task ID reference
                         Some(dep.clone())
                     }
                 })
@@ -149,11 +186,10 @@ pub async fn run(
             epic.add_task(new_task);
 
             println!(
-                "  {} Created subtask {}: {} [complexity: {}]",
+                "  {} Created subtask {}: {}",
                 "+".green(),
                 new_id.cyan(),
-                expanded.title,
-                expanded.complexity.to_string().yellow()
+                expanded.title
             );
         }
 
