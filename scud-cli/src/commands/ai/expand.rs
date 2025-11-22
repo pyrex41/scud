@@ -49,7 +49,10 @@ pub async fn run(
     };
 
     if task_ids.is_empty() {
-        println!("{}", "No tasks need expansion (all complexity <3 or already expanded)".green());
+        println!(
+            "{}",
+            "No tasks need expansion (all complexity <3 or already expanded)".green()
+        );
         return Ok(());
     }
 
@@ -110,7 +113,9 @@ pub async fn run(
                     if attempt < 3 {
                         spinner.set_message(format!(
                             "Expanding task {} (attempt {}/3): {}",
-                            id, attempt + 1, task.title
+                            id,
+                            attempt + 1,
+                            task.title
                         ));
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     }

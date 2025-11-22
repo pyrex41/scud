@@ -107,12 +107,14 @@ pub fn set_provider(
         );
     } else {
         println!("{}", "Using Claude CLI (no API key required)".green());
-        println!("{}", "Make sure 'claude' command is available in your PATH".blue());
+        println!(
+            "{}",
+            "Make sure 'claude' command is available in your PATH".blue()
+        );
     }
 
     Ok(())
 }
-
 
 pub fn set_research_model(project_root: Option<PathBuf>, model: Option<String>) -> Result<()> {
     let storage = Storage::new(project_root);

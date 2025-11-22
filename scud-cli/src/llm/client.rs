@@ -108,16 +108,30 @@ impl LLMClient {
         self.complete_with_model(prompt, None).await
     }
 
-    pub async fn complete_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+    pub async fn complete_with_model(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         match self.config.llm.provider.as_str() {
             "claude-cli" => self.complete_claude_cli(prompt, model_override).await,
-            "anthropic" => self.complete_anthropic_with_model(prompt, model_override).await,
-            "xai" | "openai" | "openrouter" => self.complete_openai_compatible_with_model(prompt, model_override).await,
+            "anthropic" => {
+                self.complete_anthropic_with_model(prompt, model_override)
+                    .await
+            }
+            "xai" | "openai" | "openrouter" => {
+                self.complete_openai_compatible_with_model(prompt, model_override)
+                    .await
+            }
             _ => anyhow::bail!("Unsupported provider: {}", self.config.llm.provider),
         }
     }
 
-    async fn complete_anthropic_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+    async fn complete_anthropic_with_model(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         let model = model_override.unwrap_or(&self.config.llm.model);
         let request = AnthropicRequest {
             model: model.to_string(),
@@ -157,7 +171,11 @@ impl LLMClient {
             .unwrap_or_default())
     }
 
-    async fn complete_openai_compatible_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+    async fn complete_openai_compatible_with_model(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         let model = model_override.unwrap_or(&self.config.llm.model);
         let request = OpenAIRequest {
             model: model.to_string(),
@@ -237,7 +255,11 @@ impl LLMClient {
         serde_json::from_str(json_str).context("Failed to parse JSON from LLM response")
     }
 
-    async fn complete_claude_cli(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+    async fn complete_claude_cli(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         use std::process::Stdio;
         use tokio::io::AsyncWriteExt;
         use tokio::process::Command;
@@ -279,16 +301,16 @@ impl LLMClient {
         }
 
         // Parse JSON output
-        let stdout = String::from_utf8(output.stdout)
-            .context("Claude CLI output is not valid UTF-8")?;
+        let stdout =
+            String::from_utf8(output.stdout).context("Claude CLI output is not valid UTF-8")?;
 
         #[derive(Deserialize)]
         struct ClaudeCliResponse {
             result: String,
         }
 
-        let response: ClaudeCliResponse = serde_json::from_str(&stdout)
-            .context("Failed to parse Claude CLI JSON response")?;
+        let response: ClaudeCliResponse =
+            serde_json::from_str(&stdout).context("Failed to parse Claude CLI JSON response")?;
 
         Ok(response.result)
     }

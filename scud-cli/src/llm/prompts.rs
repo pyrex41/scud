@@ -133,7 +133,12 @@ Guidelines:
 - DO NOT include "complexity" field - subtasks are all assumed to be small and manageable
 
 Return ONLY the JSON array, no additional explanation."#,
-            complexity, task_title, task_description, context, recommended_subtasks, recommended_subtasks
+            complexity,
+            task_title,
+            task_description,
+            context,
+            recommended_subtasks,
+            recommended_subtasks
         )
     }
 
