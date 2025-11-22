@@ -1,3 +1,7 @@
 
 # SCUD
 .taskmaster/
+
+# npm
+*.tgz
+node_modules/

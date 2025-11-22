@@ -1,0 +1,46 @@
+{
+  "name": "@pyrex/scud",
+  "version": "1.2.0",
+  "description": "Fast, simple task master for AI-driven development - BMAD-TM workflow automation",
+  "main": "index.js",
+  "bin": {
+    "scud": "./bin/scud"
+  },
+  "scripts": {
+    "install": "node install.js",
+    "build": "cargo build --release",
+    "test": "cargo test"
+  },
+  "keywords": [
+    "task-management",
+    "ai",
+    "development",
+    "workflow",
+    "automation",
+    "bmad-tm",
+    "cli"
+  ],
+  "author": "SCUD Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pyrex41/scud.git"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "files": [
+    "bin/",
+    "install.js",
+    "index.js",
+    "README.md",
+    "Cargo.toml",
+    "Cargo.lock",
+    "src/"
+  ]
+}
