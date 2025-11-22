@@ -151,6 +151,7 @@ mod tests {
                 provider: "xai".to_string(),
                 model: "grok-code-fast-1".to_string(),
                 max_tokens: 8192,
+                research_model: None,
             },
         };
 

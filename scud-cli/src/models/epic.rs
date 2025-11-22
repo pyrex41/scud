@@ -410,7 +410,9 @@ mod tests {
 
         let needing_expansion = epic.get_tasks_needing_expansion();
 
-        assert_eq!(needing_expansion.len(), 2); // TASK-3 and TASK-4 (complexity > 13)
+        assert_eq!(needing_expansion.len(), 4); // All tasks with complexity >= 3
+        assert!(needing_expansion.iter().any(|t| t.id == "TASK-1"));
+        assert!(needing_expansion.iter().any(|t| t.id == "TASK-2"));
         assert!(needing_expansion.iter().any(|t| t.id == "TASK-3"));
         assert!(needing_expansion.iter().any(|t| t.id == "TASK-4"));
     }

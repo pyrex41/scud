@@ -592,14 +592,29 @@ mod tests {
     fn test_needs_expansion() {
         let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
 
-        task.complexity = 8;
+        // Complexity < 3 should not need expansion
+        task.complexity = 1;
         assert!(!task.needs_expansion());
 
-        task.complexity = 13;
+        task.complexity = 2;
         assert!(!task.needs_expansion());
+
+        // Complexity >= 3 should need expansion
+        task.complexity = 3;
+        assert!(task.needs_expansion());
+
+        task.complexity = 8;
+        assert!(task.needs_expansion());
+
+        task.complexity = 13;
+        assert!(task.needs_expansion());
 
         task.complexity = 21;
         assert!(task.needs_expansion());
+
+        // Already expanded tasks (marked with [PARENT]) should not need expansion
+        task.title = "[PARENT] Test".to_string();
+        assert!(!task.needs_expansion());
     }
 
     #[test]
