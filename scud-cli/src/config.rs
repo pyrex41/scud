@@ -60,8 +60,13 @@ impl Config {
             "xai" => "XAI_API_KEY",
             "openai" => "OPENAI_API_KEY",
             "openrouter" => "OPENROUTER_API_KEY",
+            "claude-cli" => "NONE", // Claude CLI doesn't need API key
             _ => "API_KEY",
         }
+    }
+
+    pub fn requires_api_key(&self) -> bool {
+        self.llm.provider != "claude-cli"
     }
 
     pub fn api_endpoint(&self) -> &str {
@@ -80,6 +85,7 @@ impl Config {
             "xai" => "grok-code-fast-1",
             "openai" => "gpt-4-turbo",
             "openrouter" => "anthropic/claude-sonnet-4",
+            "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
             _ => "claude-sonnet-4-20250514",
         }
     }

@@ -75,10 +75,10 @@ pub fn set_provider(
     let provider = provider.to_lowercase();
     if !matches!(
         provider.as_str(),
-        "xai" | "anthropic" | "openai" | "openrouter"
+        "xai" | "anthropic" | "openai" | "openrouter" | "claude-cli"
     ) {
         anyhow::bail!(
-            "Invalid provider: {}. Valid options: xai, anthropic, openai, openrouter",
+            "Invalid provider: {}. Valid options: xai, anthropic, openai, openrouter, claude-cli",
             provider
         );
     }
@@ -98,11 +98,17 @@ pub fn set_provider(
     println!("  {}: {}", "Provider".yellow(), config.llm.provider);
     println!("  {}: {}", "Model".yellow(), config.llm.model);
     println!();
-    println!("{}", "Remember to set your API key:".blue());
-    println!(
-        "  export {}=your-api-key",
-        config.api_key_env_var().yellow()
-    );
+
+    if config.requires_api_key() {
+        println!("{}", "Remember to set your API key:".blue());
+        println!(
+            "  export {}=your-api-key",
+            config.api_key_env_var().yellow()
+        );
+    } else {
+        println!("{}", "Using Claude CLI (no API key required)".green());
+        println!("{}", "Make sure 'claude' command is available in your PATH".blue());
+    }
 
     Ok(())
 }

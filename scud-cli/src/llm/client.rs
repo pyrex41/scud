@@ -70,9 +70,13 @@ impl LLMClient {
         let storage = Storage::new(None);
         let config = storage.load_config()?;
 
-        let api_key = env::var(config.api_key_env_var()).with_context(|| {
-            format!("{} environment variable not set", config.api_key_env_var())
-        })?;
+        let api_key = if config.requires_api_key() {
+            env::var(config.api_key_env_var()).with_context(|| {
+                format!("{} environment variable not set", config.api_key_env_var())
+            })?
+        } else {
+            String::new() // Claude CLI doesn't need API key
+        };
 
         Ok(LLMClient {
             config,
@@ -85,9 +89,13 @@ impl LLMClient {
         let storage = Storage::new(Some(project_root));
         let config = storage.load_config()?;
 
-        let api_key = env::var(config.api_key_env_var()).with_context(|| {
-            format!("{} environment variable not set", config.api_key_env_var())
-        })?;
+        let api_key = if config.requires_api_key() {
+            env::var(config.api_key_env_var()).with_context(|| {
+                format!("{} environment variable not set", config.api_key_env_var())
+            })?
+        } else {
+            String::new() // Claude CLI doesn't need API key
+        };
 
         Ok(LLMClient {
             config,
@@ -102,6 +110,7 @@ impl LLMClient {
 
     pub async fn complete_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
         match self.config.llm.provider.as_str() {
+            "claude-cli" => self.complete_claude_cli(prompt, model_override).await,
             "anthropic" => self.complete_anthropic_with_model(prompt, model_override).await,
             "xai" | "openai" | "openrouter" => self.complete_openai_compatible_with_model(prompt, model_override).await,
             _ => anyhow::bail!("Unsupported provider: {}", self.config.llm.provider),
@@ -234,5 +243,61 @@ impl LLMClient {
         };
 
         serde_json::from_str(json_str).context("Failed to parse JSON from LLM response")
+    }
+
+    async fn complete_claude_cli(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+        use std::process::Stdio;
+        use tokio::io::AsyncWriteExt;
+        use tokio::process::Command;
+
+        let model = model_override.unwrap_or(&self.config.llm.model);
+
+        // Build the claude command
+        let mut cmd = Command::new("claude");
+        cmd.arg("-p") // Print mode (headless)
+            .arg("--output-format")
+            .arg("json")
+            .arg("--model")
+            .arg(model)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // Spawn the process
+        let mut child = cmd.spawn().context("Failed to spawn 'claude' command. Make sure Claude Code is installed and 'claude' is in your PATH")?;
+
+        // Write prompt to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(prompt.as_bytes())
+                .await
+                .context("Failed to write prompt to claude stdin")?;
+            drop(stdin); // Close stdin
+        }
+
+        // Wait for completion
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for claude command")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Claude CLI error: {}", stderr);
+        }
+
+        // Parse JSON output
+        let stdout = String::from_utf8(output.stdout)
+            .context("Claude CLI output is not valid UTF-8")?;
+
+        #[derive(Deserialize)]
+        struct ClaudeCliResponse {
+            result: String,
+        }
+
+        let response: ClaudeCliResponse = serde_json::from_str(&stdout)
+            .context("Failed to parse Claude CLI JSON response")?;
+
+        Ok(response.result)
     }
 }
