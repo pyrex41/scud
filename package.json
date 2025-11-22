@@ -1,6 +1,6 @@
 {
   "name": "scud-task",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Sprint Cycle Unified Development - Lightweight workflow orchestration for building software with Task Master and AI agents",
   "main": "src/validators/taskmaster-validator.js",
   "bin": {
@@ -40,6 +40,7 @@
     "src/",
     "scud-cli/Cargo.toml",
     "scud-cli/src/",
+    "scud-cli/PROVIDERS.md",
     ".claude/commands/",
     ".claude/settings.local.json",
     ".opencode/skills/",
