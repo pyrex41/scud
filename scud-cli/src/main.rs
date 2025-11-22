@@ -3,6 +3,22 @@ use clap::{Parser, Subcommand};
 use scud::commands;
 use std::path::PathBuf;
 
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// Show current configuration
+    Show,
+
+    /// Set LLM provider
+    SetProvider {
+        /// Provider name (xai, anthropic, openai, openrouter)
+        provider: String,
+
+        /// Optional model name (defaults to provider's default)
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+}
+
 #[derive(Parser)]
 #[command(name = "scud")]
 #[command(about = "Fast, simple task master for AI-driven development", long_about = None)]
@@ -60,6 +76,12 @@ enum Commands {
 
     /// Show epic statistics
     Stats,
+
+    /// Configuration management
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
 
     /// Parse PRD/epic markdown into tasks (AI-powered)
     ParsePrd {
@@ -176,6 +198,12 @@ async fn main() -> Result<()> {
         }
         Commands::Next => commands::next::run(cli.project),
         Commands::Stats => commands::stats::run(cli.project),
+        Commands::Config { command } => match command {
+            ConfigCommands::Show => commands::config::show(cli.project),
+            ConfigCommands::SetProvider { provider, model } => {
+                commands::config::set_provider(cli.project, &provider, model)
+            }
+        },
         Commands::ParsePrd { file, tag } => {
             commands::ai::parse_prd::run(cli.project, &file, &tag).await
         }
