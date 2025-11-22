@@ -26,17 +26,27 @@ try {
     cwd: __dirname
   });
 
-  // Create bin directory
-  const binDir = path.join(__dirname, 'bin');
-  if (!fs.existsSync(binDir)) {
-    fs.mkdirSync(binDir, { recursive: true });
-  }
-
   // Copy binary to bin directory
+  const binDir = path.join(__dirname, 'bin');
   const binaryName = platform === 'win32' ? 'scud.exe' : 'scud';
   const sourcePath = path.join(__dirname, 'target', 'release', binaryName);
   const destPath = path.join(binDir, binaryName);
 
+  // Create bin directory if it doesn't exist
+  if (!fs.existsSync(binDir)) {
+    fs.mkdirSync(binDir, { recursive: true });
+  }
+
+  // Remove the Node.js stub if it exists
+  const stubPath = path.join(binDir, 'scud');
+  if (fs.existsSync(stubPath)) {
+    const stubContent = fs.readFileSync(stubPath, 'utf8');
+    if (stubContent.includes('node') || stubContent.includes('require')) {
+      fs.unlinkSync(stubPath);
+    }
+  }
+
+  // Copy the compiled binary
   fs.copyFileSync(sourcePath, destPath);
 
   // Make executable on Unix-like systems

@@ -1,6 +1,6 @@
 {
   "name": "@pyrex/scud",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Fast, simple task master for AI-driven development - BMAD-TM workflow automation",
   "main": "index.js",
   "bin": {
@@ -35,7 +35,6 @@
     "win32"
   ],
   "files": [
-    "bin/",
     "install.js",
     "index.js",
     "README.md",
