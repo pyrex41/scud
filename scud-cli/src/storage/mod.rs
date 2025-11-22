@@ -7,6 +7,7 @@ use std::sync::RwLock;
 use std::thread;
 use std::time::Duration;
 
+use crate::config::Config;
 use crate::models::{Epic, WorkflowState};
 
 pub struct Storage {
@@ -116,6 +117,10 @@ impl Storage {
         self.taskmaster_dir().join("workflow-state.json")
     }
 
+    pub fn config_file(&self) -> PathBuf {
+        self.taskmaster_dir().join("config.toml")
+    }
+
     pub fn docs_dir(&self) -> PathBuf {
         self.project_root.join("docs")
     }
@@ -127,10 +132,21 @@ impl Storage {
     }
 
     pub fn initialize(&self) -> Result<()> {
+        let config = Config::default();
+        self.initialize_with_config(&config)
+    }
+
+    pub fn initialize_with_config(&self, config: &Config) -> Result<()> {
         // Create .taskmaster directory structure
         let taskmaster = self.taskmaster_dir();
         fs::create_dir_all(taskmaster.join("tasks"))
             .context("Failed to create .taskmaster/tasks directory")?;
+
+        // Initialize config.toml
+        let config_file = self.config_file();
+        if !config_file.exists() {
+            config.save(&config_file)?;
+        }
 
         // Initialize tasks.json with empty object
         let tasks_file = self.tasks_file();
@@ -157,6 +173,14 @@ impl Storage {
         self.update_gitignore()?;
 
         Ok(())
+    }
+
+    pub fn load_config(&self) -> Result<Config> {
+        let config_file = self.config_file();
+        if !config_file.exists() {
+            return Ok(Config::default());
+        }
+        Config::load(&config_file)
     }
 
     fn update_gitignore(&self) -> Result<()> {

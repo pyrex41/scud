@@ -27,6 +27,8 @@ colored = "2.1"
 indicatif = "0.17"
 dirs = "5.0"
 fs2 = "0.4"  # File locking for concurrent access
+toml = "0.8"  # TOML parsing for config files
+dialoguer = "0.11"  # Interactive CLI prompts
 
 [dev-dependencies]
 tempfile = "3.8"  # Temporary directories for tests

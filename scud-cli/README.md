@@ -81,7 +81,7 @@ scud stats
 
 ### AI Commands
 
-**Requires:** `ANTHROPIC_API_KEY` environment variable
+**Requires:** API key environment variable (see [Provider Configuration](#provider-configuration))
 
 ```bash
 # Parse PRD into tasks
@@ -108,29 +108,46 @@ scud research "OAuth 2.0 best practices"
 | Parse PRD | ~3-5s | ~2-3s | ~40% faster |
 | Token overhead | ~21k | ~500 | **42x reduction** |
 
-## Configuration
+## Provider Configuration
 
-### Environment Variables
+SCUD supports multiple LLM providers: **xAI (Grok)**, **Anthropic (Claude)**, **OpenAI (GPT)**, and **OpenRouter**.
 
-- `ANTHROPIC_API_KEY` - Required for AI commands
-- `SCUD_MODEL` - Optional, defaults to `claude-sonnet-4-20250514`
+### Quick Start
 
-### Config File (Future)
+```bash
+# Initialize with xAI (Grok) - recommended for fast code generation
+scud init --provider xai
+export XAI_API_KEY=your-key
 
-`.taskmaster/config.json`:
-```json
-{
-  "llm": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-20250514",
-    "api_key": "${ANTHROPIC_API_KEY}"
-  },
-  "defaults": {
-    "complexity_threshold": 13,
-    "auto_expand": false
-  }
-}
+# Or initialize with Anthropic (Claude)
+scud init --provider anthropic
+export ANTHROPIC_API_KEY=your-key
+
+# Interactive mode - prompt for provider
+scud init
 ```
+
+### Configuration File
+
+The configuration is stored in `.taskmaster/config.toml`:
+
+```toml
+[llm]
+provider = "xai"
+model = "grok-code-fast-1"
+max_tokens = 4096
+```
+
+For complete provider documentation, see [PROVIDERS.md](./PROVIDERS.md).
+
+### Supported Providers
+
+| Provider | Environment Variable | Default Model |
+|----------|---------------------|---------------|
+| xAI | `XAI_API_KEY` | `grok-code-fast-1` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4-turbo` |
+| OpenRouter | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
 
 ## Data Models
 

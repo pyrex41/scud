@@ -19,7 +19,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize SCUD in current directory
-    Init,
+    Init {
+        /// LLM provider to use (xai, anthropic, openai, openrouter)
+        #[arg(long)]
+        provider: Option<String>,
+    },
 
     /// List all epic tags
     Tags,
@@ -162,7 +166,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init => commands::init::run(cli.project),
+        Commands::Init { provider } => commands::init::run(cli.project, provider),
         Commands::Tags => commands::tags::run(cli.project),
         Commands::UseTag { tag } => commands::use_tag::run(cli.project, &tag),
         Commands::List { status } => commands::list::run(cli.project, status.as_deref()),

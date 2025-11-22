@@ -1,56 +1,112 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::path::PathBuf;
 
+use crate::config::Config;
+use crate::storage::Storage;
+
+// Anthropic API structures
 #[derive(Debug, Serialize)]
 struct AnthropicRequest {
     model: String,
     max_tokens: u32,
-    messages: Vec<Message>,
+    messages: Vec<AnthropicMessage>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Message {
+#[derive(Debug, Serialize)]
+struct AnthropicMessage {
     role: String,
     content: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct AnthropicResponse {
-    content: Vec<Content>,
+    content: Vec<AnthropicContent>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Content {
+struct AnthropicContent {
     text: String,
 }
 
-pub struct LLMClient {
-    api_key: String,
+// OpenAI-compatible API structures (used by xAI, OpenAI, OpenRouter)
+#[derive(Debug, Serialize)]
+struct OpenAIRequest {
     model: String,
+    max_tokens: u32,
+    messages: Vec<OpenAIMessage>,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAIMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIResponse {
+    choices: Vec<OpenAIChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIChoice {
+    message: OpenAIMessageResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIMessageResponse {
+    content: String,
+}
+
+pub struct LLMClient {
+    config: Config,
+    api_key: String,
     client: reqwest::Client,
 }
 
 impl LLMClient {
     pub fn new() -> Result<Self> {
-        let api_key = env::var("ANTHROPIC_API_KEY")
-            .context("ANTHROPIC_API_KEY environment variable not set")?;
+        let storage = Storage::new(None);
+        let config = storage.load_config()?;
 
-        let model =
-            env::var("SCUD_MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
+        let api_key = env::var(config.api_key_env_var())
+            .with_context(|| format!("{} environment variable not set", config.api_key_env_var()))?;
 
         Ok(LLMClient {
+            config,
             api_key,
-            model,
+            client: reqwest::Client::new(),
+        })
+    }
+
+    pub fn new_with_project_root(project_root: PathBuf) -> Result<Self> {
+        let storage = Storage::new(Some(project_root));
+        let config = storage.load_config()?;
+
+        let api_key = env::var(config.api_key_env_var())
+            .with_context(|| format!("{} environment variable not set", config.api_key_env_var()))?;
+
+        Ok(LLMClient {
+            config,
+            api_key,
             client: reqwest::Client::new(),
         })
     }
 
     pub async fn complete(&self, prompt: &str) -> Result<String> {
+        match self.config.llm.provider.as_str() {
+            "anthropic" => self.complete_anthropic(prompt).await,
+            "xai" | "openai" | "openrouter" => self.complete_openai_compatible(prompt).await,
+            _ => anyhow::bail!("Unsupported provider: {}", self.config.llm.provider),
+        }
+    }
+
+    async fn complete_anthropic(&self, prompt: &str) -> Result<String> {
         let request = AnthropicRequest {
-            model: self.model.clone(),
-            max_tokens: 4096,
-            messages: vec![Message {
+            model: self.config.llm.model.clone(),
+            max_tokens: self.config.llm.max_tokens,
+            messages: vec![AnthropicMessage {
                 role: "user".to_string(),
                 content: prompt.to_string(),
             }],
@@ -58,7 +114,7 @@ impl LLMClient {
 
         let response = self
             .client
-            .post("https://api.anthropic.com/v1/messages")
+            .post(self.config.api_endpoint())
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
@@ -82,6 +138,53 @@ impl LLMClient {
             .content
             .first()
             .map(|c| c.text.clone())
+            .unwrap_or_default())
+    }
+
+    async fn complete_openai_compatible(&self, prompt: &str) -> Result<String> {
+        let request = OpenAIRequest {
+            model: self.config.llm.model.clone(),
+            max_tokens: self.config.llm.max_tokens,
+            messages: vec![OpenAIMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            }],
+        };
+
+        let mut request_builder = self
+            .client
+            .post(self.config.api_endpoint())
+            .header("authorization", format!("Bearer {}", self.api_key))
+            .header("content-type", "application/json");
+
+        // OpenRouter requires additional headers
+        if self.config.llm.provider == "openrouter" {
+            request_builder = request_builder
+                .header("HTTP-Referer", "https://github.com/scud-cli")
+                .header("X-Title", "SCUD Task Master");
+        }
+
+        let response = request_builder
+            .json(&request)
+            .send()
+            .await
+            .with_context(|| format!("Failed to send request to {} API", self.config.llm.provider))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("{} API error ({}): {}", self.config.llm.provider, status, error_text);
+        }
+
+        let api_response: OpenAIResponse = response
+            .json()
+            .await
+            .with_context(|| format!("Failed to parse {} API response", self.config.llm.provider))?;
+
+        Ok(api_response
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
             .unwrap_or_default())
     }
 
