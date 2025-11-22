@@ -17,6 +17,12 @@ enum ConfigCommands {
         #[arg(short, long)]
         model: Option<String>,
     },
+
+    /// Set research-specific model (optional, overrides main model for research command)
+    SetResearchModel {
+        /// Model name (leave empty to clear and use main model)
+        model: Option<String>,
+    },
 }
 
 #[derive(Parser)]
@@ -202,6 +208,9 @@ async fn main() -> Result<()> {
             ConfigCommands::Show => commands::config::show(cli.project),
             ConfigCommands::SetProvider { provider, model } => {
                 commands::config::set_provider(cli.project, &provider, model)
+            }
+            ConfigCommands::SetResearchModel { model } => {
+                commands::config::set_research_model(cli.project, model)
             }
         },
         Commands::ParsePrd { file, tag } => {

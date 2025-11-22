@@ -97,16 +97,25 @@ impl LLMClient {
     }
 
     pub async fn complete(&self, prompt: &str) -> Result<String> {
+        self.complete_with_model(prompt, None).await
+    }
+
+    pub async fn complete_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
         match self.config.llm.provider.as_str() {
-            "anthropic" => self.complete_anthropic(prompt).await,
-            "xai" | "openai" | "openrouter" => self.complete_openai_compatible(prompt).await,
+            "anthropic" => self.complete_anthropic_with_model(prompt, model_override).await,
+            "xai" | "openai" | "openrouter" => self.complete_openai_compatible_with_model(prompt, model_override).await,
             _ => anyhow::bail!("Unsupported provider: {}", self.config.llm.provider),
         }
     }
 
     async fn complete_anthropic(&self, prompt: &str) -> Result<String> {
+        self.complete_anthropic_with_model(prompt, None).await
+    }
+
+    async fn complete_anthropic_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+        let model = model_override.unwrap_or(&self.config.llm.model);
         let request = AnthropicRequest {
-            model: self.config.llm.model.clone(),
+            model: model.to_string(),
             max_tokens: self.config.llm.max_tokens,
             messages: vec![AnthropicMessage {
                 role: "user".to_string(),
@@ -144,8 +153,13 @@ impl LLMClient {
     }
 
     async fn complete_openai_compatible(&self, prompt: &str) -> Result<String> {
+        self.complete_openai_compatible_with_model(prompt, None).await
+    }
+
+    async fn complete_openai_compatible_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+        let model = model_override.unwrap_or(&self.config.llm.model);
         let request = OpenAIRequest {
-            model: self.config.llm.model.clone(),
+            model: model.to_string(),
             max_tokens: self.config.llm.max_tokens,
             messages: vec![OpenAIMessage {
                 role: "user".to_string(),

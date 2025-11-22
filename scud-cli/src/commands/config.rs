@@ -21,6 +21,9 @@ pub fn show(project_root: Option<PathBuf>) -> Result<()> {
     println!("  {}: {}", "Provider".yellow(), config.llm.provider);
     println!("  {}: {}", "Model".yellow(), config.llm.model);
     println!("  {}: {}", "Max Tokens".yellow(), config.llm.max_tokens);
+    if let Some(research_model) = &config.llm.research_model {
+        println!("  {}: {}", "Research Model".yellow(), research_model);
+    }
     println!();
     println!("{}", "Environment Variable:".blue().bold());
     println!("  {}: {}", "Required".yellow(), config.api_key_env_var());
@@ -100,6 +103,40 @@ pub fn set_provider(
         "  export {}=your-api-key",
         config.api_key_env_var().yellow()
     );
+
+    Ok(())
+}
+
+
+pub fn set_research_model(project_root: Option<PathBuf>, model: Option<String>) -> Result<()> {
+    let storage = Storage::new(project_root);
+
+    if !storage.is_initialized() {
+        anyhow::bail!("SCUD is not initialized. Run: scud init");
+    }
+
+    let mut config = storage.load_config()?;
+
+    match model {
+        Some(m) => {
+            config.llm.research_model = Some(m.clone());
+            config.save(&storage.config_file())?;
+
+            println!("{}", "✅ Research model updated!".green().bold());
+            println!();
+            println!("  {}: {}", "Research Model".yellow(), m);
+            println!();
+            println!("{}", "Research tasks will now use this model.".blue());
+        }
+        None => {
+            config.llm.research_model = None;
+            config.save(&storage.config_file())?;
+
+            println!("{}", "✅ Research model cleared!".green().bold());
+            println!();
+            println!("{}", "Research tasks will use the main model.".blue());
+        }
+    }
 
     Ok(())
 }
