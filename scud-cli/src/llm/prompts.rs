@@ -91,18 +91,19 @@ Return ONLY the JSON object, no additional explanation."#,
         task_description: &str,
         complexity: u32,
         existing_details: Option<&str>,
+        recommended_subtasks: usize,
     ) -> String {
         let context = existing_details
             .map(|d| format!("\nExisting Technical Details:\n{}\n", d))
             .unwrap_or_default();
 
         format!(
-            r#"You are breaking down a complex task into smaller, manageable subtasks.
+            r#"You are breaking down a development task into smaller, manageable subtasks.
 
 Original Task (Complexity {}): {}
 Description: {}{}
 
-This task is too complex (>13 points) and needs to be broken down into smaller subtasks.
+Break this task down into approximately {} subtasks based on its complexity.
 
 Create subtasks that:
 - Each have complexity ≤ 8 (ideally ≤ 5)
@@ -127,11 +128,12 @@ Guidelines:
 - Then build core logic
 - Then add UI/API layers
 - Finally add tests and documentation
-- Each subtask should take at most 8 hours
+- Each subtask should be independently completable
 - Use dependencies to enforce correct order
+- Aim for {} subtasks total (can vary by 1-2 if needed for logical breakdown)
 
 Return ONLY the JSON array, no additional explanation."#,
-            complexity, task_title, task_description, context
+            complexity, task_title, task_description, context, recommended_subtasks, recommended_subtasks
         )
     }
 

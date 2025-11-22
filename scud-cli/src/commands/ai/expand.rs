@@ -45,11 +45,11 @@ pub async fn run(
             .map(|t| t.id.clone())
             .collect()
     } else {
-        anyhow::bail!("Specify a task ID or use --all to expand all tasks with complexity >13");
+        anyhow::bail!("Specify a task ID or use --all to expand all tasks with complexity ≥3");
     };
 
     if task_ids.is_empty() {
-        println!("{}", "No tasks need expansion (all complexity ≤13)".green());
+        println!("{}", "No tasks need expansion (all complexity <3 or already expanded)".green());
         return Ok(());
     }
 
@@ -61,14 +61,22 @@ pub async fn run(
             .ok_or_else(|| anyhow::anyhow!("Task {} not found", id))?;
 
         if !task.needs_expansion() {
+            let reason = if task.title.starts_with("[PARENT]") {
+                "already expanded"
+            } else {
+                "complexity too low"
+            };
             println!(
-                "{} Task {} doesn't need expansion (complexity: {})",
+                "{} Task {} doesn't need expansion ({}, complexity: {})",
                 "⊘".yellow(),
                 id.cyan(),
+                reason,
                 task.complexity
             );
             continue;
         }
+
+        let recommended_subtasks = task.recommended_subtasks();
 
         let spinner = ProgressBar::new_spinner();
         spinner.set_style(
@@ -84,6 +92,7 @@ pub async fn run(
             &task.description,
             task.complexity,
             task.details.as_deref(),
+            recommended_subtasks,
         );
 
         let expanded_tasks: Vec<ExpandedTask> = client.complete_json(&prompt).await?;

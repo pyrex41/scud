@@ -253,8 +253,28 @@ impl Task {
         })
     }
 
+    /// Returns whether this task should be expanded into subtasks
+    /// All tasks with complexity >= 3 can benefit from expansion
     pub fn needs_expansion(&self) -> bool {
-        self.complexity > 13
+        self.complexity >= 3 && !self.title.starts_with("[PARENT]")
+    }
+
+    /// Returns the recommended number of subtasks based on complexity
+    /// Complexity 1-2: 2 subtasks
+    /// Complexity 3: 2-3 subtasks
+    /// Complexity 5: 3-4 subtasks
+    /// Complexity 8: 4-5 subtasks
+    /// Complexity 13: 5-6 subtasks
+    /// Complexity 21+: 6-8 subtasks
+    pub fn recommended_subtasks(&self) -> usize {
+        match self.complexity {
+            0..=2 => 2,
+            3 => 3,
+            5 => 4,
+            8 => 5,
+            13 => 6,
+            _ => 8, // 21+
+        }
     }
 
     // Assignment and locking methods
