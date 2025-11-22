@@ -117,10 +117,6 @@ impl LLMClient {
         }
     }
 
-    async fn complete_anthropic(&self, prompt: &str) -> Result<String> {
-        self.complete_anthropic_with_model(prompt, None).await
-    }
-
     async fn complete_anthropic_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
         let model = model_override.unwrap_or(&self.config.llm.model);
         let request = AnthropicRequest {
@@ -159,10 +155,6 @@ impl LLMClient {
             .first()
             .map(|c| c.text.clone())
             .unwrap_or_default())
-    }
-
-    async fn complete_openai_compatible(&self, prompt: &str) -> Result<String> {
-        self.complete_openai_compatible_with_model(prompt, None).await
     }
 
     async fn complete_openai_compatible_with_model(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
