@@ -32,18 +32,19 @@ try {
   const sourcePath = path.join(__dirname, 'target', 'release', binaryName);
   const destPath = path.join(binDir, binaryName);
 
+  // Verify source binary exists
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`Compiled binary not found at: ${sourcePath}`);
+  }
+
   // Create bin directory if it doesn't exist
   if (!fs.existsSync(binDir)) {
     fs.mkdirSync(binDir, { recursive: true });
   }
 
-  // Remove the Node.js stub if it exists
-  const stubPath = path.join(binDir, 'scud');
-  if (fs.existsSync(stubPath)) {
-    const stubContent = fs.readFileSync(stubPath, 'utf8');
-    if (stubContent.includes('node') || stubContent.includes('require')) {
-      fs.unlinkSync(stubPath);
-    }
+  // Remove any existing binary (in case of reinstall)
+  if (fs.existsSync(destPath)) {
+    fs.unlinkSync(destPath);
   }
 
   // Copy the compiled binary
@@ -53,6 +54,8 @@ try {
   if (platform !== 'win32') {
     fs.chmodSync(destPath, 0o755);
   }
+
+  console.log(`✓ Binary installed at: ${destPath}`);
 
   console.log('✅ SCUD installed successfully!');
   console.log(`Run 'scud --help' to get started.`);
