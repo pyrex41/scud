@@ -118,7 +118,7 @@ Return a JSON array of subtasks:
     "title": "Subtask name",
     "description": "What needs to be done",
     "priority": "high|medium|low",
-    "dependencies": []  // Numbers (1, 2, 3) for subtask dependencies, or task IDs for external dependencies
+    "dependencies": []  // Array of strings: ["1", "2", "3"] for subtask dependencies, or ["TASK-123"] for external dependencies
   }}
 ]
 
@@ -128,7 +128,8 @@ Guidelines:
 - Then add UI/API layers
 - Finally add tests and documentation
 - Each subtask should be independently completable
-- Use dependencies to enforce correct order (e.g., [1] means depends on first subtask)
+- Use dependencies to enforce correct order (e.g., ["1"] means depends on first subtask)
+- Dependency values MUST be strings, not numbers
 - Aim for {} subtasks total (can vary by 1-2 if needed for logical breakdown)
 - DO NOT include "complexity" field - subtasks are all assumed to be small and manageable
 
