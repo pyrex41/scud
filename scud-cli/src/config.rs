@@ -78,7 +78,7 @@ impl Config {
     pub fn default_model_for_provider(provider: &str) -> &str {
         match provider {
             "anthropic" => "claude-sonnet-4-20250514",
-            "xai" => "grok-3-fast",
+            "xai" => "grok-4-1-fast-reasoning",
             "openai" => "gpt-4-turbo",
             "openrouter" => "anthropic/claude-sonnet-4",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
@@ -89,7 +89,7 @@ impl Config {
     /// Get suggested models for a provider (for display in init)
     pub fn suggested_models_for_provider(provider: &str) -> Vec<&str> {
         match provider {
-            "xai" => vec!["grok-3-fast", "grok-3", "grok-3-mini-fast", "grok-3-mini"],
+            "xai" => vec!["grok-4-1-fast-reasoning", "grok-4-1-fast", "grok-3-fast", "grok-3"],
             "anthropic" => vec![
                 "claude-sonnet-4-20250514",
                 "claude-opus-4-20250514",
@@ -184,7 +184,10 @@ mod tests {
             Config::default_model_for_provider("anthropic"),
             "claude-sonnet-4-20250514"
         );
-        assert_eq!(Config::default_model_for_provider("xai"), "grok-3-fast");
+        assert_eq!(
+            Config::default_model_for_provider("xai"),
+            "grok-4-1-fast-reasoning"
+        );
         assert_eq!(Config::default_model_for_provider("openai"), "gpt-4-turbo");
     }
 }
