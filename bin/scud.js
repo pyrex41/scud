@@ -19,8 +19,10 @@ const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', '
 // AI-powered commands (use Rust CLI)
 const aiCommands = ['parse-prd', 'analyze-complexity', 'expand', 'research'];
 
+const versionCommands = ['--version', '-V'];
+
 // All commands handled by Rust CLI
-const rustCommands = [...taskCommands, ...aiCommands];
+const rustCommands = [...taskCommands, ...aiCommands, ...versionCommands];
 
 const commands = {
   init: 'Initialize SCUD in current project',
