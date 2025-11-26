@@ -849,7 +849,7 @@ mod tests {
 
         // Set active epic
         let mut tasks = HashMap::new();
-        tasks.insert("TEST-1".to_string(), Epic::new("TEST-1".to_string()));
+        tasks.insert("TEST-1".to_string(), Phase::new("TEST-1".to_string()));
         storage.save_tasks(&tasks).unwrap();
         storage.set_active_group("TEST-1").unwrap();
 
@@ -878,8 +878,8 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         let mut tasks = HashMap::new();
-        tasks.insert("EPIC-1".to_string(), Epic::new("EPIC-1".to_string()));
-        tasks.insert("EPIC-2".to_string(), Epic::new("EPIC-2".to_string()));
+        tasks.insert("EPIC-1".to_string(), Phase::new("EPIC-1".to_string()));
+        tasks.insert("EPIC-2".to_string(), Phase::new("EPIC-2".to_string()));
         storage.save_tasks(&tasks).unwrap();
 
         storage.set_active_group("EPIC-1").unwrap();
@@ -918,7 +918,7 @@ mod tests {
         // Create 50 epics
         let mut tasks = HashMap::new();
         for i in 0..50 {
-            tasks.insert(format!("EPIC-{}", i), Epic::new(format!("EPIC-{}", i)));
+            tasks.insert(format!("EPIC-{}", i), Phase::new(format!("EPIC-{}", i)));
         }
         storage.save_tasks(&tasks).unwrap();
 
@@ -944,7 +944,7 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         let mut tasks = HashMap::new();
-        let mut epic = Epic::new("TEST-1".to_string());
+        let mut epic = Phase::new("TEST-1".to_string());
         epic.add_task(crate::models::Task::new(
             "task-1".to_string(),
             "Test".to_string(),
@@ -968,7 +968,7 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         let mut tasks = HashMap::new();
-        let mut epic = Epic::new("ACTIVE-1".to_string());
+        let mut epic = Phase::new("ACTIVE-1".to_string());
         epic.add_task(crate::models::Task::new(
             "task-1".to_string(),
             "Test".to_string(),
@@ -1002,8 +1002,8 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         let mut tasks = HashMap::new();
-        tasks.insert("EPIC-1".to_string(), Epic::new("EPIC-1".to_string()));
-        tasks.insert("EPIC-2".to_string(), Epic::new("EPIC-2".to_string()));
+        tasks.insert("EPIC-1".to_string(), Phase::new("EPIC-1".to_string()));
+        tasks.insert("EPIC-2".to_string(), Phase::new("EPIC-2".to_string()));
         storage.save_tasks(&tasks).unwrap();
 
         // Update only EPIC-1

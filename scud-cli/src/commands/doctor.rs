@@ -145,7 +145,7 @@ pub fn run(
         if all_tasks.contains_key(t) {
             vec![t.to_string()]
         } else {
-            anyhow::bail!("Epic '{}' not found", t);
+            anyhow::bail!("Phase '{}' not found", t);
         }
     } else {
         all_tasks.keys().cloned().collect()
@@ -420,7 +420,7 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
 
     // Print missing active epic
     if results.missing_active_epic {
-        println!("{}", "No Active Epic Set".yellow().bold());
+        println!("{}", "No Active Phase Set".yellow().bold());
         println!("{}", "-".repeat(40).yellow());
         println!("  {} No active epic/tag is set", "⚠".yellow());
         println!(
@@ -513,7 +513,7 @@ fn print_recovery_instructions() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::epic::Epic;
+    use crate::models::phase::Phase;
     use crate::models::task::Task;
 
     #[test]
@@ -573,41 +573,41 @@ mod tests {
         assert_eq!(Severity::Critical.as_str(), "CRITICAL");
     }
 
-    fn create_test_epic_with_issues() -> Epic {
-        let mut epic = Epic::new("test-epic".to_string());
+    fn create_test_phase_with_issues() -> Phase {
+        let mut phase = Phase::new("test-phase".to_string());
 
         // Task 1: Done
         let mut task1 = Task::new("1".to_string(), "Task 1".to_string(), "Desc".to_string());
         task1.set_status(TaskStatus::Done);
-        epic.add_task(task1);
+        phase.add_task(task1);
 
         // Task 2: Cancelled (will block task 3)
         let mut task2 = Task::new("2".to_string(), "Task 2".to_string(), "Desc".to_string());
         task2.set_status(TaskStatus::Cancelled);
-        epic.add_task(task2);
+        phase.add_task(task2);
 
         // Task 3: Pending, depends on cancelled task 2
         let mut task3 = Task::new("3".to_string(), "Task 3".to_string(), "Desc".to_string());
         task3.dependencies = vec!["2".to_string()];
-        epic.add_task(task3);
+        phase.add_task(task3);
 
         // Task 4: Pending, depends on non-existent task
         let mut task4 = Task::new("4".to_string(), "Task 4".to_string(), "Desc".to_string());
         task4.dependencies = vec!["nonexistent".to_string()];
-        epic.add_task(task4);
+        phase.add_task(task4);
 
-        epic
+        phase
     }
 
     #[test]
     fn test_detect_cancelled_dependency() {
-        let epic = create_test_epic_with_issues();
+        let phase = create_test_phase_with_issues();
 
-        let task3 = epic.get_task("3").unwrap();
+        let task3 = phase.get_task("3").unwrap();
         let mut found_cancelled_dep = false;
 
         for dep_id in &task3.dependencies {
-            if let Some(dep_task) = epic.get_task(dep_id) {
+            if let Some(dep_task) = phase.get_task(dep_id) {
                 if dep_task.status == TaskStatus::Cancelled {
                     found_cancelled_dep = true;
                 }
@@ -619,13 +619,13 @@ mod tests {
 
     #[test]
     fn test_detect_missing_dependency() {
-        let epic = create_test_epic_with_issues();
+        let phase = create_test_phase_with_issues();
         let all_task_ids: std::collections::HashSet<_> =
-            epic.tasks.iter().map(|t| t.id.clone()).collect();
+            phase.tasks.iter().map(|t| t.id.clone()).collect();
         // Use all_task_ids to check for missing dependencies
         let _task_count = all_task_ids.len();
 
-        let task4 = epic.get_task("4").unwrap();
+        let task4 = phase.get_task("4").unwrap();
         let mut found_missing_dep = false;
 
         for dep_id in &task4.dependencies {
