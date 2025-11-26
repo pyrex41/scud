@@ -15,8 +15,30 @@ const path = require('path');
 class TaskManager {
   constructor(projectRoot = process.cwd()) {
     this.projectRoot = projectRoot;
-    this.tasksPath = path.join(projectRoot, '.taskmaster', 'tasks', 'tasks.json');
-    this.workflowPath = path.join(projectRoot, '.taskmaster', 'workflow-state.json');
+    this.scudDir = path.join(projectRoot, '.scud');
+    this.taskmasterDir = path.join(projectRoot, '.taskmaster');
+    this.tasksPath = this.resolveDataFile('tasks', 'tasks.json');
+    this.workflowPath = this.resolveStateFile();
+  }
+
+  resolveWithFallback(...segments) {
+    const preferred = path.join(this.scudDir, ...segments);
+    if (fs.existsSync(preferred)) {
+      return preferred;
+    }
+    const fallback = path.join(this.taskmasterDir, ...segments);
+    if (fs.existsSync(fallback)) {
+      return fallback;
+    }
+    return preferred;
+  }
+
+  resolveDataFile(...segments) {
+    return this.resolveWithFallback(...segments);
+  }
+
+  resolveStateFile() {
+    return this.resolveWithFallback('workflow-state.json');
   }
 
   /**

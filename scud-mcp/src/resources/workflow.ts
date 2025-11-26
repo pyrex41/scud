@@ -7,7 +7,7 @@ import type {
   ReadResourceResult,
   Resource,
 } from '@modelcontextprotocol/sdk/types.js';
-import { executeScudCommand } from '../utils/exec.js';
+import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -20,6 +20,18 @@ export const WORKFLOW_RESOURCES: Resource[] = [
   },
 ];
 
+function resolveStateFile(): string {
+  const scudPath = join(process.cwd(), '.scud', 'workflow-state.json');
+  if (existsSync(scudPath)) {
+    return scudPath;
+  }
+  const legacyPath = join(process.cwd(), '.taskmaster', 'workflow-state.json');
+  if (existsSync(legacyPath)) {
+    return legacyPath;
+  }
+  return scudPath;
+}
+
 export async function handleWorkflowResource(
   request: ReadResourceRequest
 ): Promise<ReadResourceResult> {
@@ -28,7 +40,7 @@ export async function handleWorkflowResource(
   if (uri === 'scud://workflow/state') {
     try {
       // Read workflow state directly from file
-      const stateFile = join(process.cwd(), '.taskmaster', 'workflow-state.json');
+      const stateFile = resolveStateFile();
       const content = await readFile(stateFile, 'utf-8');
       const state = JSON.parse(content);
 

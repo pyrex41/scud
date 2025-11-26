@@ -66,6 +66,14 @@ function initProject() {
     log('✓ tasks.scg already exists', 'green');
   }
 
+  const legacyTasksJson = path.join(tasksDir, 'tasks.json');
+  if (!fs.existsSync(legacyTasksJson)) {
+    fs.writeFileSync(legacyTasksJson, '{}');
+    log('✓ Created tasks.json (legacy compatibility)', 'green');
+  } else {
+    log('✓ tasks.json already exists', 'green');
+  }
+
   // Create workflow state
   log('\nStep 3: Creating workflow state...', 'blue');
   const workflowFile = path.join(scudDir, 'workflow-state.json');

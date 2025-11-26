@@ -13,7 +13,7 @@ import { executeScudCommand } from '../utils/exec.js';
 export const CORE_TOOLS: Tool[] = [
   {
     name: 'scud_init',
-    description: 'Initialize SCUD in the current directory. Creates .taskmaster/ directory structure.',
+    description: 'Initialize SCUD in the current directory. Creates .scud/ directory structure.',
     inputSchema: {
       type: 'object',
       properties: {},

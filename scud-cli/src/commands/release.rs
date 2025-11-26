@@ -14,10 +14,9 @@ pub fn run(
     let storage = Storage::new(project_root);
     let epic_tag = resolve_group_tag(&storage, tag, true)?;
 
-    let mut all_tasks = storage.load_tasks()?;
-    let epic = all_tasks
-        .get_mut(&epic_tag)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
+    // Use atomic update_group to hold lock across read-modify-write cycle
+    // This prevents race conditions during release
+    let mut epic = storage.load_group(&epic_tag)?;
 
     let task = epic
         .get_task_mut(task_id)
@@ -43,7 +42,11 @@ pub fn run(
 
     let was_locked_by = task.locked_by.clone();
     task.release();
-    storage.save_tasks(&all_tasks)?;
+    // Also clear assignment to avoid stale whois entries
+    task.assigned_to = None;
+
+    // Atomic write that holds the lock across read-modify-write
+    storage.update_group(&epic_tag, &epic)?;
 
     println!("{} Task {} released", "✓".green(), task_id.cyan());
     if let Some(locked_by) = was_locked_by {

@@ -22,8 +22,9 @@ scud (Rust Binary)
 │   ├── list               # List tasks with filters
 │   ├── show               # Show task details
 │   ├── set-status         # Update task status
-│   ├── next               # Find next available task
-│   └── stats              # Show epic statistics
+│   ├── next               # Find next available task (--claim for dynamic-wave)
+│   ├── stats              # Show epic statistics
+│   └── doctor             # [EXPERIMENTAL] Diagnose stuck states
 │
 ├── AI Commands (Direct Anthropic API)
 │   ├── parse-prd          # Parse PRD markdown into tasks
@@ -78,6 +79,42 @@ scud next
 # Show statistics
 scud stats
 ```
+
+### [EXPERIMENTAL] Dynamic-Wave Mode
+
+Dynamic-wave mode allows agents to auto-claim tasks and maintain workflow health:
+
+```bash
+# Find and auto-claim the next available task
+scud next --claim --name agent-1
+
+# Release all tasks claimed by an agent
+scud next --release --name agent-1
+```
+
+**IMPORTANT:** When using `--claim`, agents MUST run `scud set-status <id> done` when finishing a task. This ensures dependent tasks become unblocked.
+
+### [EXPERIMENTAL] Doctor Command
+
+Diagnose stuck workflow states:
+
+```bash
+# Check for issues in all epics
+scud doctor
+
+# Check specific epic with custom stale threshold
+scud doctor --tag epic-1 --stale-hours 12
+
+# Auto-fix recoverable issues (stale locks, orphan tasks)
+scud doctor --fix
+```
+
+The doctor command detects:
+- Stale locks (tasks locked >24h by default)
+- Tasks blocked by cancelled/missing dependencies
+- Orphan in-progress tasks (not locked, stale)
+- Missing active epic
+- Corrupt storage files
 
 ### AI Commands
 

@@ -34,7 +34,25 @@ scud show <id>           # Task details
 scud set-status <id> <status>  # Update status
 scud next                # Find next task
 scud stats               # Show statistics
+scud doctor              # [EXPERIMENTAL] Diagnose stuck states
 ```
+
+### [EXPERIMENTAL] Dynamic-Wave Mode
+```bash
+# Auto-claim next available task (sets in-progress + locks)
+scud next --claim --name <agent>
+
+# Release tasks claimed by agent
+scud next --release --name <agent>
+
+# Check workflow health
+scud doctor
+
+# Auto-fix stale locks and orphan tasks
+scud doctor --fix
+```
+
+**Agent Obligation:** After `--claim`, MUST run `scud set-status <id> done` when complete!
 
 ### AI Commands (require ANTHROPIC_API_KEY)
 ```bash
@@ -248,6 +266,9 @@ export SCUD_MODEL=claude-sonnet-4-20250514
 | Task too complex | `scud expand <id>` or `scud expand --all` |
 | No API key | `export ANTHROPIC_API_KEY=sk-ant-...` |
 | Rust binary missing | `cd scud-cli && cargo build --release` |
+| Stale locks | `scud doctor --fix` or `scud release <id> --force` |
+| Stuck workflow | `scud doctor` to diagnose issues |
+| Tasks blocked | `scud doctor` to find cancelled/missing deps |
 
 ---
 

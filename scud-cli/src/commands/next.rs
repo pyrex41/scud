@@ -3,53 +3,487 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::commands::helpers::resolve_group_tag;
+use crate::models::task::TaskStatus;
 use crate::storage::Storage;
 
-pub fn run(project_root: Option<PathBuf>, tag: Option<&str>) -> Result<()> {
-    let storage = Storage::new(project_root);
+/// Result of finding the next task
+pub enum NextTaskResult<'a> {
+    /// Found a task with dependencies met
+    Available(&'a crate::models::task::Task),
+    /// No pending tasks at all
+    NoPendingTasks,
+    /// Pending tasks exist but blocked by dependencies
+    BlockedByDependencies,
+    /// All pending tasks are locked by others
+    AllLocked,
+}
 
+/// Find the next available task, considering locks
+pub fn find_next_available<'a>(
+    epic: &'a crate::models::epic::Epic,
+    exclude_locked: bool,
+) -> NextTaskResult<'a> {
+    let pending_tasks: Vec<_> = epic
+        .tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::Pending)
+        .collect();
+
+    if pending_tasks.is_empty() {
+        return NextTaskResult::NoPendingTasks;
+    }
+
+    // Find tasks with dependencies met
+    let deps_met: Vec<_> = pending_tasks
+        .iter()
+        .filter(|t| t.has_dependencies_met(&epic.tasks))
+        .collect();
+
+    if deps_met.is_empty() {
+        return NextTaskResult::BlockedByDependencies;
+    }
+
+    // Filter out locked tasks if requested
+    if exclude_locked {
+        let unlocked: Vec<_> = deps_met.iter().filter(|t| !t.is_locked()).collect();
+        if unlocked.is_empty() {
+            return NextTaskResult::AllLocked;
+        }
+        return NextTaskResult::Available(unlocked[0]);
+    }
+
+    NextTaskResult::Available(deps_met[0])
+}
+
+pub fn run(
+    project_root: Option<PathBuf>,
+    tag: Option<&str>,
+    claim: bool,
+    name: Option<&str>,
+    release: bool,
+) -> Result<()> {
+    let storage = Storage::new(project_root);
     let epic_tag = resolve_group_tag(&storage, tag, true)?;
+
+    // Handle --release mode
+    if release {
+        let agent_name =
+            name.ok_or_else(|| anyhow::anyhow!("--name is required with --release"))?;
+        return handle_release(&storage, &epic_tag, agent_name);
+    }
+
+    // Handle --claim mode (experimental dynamic-wave)
+    if claim {
+        let agent_name = name.ok_or_else(|| anyhow::anyhow!("--name is required with --claim"))?;
+        return handle_claim(&storage, &epic_tag, agent_name);
+    }
+
+    // Standard next task behavior (read-only)
     let tasks = storage.load_tasks()?;
     let epic = tasks
         .get(&epic_tag)
         .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
 
-    match epic.find_next_task() {
-        Some(task) => {
-            println!("{}", "Next Available Task:".green().bold());
-            println!();
-            println!("{:<20} {}", "ID:".yellow(), task.id.cyan());
-            println!("{:<20} {}", "Title:".yellow(), task.title.bold());
-            println!("{:<20} {}", "Complexity:".yellow(), task.complexity);
-            println!("{:<20} {:?}", "Priority:".yellow(), task.priority);
-            println!();
-            println!("{}", "Description:".yellow());
-            println!("{}", task.description);
-
-            if let Some(details) = &task.details {
-                println!();
-                println!("{}", "Technical Details:".yellow());
-                println!("{}", details);
-            }
-
-            if let Some(test_strategy) = &task.test_strategy {
-                println!();
-                println!("{}", "Test Strategy:".yellow());
-                println!("{}", test_strategy);
-            }
-
-            println!();
-            println!("{}", "To start this task:".blue());
-            println!("  scud set-status {} in-progress", task.id);
+    match find_next_available(epic, false) {
+        NextTaskResult::Available(task) => {
+            print_task_details(task);
+            print_standard_instructions(&task.id);
         }
-        None => {
+        NextTaskResult::NoPendingTasks => {
+            println!("{}", "All tasks completed or in progress!".green().bold());
+            println!("Run: scud list --status in-progress");
+        }
+        NextTaskResult::BlockedByDependencies => {
             println!(
                 "{}",
-                "No available tasks with all dependencies met".yellow()
+                "No available tasks - all pending tasks blocked by dependencies".yellow()
             );
             println!("Run: scud list --status pending");
+            println!("Run: scud doctor  # to diagnose stuck states");
+        }
+        NextTaskResult::AllLocked => {
+            println!("{}", "All available tasks are currently locked".yellow());
+            println!("Run: scud whois  # to see who's working on what");
         }
     }
 
     Ok(())
+}
+
+fn handle_claim(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<()> {
+    println!(
+        "{}",
+        "[EXPERIMENTAL] Dynamic-wave mode: claiming next task"
+            .yellow()
+            .bold()
+    );
+    println!();
+
+    // Use atomic update_group to hold lock across read-modify-write cycle
+    // This prevents race conditions when multiple agents claim simultaneously
+    let mut epic = storage.load_group(epic_tag)?;
+
+    // Find next available task (exclude locked ones)
+    let task_id = {
+        let pending_tasks: Vec<_> = epic
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Pending)
+            .collect();
+
+        if pending_tasks.is_empty() {
+            println!("{}", "No pending tasks available".yellow());
+            println!();
+            println!("{}", "All tasks may be:".blue());
+            println!("  - Already done");
+            println!("  - In progress by others");
+            println!("  - Blocked by dependencies");
+            println!();
+            println!("Run: scud list  # to see all tasks");
+            println!("Run: scud stats  # to see completion status");
+            return Ok(());
+        }
+
+        // Find first task with dependencies met that isn't locked
+        let available: Vec<_> = pending_tasks
+            .iter()
+            .filter(|t| t.has_dependencies_met(&epic.tasks) && !t.is_locked())
+            .collect();
+
+        if available.is_empty() {
+            // Check if blocked by deps or by locks
+            let deps_met: Vec<_> = pending_tasks
+                .iter()
+                .filter(|t| t.has_dependencies_met(&epic.tasks))
+                .collect();
+
+            if deps_met.is_empty() {
+                println!(
+                    "{}",
+                    "No tasks available - all pending tasks blocked by dependencies"
+                        .yellow()
+                        .bold()
+                );
+                println!();
+                println!("{}", "Possible causes:".blue());
+                println!("  - Dependencies not marked as done");
+                println!("  - Circular dependency issues");
+                println!("  - Dependencies on cancelled/blocked tasks");
+                println!();
+                println!("Run: scud doctor  # to diagnose stuck states");
+            } else {
+                println!(
+                    "{}",
+                    "No tasks available - all eligible tasks are locked by other agents"
+                        .yellow()
+                        .bold()
+                );
+                println!();
+                println!("{}", "Currently locked tasks:".blue());
+                for task in deps_met {
+                    if let Some(ref locked_by) = task.locked_by {
+                        println!(
+                            "  {} - {} (locked by {})",
+                            task.id.cyan(),
+                            task.title,
+                            locked_by.green()
+                        );
+                    }
+                }
+                println!();
+                println!("Run: scud whois  # to see all assignments");
+                println!("Run: scud doctor  # to check for stale locks");
+            }
+            return Ok(());
+        }
+
+        available[0].id.clone()
+    };
+
+    // Claim the task
+    let task = epic
+        .get_task_mut(&task_id)
+        .ok_or_else(|| anyhow::anyhow!("Task {} not found", task_id))?;
+
+    task.claim(agent_name).map_err(|e| anyhow::anyhow!(e))?;
+    task.set_status(TaskStatus::InProgress);
+
+    // Get task details before saving
+    let task_title = task.title.clone();
+    let task_description = task.description.clone();
+    let task_complexity = task.complexity;
+    let task_details = task.details.clone();
+    let task_test_strategy = task.test_strategy.clone();
+
+    // Use atomic update_group which holds lock across read-modify-write
+    storage.update_group(epic_tag, &epic)?;
+
+    // Print claimed task details
+    println!("{}", "Task claimed successfully!".green().bold());
+    println!();
+    println!("{:<20} {}", "ID:".yellow(), task_id.cyan());
+    println!("{:<20} {}", "Title:".yellow(), task_title.bold());
+    println!("{:<20} {}", "Complexity:".yellow(), task_complexity);
+    println!("{:<20} {}", "Claimed by:".yellow(), agent_name.green());
+    println!("{:<20} {}", "Status:".yellow(), "in-progress".cyan());
+    println!();
+    println!("{}", "Description:".yellow());
+    println!("{}", task_description);
+
+    if let Some(details) = &task_details {
+        println!();
+        println!("{}", "Technical Details:".yellow());
+        println!("{}", details);
+    }
+
+    if let Some(test_strategy) = &task_test_strategy {
+        println!();
+        println!("{}", "Test Strategy:".yellow());
+        println!("{}", test_strategy);
+    }
+
+    // Critical: Status discipline messaging
+    println!();
+    println!("{}", "=".repeat(60).yellow());
+    println!("{}", "IMPORTANT: Status Update Required".red().bold());
+    println!("{}", "=".repeat(60).yellow());
+    println!();
+    println!(
+        "{}",
+        "When you complete this task, you MUST run:".yellow().bold()
+    );
+    println!();
+    println!(
+        "    {}",
+        format!("scud set-status {} done", task_id).cyan().bold()
+    );
+    println!();
+    println!(
+        "{}",
+        "This ensures the workflow stays healthy and other agents".dimmed()
+    );
+    println!("{}", "can claim dependent tasks.".dimmed());
+    println!();
+
+    Ok(())
+}
+
+fn handle_release(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<()> {
+    println!(
+        "{}",
+        "[EXPERIMENTAL] Releasing tasks for agent".yellow().bold()
+    );
+    println!();
+
+    // Use atomic update_group to hold lock across read-modify-write cycle
+    let mut epic = storage.load_group(epic_tag)?;
+
+    // Find tasks locked by this agent
+    let mut released_count = 0;
+    for task in &mut epic.tasks {
+        if task.is_locked_by(agent_name) {
+            let task_id = task.id.clone();
+            let task_title = task.title.clone();
+            // Clear both lock and assignment for clean release
+            task.release();
+            task.assigned_to = None;
+            // Reset status back to pending if it was in-progress
+            if task.status == TaskStatus::InProgress {
+                task.set_status(TaskStatus::Pending);
+            }
+            println!(
+                "{} Released: {} - {}",
+                "✓".green(),
+                task_id.cyan(),
+                task_title
+            );
+            released_count += 1;
+        }
+    }
+
+    if released_count == 0 {
+        println!(
+            "{}",
+            format!("No tasks found locked by '{}'", agent_name).yellow()
+        );
+        return Ok(());
+    }
+
+    // Use atomic update_group which holds lock across read-modify-write
+    storage.update_group(epic_tag, &epic)?;
+
+    println!();
+    println!("{} {} task(s) released", "✓".green(), released_count);
+
+    Ok(())
+}
+
+fn print_task_details(task: &crate::models::task::Task) {
+    println!("{}", "Next Available Task:".green().bold());
+    println!();
+    println!("{:<20} {}", "ID:".yellow(), task.id.cyan());
+    println!("{:<20} {}", "Title:".yellow(), task.title.bold());
+    println!("{:<20} {}", "Complexity:".yellow(), task.complexity);
+    println!("{:<20} {:?}", "Priority:".yellow(), task.priority);
+
+    if let Some(ref assigned) = task.assigned_to {
+        println!("{:<20} {}", "Assigned to:".yellow(), assigned.green());
+    }
+
+    if task.is_locked() {
+        if let Some(ref locked_by) = task.locked_by {
+            println!(
+                "{:<20} {} (by {})",
+                "Status:".yellow(),
+                "LOCKED".red(),
+                locked_by
+            );
+        }
+    }
+
+    println!();
+    println!("{}", "Description:".yellow());
+    println!("{}", task.description);
+
+    if let Some(details) = &task.details {
+        println!();
+        println!("{}", "Technical Details:".yellow());
+        println!("{}", details);
+    }
+
+    if let Some(test_strategy) = &task.test_strategy {
+        println!();
+        println!("{}", "Test Strategy:".yellow());
+        println!("{}", test_strategy);
+    }
+}
+
+fn print_standard_instructions(task_id: &str) {
+    println!();
+    println!("{}", "To start this task:".blue());
+    println!("  scud set-status {} in-progress", task_id);
+    println!();
+    println!(
+        "{}",
+        "Or use experimental dynamic-wave mode:".blue().dimmed()
+    );
+    println!(
+        "  scud next --claim --name <your-name>  {}",
+        "# auto-claims next task".dimmed()
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::epic::Epic;
+    use crate::models::task::{Task, TaskStatus};
+
+    fn create_test_epic() -> Epic {
+        let mut epic = Epic::new("test-epic".to_string());
+
+        let mut task1 = Task::new("1".to_string(), "Task 1".to_string(), "Desc 1".to_string());
+        task1.set_status(TaskStatus::Done);
+
+        let mut task2 = Task::new("2".to_string(), "Task 2".to_string(), "Desc 2".to_string());
+        task2.dependencies = vec!["1".to_string()];
+        // task2 is pending with deps met
+
+        let mut task3 = Task::new("3".to_string(), "Task 3".to_string(), "Desc 3".to_string());
+        task3.dependencies = vec!["2".to_string()];
+        // task3 is pending with deps NOT met
+
+        epic.add_task(task1);
+        epic.add_task(task2);
+        epic.add_task(task3);
+
+        epic
+    }
+
+    #[test]
+    fn test_find_next_available_basic() {
+        let epic = create_test_epic();
+
+        match find_next_available(&epic, false) {
+            NextTaskResult::Available(task) => {
+                assert_eq!(task.id, "2");
+            }
+            _ => panic!("Expected Available result"),
+        }
+    }
+
+    #[test]
+    fn test_find_next_available_exclude_locked() {
+        let mut epic = create_test_epic();
+
+        // Lock task 2
+        epic.get_task_mut("2").unwrap().claim("alice").unwrap();
+
+        // Without exclude_locked, should still find task 2
+        match find_next_available(&epic, false) {
+            NextTaskResult::Available(task) => {
+                assert_eq!(task.id, "2");
+            }
+            _ => panic!("Expected Available result"),
+        }
+
+        // With exclude_locked, should return AllLocked
+        match find_next_available(&epic, true) {
+            NextTaskResult::AllLocked => {}
+            _ => panic!("Expected AllLocked result"),
+        }
+    }
+
+    #[test]
+    fn test_find_next_no_pending() {
+        let mut epic = Epic::new("test".to_string());
+        let mut task = Task::new("1".to_string(), "Done".to_string(), "Desc".to_string());
+        task.set_status(TaskStatus::Done);
+        epic.add_task(task);
+
+        match find_next_available(&epic, false) {
+            NextTaskResult::NoPendingTasks => {}
+            _ => panic!("Expected NoPendingTasks result"),
+        }
+    }
+
+    #[test]
+    fn test_find_next_blocked_by_deps() {
+        let mut epic = Epic::new("test".to_string());
+
+        let task1 = Task::new("1".to_string(), "Task 1".to_string(), "Desc".to_string());
+        // task1 is pending
+
+        let mut task2 = Task::new("2".to_string(), "Task 2".to_string(), "Desc".to_string());
+        task2.dependencies = vec!["1".to_string()];
+        // task2 depends on pending task1
+
+        // Add task2 first, task1 second (so task2 is checked first)
+        epic.add_task(task2);
+        epic.add_task(task1);
+
+        // task1 should be found since it has no deps
+        match find_next_available(&epic, false) {
+            NextTaskResult::Available(task) => {
+                assert_eq!(task.id, "1");
+            }
+            _ => panic!("Expected task 1 to be available"),
+        }
+    }
+
+    #[test]
+    fn test_find_next_all_blocked() {
+        let mut epic = Epic::new("test".to_string());
+
+        let mut task1 = Task::new("1".to_string(), "Task 1".to_string(), "Desc".to_string());
+        task1.dependencies = vec!["nonexistent".to_string()];
+        // task1 depends on non-existent task
+
+        epic.add_task(task1);
+
+        match find_next_available(&epic, false) {
+            NextTaskResult::BlockedByDependencies => {}
+            _ => panic!("Expected BlockedByDependencies result"),
+        }
+    }
 }

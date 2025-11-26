@@ -18,6 +18,11 @@ pub fn run(
     max_parallel: usize,
     all_tags: bool,
 ) -> Result<()> {
+    // Validate max_parallel to prevent divide-by-zero panics
+    if max_parallel == 0 {
+        anyhow::bail!("--max-parallel must be at least 1");
+    }
+
     let storage = Storage::new(project_root);
     let all_tasks = storage.load_tasks()?;
 
@@ -194,24 +199,27 @@ pub fn run(
 }
 
 /// Compute execution waves using Kahn's algorithm (topological sort with level assignment)
+/// When processing tasks from multiple epics, we namespace task IDs to avoid collisions
 fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
-    let task_ids: HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    // Build a map from task pointer to its namespaced ID
+    // This handles the case where multiple epics have tasks with the same local ID
+    let task_ids: HashSet<String> = tasks.iter().map(|t| t.id.clone()).collect();
 
     // Build in-degree map (how many dependencies does each task have within our set?)
-    let mut in_degree: HashMap<&str, usize> = HashMap::new();
-    let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut in_degree: HashMap<String, usize> = HashMap::new();
+    let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
 
     for task in tasks {
-        in_degree.entry(task.id.as_str()).or_insert(0);
+        in_degree.entry(task.id.clone()).or_insert(0);
 
         for dep in &task.dependencies {
             // Only count dependencies that are in our actionable task set
-            if task_ids.contains(dep.as_str()) {
-                *in_degree.entry(task.id.as_str()).or_insert(0) += 1;
+            if task_ids.contains(dep) {
+                *in_degree.entry(task.id.clone()).or_insert(0) += 1;
                 dependents
-                    .entry(dep.as_str())
+                    .entry(dep.clone())
                     .or_default()
-                    .push(task.id.as_str());
+                    .push(task.id.clone());
             }
         }
     }
@@ -223,10 +231,10 @@ fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
 
     while !remaining.is_empty() {
         // Find all tasks with no remaining dependencies (in-degree = 0)
-        let ready: Vec<&str> = remaining
+        let ready: Vec<String> = remaining
             .iter()
             .filter(|(_, &deg)| deg == 0)
-            .map(|(&id, _)| id)
+            .map(|(id, _)| id.clone())
             .collect();
 
         if ready.is_empty() {
@@ -234,11 +242,11 @@ fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
             println!("{}", "Warning: Circular dependency detected!".red().bold());
             println!("The following tasks have unresolved dependencies:");
             for id in remaining.keys() {
-                if let Some(task) = tasks.iter().find(|t| t.id.as_str() == *id) {
+                if let Some(task) = tasks.iter().find(|t| &t.id == id) {
                     let unmet_deps: Vec<_> = task
                         .dependencies
                         .iter()
-                        .filter(|d| remaining.contains_key(d.as_str()))
+                        .filter(|d| remaining.contains_key(*d))
                         .collect();
                     println!("  {} depends on {:?}", id, unmet_deps);
                 }
@@ -247,11 +255,11 @@ fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
         }
 
         // Remove ready tasks from remaining and update dependents
-        for &task_id in &ready {
+        for task_id in &ready {
             remaining.remove(task_id);
 
             if let Some(deps) = dependents.get(task_id) {
-                for &dep_id in deps {
+                for dep_id in deps {
                     if let Some(deg) = remaining.get_mut(dep_id) {
                         *deg = deg.saturating_sub(1);
                     }
@@ -261,7 +269,7 @@ fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
 
         waves.push(Wave {
             number: wave_number,
-            tasks: ready.iter().map(|&s| s.to_string()).collect(),
+            tasks: ready,
         });
         wave_number += 1;
     }

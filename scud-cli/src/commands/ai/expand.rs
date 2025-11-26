@@ -36,7 +36,7 @@ pub async fn run(
     expand_all: bool,
     tag: Option<&str>,
 ) -> Result<()> {
-    let storage = Storage::new(project_root);
+    let storage = Storage::new(project_root.clone());
     let epic_tag = crate::commands::helpers::resolve_group_tag(&storage, tag, true)?;
 
     let mut all_tasks = storage.load_tasks()?;
@@ -44,7 +44,12 @@ pub async fn run(
         .get_mut(&epic_tag)
         .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
 
-    let client = Arc::new(LLMClient::new()?);
+    // Use project_root for LLM client to find config.toml in correct location
+    let client = Arc::new(if let Some(root) = project_root {
+        LLMClient::new_with_project_root(root)?
+    } else {
+        LLMClient::new()?
+    });
 
     // Determine which tasks to expand and gather their data
     let tasks_to_expand: Vec<(String, String, String, Option<String>, u32, Priority)> =

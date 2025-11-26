@@ -13,8 +13,22 @@ const path = require('path');
 class TaskMasterValidator {
   constructor(projectRoot = process.cwd()) {
     this.projectRoot = projectRoot;
-    this.workflowStatePath = path.join(projectRoot, '.taskmaster', 'workflow-state.json');
-    this.tasksPath = path.join(projectRoot, '.taskmaster', 'tasks', 'tasks.json');
+    this.scudDir = path.join(projectRoot, '.scud');
+    this.taskmasterDir = path.join(projectRoot, '.taskmaster');
+    this.workflowStatePath = this.resolvePath('workflow-state.json');
+    this.tasksPath = this.resolvePath('tasks', 'tasks.json');
+  }
+
+  resolvePath(...segments) {
+    const preferred = path.join(this.scudDir, ...segments);
+    if (fs.existsSync(preferred)) {
+      return preferred;
+    }
+    const fallback = path.join(this.taskmasterDir, ...segments);
+    if (fs.existsSync(fallback)) {
+      return fallback;
+    }
+    return preferred;
   }
 
   /**
@@ -32,7 +46,7 @@ class TaskMasterValidator {
    */
   loadTasks() {
     if (!fs.existsSync(this.tasksPath)) {
-      throw new Error(`Task Master tasks not found: ${this.tasksPath}\nRun: task-master init`);
+      throw new Error(`Task data not found: ${this.tasksPath}\nRun: scud init`);
     }
     return JSON.parse(fs.readFileSync(this.tasksPath, 'utf8'));
   }

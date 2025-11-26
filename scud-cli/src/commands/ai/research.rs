@@ -7,12 +7,16 @@ use crate::llm::{LLMClient, Prompts};
 use crate::storage::Storage;
 
 pub async fn run(project_root: Option<PathBuf>, query: &str) -> Result<()> {
-    let client = LLMClient::new()?;
-
-    // Load config to check for research-specific model
-    let storage = Storage::new(project_root);
+    // Use project_root for both storage and LLM client to find config.toml in correct location
+    let storage = Storage::new(project_root.clone());
     let config = storage.load_config()?;
     let research_model = config.llm.research_model.as_deref();
+
+    let client = if let Some(root) = project_root {
+        LLMClient::new_with_project_root(root)?
+    } else {
+        LLMClient::new()?
+    };
 
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(

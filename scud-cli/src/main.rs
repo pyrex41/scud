@@ -86,11 +86,23 @@ enum Commands {
         tag: Option<String>,
     },
 
-    /// Find next available task
+    /// Find next available task (EXPERIMENTAL: use --claim for dynamic-wave mode)
     Next {
         /// Epic tag (uses active epic if not provided)
         #[arg(short, long)]
         tag: Option<String>,
+
+        /// [EXPERIMENTAL] Auto-claim the task for the specified agent
+        #[arg(long, requires = "name")]
+        claim: bool,
+
+        /// Agent/developer name (required with --claim)
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// [EXPERIMENTAL] Release the currently claimed task for this agent
+        #[arg(long, conflicts_with = "claim", requires = "name")]
+        release: bool,
     },
 
     /// Show epic statistics
@@ -113,7 +125,7 @@ enum Commands {
         #[arg(short, long)]
         tag: Option<String>,
 
-        /// Maximum parallel tasks per round (default: 5)
+        /// Maximum parallel tasks per round (default: 5, min: 1)
         #[arg(short = 'n', long, default_value = "5")]
         max_parallel: usize,
 
@@ -232,6 +244,21 @@ enum Commands {
         #[arg(long, default_value = "true")]
         backup: bool,
     },
+
+    /// [EXPERIMENTAL] Diagnose stuck workflow states
+    Doctor {
+        /// Epic tag (checks all epics if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Stale lock threshold in hours (default: 24)
+        #[arg(long, default_value = "24")]
+        stale_hours: f64,
+
+        /// Attempt auto-fix for recoverable issues
+        #[arg(long)]
+        fix: bool,
+    },
 }
 
 #[tokio::main]
@@ -252,7 +279,12 @@ async fn main() -> Result<()> {
             status,
             tag,
         } => commands::set_status::run(cli.project, &task_id, &status, tag.as_deref()),
-        Commands::Next { tag } => commands::next::run(cli.project, tag.as_deref()),
+        Commands::Next {
+            tag,
+            claim,
+            name,
+            release,
+        } => commands::next::run(cli.project, tag.as_deref(), claim, name.as_deref(), release),
         Commands::Stats { tag } => commands::stats::run(cli.project, tag.as_deref()),
         Commands::Migrate { dry_run } => commands::migrate::run(cli.project, dry_run),
         Commands::Waves {
@@ -297,5 +329,10 @@ async fn main() -> Result<()> {
         Commands::Convert { from, to, backup } => {
             commands::convert::run(cli.project, &from, &to, backup)
         }
+        Commands::Doctor {
+            tag,
+            stale_hours,
+            fix,
+        } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
     }
 }

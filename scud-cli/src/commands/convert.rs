@@ -26,6 +26,16 @@ pub fn run(
         return Ok(());
     }
 
+    // SCG → JSON conversion is blocked because the CLI only reads tasks.scg
+    // Converting would break all storage operations
+    if from == Format::Scg && to == Format::Json {
+        anyhow::bail!(
+            "SCG to JSON conversion is not supported.\n\
+             The SCUD CLI requires tasks.scg for storage.\n\
+             Use 'scud show' or 'scud list' to view tasks."
+        );
+    }
+
     let storage = Storage::new(project_root);
     let taskmaster_dir = storage.scud_dir();
     let tasks_dir = taskmaster_dir.join("tasks");

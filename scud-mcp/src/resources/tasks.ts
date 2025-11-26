@@ -7,6 +7,7 @@ import type {
   ReadResourceResult,
   Resource,
 } from '@modelcontextprotocol/sdk/types.js';
+import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -19,6 +20,19 @@ export const TASK_RESOURCES: Resource[] = [
   },
 ];
 
+function resolveDataPath(...segments: string[]): string {
+  const scudPath = join(process.cwd(), '.scud', ...segments);
+  if (existsSync(scudPath)) {
+    return scudPath;
+  }
+  const legacyPath = join(process.cwd(), '.taskmaster', ...segments);
+  if (existsSync(legacyPath)) {
+    return legacyPath;
+  }
+  // Prefer .scud even if it doesn't exist yet (new installs)
+  return scudPath;
+}
+
 export async function handleTaskResource(
   request: ReadResourceRequest
 ): Promise<ReadResourceResult> {
@@ -27,12 +41,12 @@ export async function handleTaskResource(
   if (uri === 'scud://tasks/list') {
     try {
       // Read tasks file
-      const tasksFile = join(process.cwd(), '.taskmaster', 'tasks', 'tasks.json');
+      const tasksFile = resolveDataPath('tasks', 'tasks.json');
       const content = await readFile(tasksFile, 'utf-8');
       const allTasks = JSON.parse(content);
 
       // Read workflow state to get active epic
-      const stateFile = join(process.cwd(), '.taskmaster', 'workflow-state.json');
+      const stateFile = resolveDataPath('workflow-state.json');
       const stateContent = await readFile(stateFile, 'utf-8');
       const state = JSON.parse(stateContent);
 

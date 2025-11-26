@@ -1,12 +1,15 @@
 /**
  * CLI execution wrapper for SCUD commands
+ *
+ * Uses execFile (not exec) to avoid shell injection vulnerabilities.
+ * Arguments are passed as an array, not concatenated into a shell string.
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { ScudCommandResult } from '../types.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface ExecOptions {
   cwd?: string;
@@ -15,15 +18,17 @@ export interface ExecOptions {
 
 /**
  * Execute a SCUD CLI command and return the result
+ *
+ * Uses execFile to safely pass arguments without shell interpolation.
+ * This prevents command injection and properly handles arguments with spaces.
  */
 export async function executeScudCommand(
   args: string[],
   options?: ExecOptions
 ): Promise<ScudCommandResult> {
-  const command = `scud ${args.join(' ')}`;
-
   try {
-    const { stdout, stderr } = await execAsync(command, {
+    // Use execFile with argument array - no shell interpolation
+    const { stdout, stderr } = await execFileAsync('scud', args, {
       cwd: options?.cwd || process.cwd(),
       timeout: options?.timeout || 30000, // 30 second default timeout
       env: {

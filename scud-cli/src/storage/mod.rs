@@ -121,6 +121,10 @@ impl Storage {
         self.scud_dir().join("tasks").join("tasks.scg")
     }
 
+    fn tasks_json_file(&self) -> PathBuf {
+        self.scud_dir().join("tasks").join("tasks.json")
+    }
+
     pub fn workflow_file(&self) -> PathBuf {
         self.scud_dir().join("workflow-state.json")
     }
@@ -154,11 +158,21 @@ impl Storage {
             config.save(&config_file)?;
         }
 
-        // Initialize tasks.scg with empty content
+        // Initialize tasks.scg with empty content (and JSON mirror for legacy tooling)
         let tasks_file = self.tasks_file();
         if !tasks_file.exists() {
             let empty_tasks: HashMap<String, Epic> = HashMap::new();
             self.save_tasks(&empty_tasks)?;
+        } else {
+            let json_path = self.tasks_json_file();
+            if !json_path.exists() {
+                let empty: HashMap<String, Epic> = HashMap::new();
+                // Best effort: if parsing existing SCG fails, fall back to empty JSON
+                match self.load_tasks() {
+                    Ok(tasks) => self.write_tasks_json(&tasks)?,
+                    Err(_) => self.write_tasks_json(&empty)?,
+                }
+            }
         }
 
         // Initialize workflow-state.json
@@ -259,7 +273,12 @@ impl Storage {
             }
 
             Ok(output)
-        })
+        })?;
+
+        // Keep JSON mirror for Node-based tooling (validator, MCP resources)
+        self.write_tasks_json(tasks)?;
+
+        Ok(())
     }
 
     pub fn load_workflow_state(&self) -> Result<WorkflowState> {
@@ -283,6 +302,14 @@ impl Storage {
         self.write_with_lock(&path, || {
             serde_json::to_string_pretty(state)
                 .with_context(|| "Failed to serialize workflow state to JSON".to_string())
+        })
+    }
+
+    fn write_tasks_json(&self, tasks: &HashMap<String, Epic>) -> Result<()> {
+        let json_path = self.tasks_json_file();
+        self.write_with_lock(&json_path, || {
+            serde_json::to_string_pretty(tasks)
+                .with_context(|| "Failed to serialize tasks to JSON".to_string())
         })
     }
 
