@@ -407,16 +407,12 @@ pub fn agents_list(project_root: Option<PathBuf>) -> Result<()> {
     let opencode_tool_dir = get_opencode_tool_dir(project_root);
 
     let mut opencode_installed = 0;
-    #[allow(unused_assignments)]
-    let mut opencode_not_installed = 0;
 
     // Check commands
     for cmd in OPENCODE_COMMANDS {
         let cmd_file = opencode_cmd_dir.join(format!("{}.md", cmd));
         if cmd_file.exists() {
             opencode_installed += 1;
-        } else {
-            opencode_not_installed += 1;
         }
     }
 
@@ -425,8 +421,6 @@ pub fn agents_list(project_root: Option<PathBuf>) -> Result<()> {
         let hook_file = opencode_hook_dir.join(format!("{}.md", hook));
         if hook_file.exists() {
             opencode_installed += 1;
-        } else {
-            opencode_not_installed += 1;
         }
     }
 
@@ -435,8 +429,6 @@ pub fn agents_list(project_root: Option<PathBuf>) -> Result<()> {
         let tool_file = opencode_tool_dir.join(format!("{}.json", tool));
         if tool_file.exists() {
             opencode_installed += 1;
-        } else {
-            opencode_not_installed += 1;
         }
     }
 

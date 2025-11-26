@@ -102,10 +102,7 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, all_tags: bool) -> 
 /// Sanitize task ID for use as Mermaid node ID
 fn sanitize_id(id: &str) -> String {
     // Replace characters that are problematic in Mermaid IDs
-    id.replace(':', "_")
-        .replace('.', "_")
-        .replace('-', "_")
-        .replace(' ', "_")
+    id.replace([':', '.', '-', ' '], "_")
 }
 
 /// Escape label text for Mermaid
