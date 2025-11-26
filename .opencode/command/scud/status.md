@@ -4,17 +4,15 @@ description: Show current SCUD workflow status and available commands
 
 # SCUD Workflow Status
 
-You are a workflow status reporter. Your job is to show the user the current state of the SCUD workflow and guide them on what to do next.
+You are a workflow status reporter. Show the current state of the SCUD workflow and guide the user on what to do next.
 
 ## Your Task
 
 1. **Read workflow state**: Load `.scud/workflow-state.json`
-2. **Read SCUD state**: Load `.scud/tasks/tasks.scg`
-3. **Analyze and display**:
-   - Current workflow phase with visual indicator
-   - Active phase (if any) with task progress
-   - Available next commands
-   - Any warnings or blockers
+2. **Check tags**: Run `scud tags` to see available tags
+3. **Get stats**: Run `scud stats --tag <active_tag>` if tag exists
+4. **Check waves**: Run `scud waves --tag <active_tag>` if in implementation
+5. **Display status** using the format below
 
 ## Display Format
 
@@ -25,80 +23,115 @@ You are a workflow status reporter. Your job is to show the user the current sta
 📍 Current Phase: [PHASE NAME]
 
   Workflow Progress:
-  ○ Ideation       (scud:pm)         [status]
-  ○ Planning       (scud:pm)         [status]
-  ○ Architecture   (scud:architect)  [status]
-  ○ Implementation (scud:dev)        [status]
-  ○ Retrospective  (scud:retrospective) [status]
+  [indicator] Ideation       (/scud:pm)           [status]
+  [indicator] Planning       (/scud:sm)           [status]
+  [indicator] Architecture   (/scud:architect)    [status]
+  [indicator] Implementation (/scud:dev)          [status]
+  [indicator] Retrospective  (/scud:retrospective) [status]
 
-🎯 Active Phase: [phase-name or "None"]
+🏷️ Active Tag: [tag-name or "None"]
 
-  Task Progress:
-  ✅ Completed: X tasks
-  🔄 In Progress: X tasks
-  ⏸️  Blocked: X tasks
-  ⏳ Pending: X tasks
+📊 Task Progress:
+  ✅ Done: [N]
+  🔄 In Progress: [N]
+  ⏸️ Blocked: [N]
+  ⏳ Pending: [N]
   ━━━━━━━━━━━━━━
-  📊 Total: X tasks
+  Total: [N] tasks, [N] points
+
+🌊 Waves: [N] waves ([N]x parallelism)
 
 ✨ Available Commands:
-
-  /scud:pm          - [status: available/locked + reason]
-  /scud:architect   - [status: available/locked + reason]
-  /scud:dev         - [status: available/locked + reason]
-  /scud:retrospective - [status: available/locked + reason]
+  /scud:pm           - [available/locked + reason]
+  /scud:sm           - [available/locked + reason]
+  /scud:architect    - [available/locked + reason]
+  /scud:dev          - [available/locked + reason]
+  /scud:retrospective - [available/locked + reason]
 
 ⚠️ Warnings:
-
-  [List any issues: missing dependencies, incomplete tests, etc.]
-  [Or show "None - workflow is healthy ✅"]
+  [List any issues or "None - workflow healthy ✅"]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-💡 Next Steps: [Specific guidance on what to do next]
+💡 Next Step: [Specific guidance]
 ```
 
 ## Phase Status Indicators
 
-- `🟢 COMPLETED` - Phase finished
-- `🔵 ACTIVE` - Currently working in this phase
-- `⚪ PENDING` - Not yet started
-- `🔴 BLOCKED` - Cannot proceed (show reason)
+- `🟢` COMPLETED - Phase finished
+- `🔵` ACTIVE - Currently in this phase
+- `⚪` PENDING - Not yet started
+- `🔴` BLOCKED - Cannot proceed
 
-## Command Availability Logic
+## Command Availability
 
-### /scud:pm
-- **Available**: Always available in ideation or planning phases
-- **Locked**: If already in implementation phase without good reason
+### /scud:pm (Product Manager)
+- **Available**: In `ideation` or `planning` phase
+- **Locked**: In later phases (architecture, implementation, retrospective)
+
+### /scud:sm (Scrum Master)
+- **Available**: In `planning` phase, with PRD in `docs/prd/`
+- **Locked**: No PRD, or not in planning phase
 
 ### /scud:architect
-- **Available**: When planning phase is completed (phase exists in SCUD)
-- **Locked**: If no phase in SCUD, or if architecture already complete
+- **Available**: In `architecture` phase, with tasks in SCUD
+- **Locked**: No tasks, or not in architecture phase
 
-### /scud:dev
-- **Available**: When architecture phase is completed
-- **Locked**: If architecture not done, or if tasks have unmet dependencies
+### /scud:dev (Developer)
+- **Available**: In `implementation` phase
+- **Locked**: Architecture not complete
 
 ### /scud:retrospective
-- **Available**: When all tasks in active phase are completed
-- **Locked**: If phase has incomplete tasks
+- **Available**: In `retrospective` phase, all tasks done
+- **Locked**: Tasks incomplete
 
-## Critical Instructions
+## SCUD Commands to Run
 
-- Be CONCISE - show only relevant information
+```bash
+# Get workflow state
+cat .scud/workflow-state.json
+
+# List tags
+scud tags
+
+# Get task stats (if tag exists)
+scud stats --tag <tag>
+
+# Get wave info (if in implementation)
+scud waves --tag <tag>
+```
+
+## Next Steps Guidance Examples
+
+**Ideation (no PRD)**:
+> "Run `/scud:pm` to create your Product Requirements Document"
+
+**Ideation (PRD exists)**:
+> "PRD exists. Run `/scud:pm` to define tags, then transition to planning"
+
+**Planning (no tasks)**:
+> "Run `/scud:sm` to parse PRD into SCUD tasks"
+
+**Planning (tasks exist)**:
+> "Tasks created. Transition to architecture phase"
+
+**Architecture**:
+> "Run `/scud:architect` to design technical approach for [tag]"
+
+**Implementation**:
+> "Run `/scud:dev` to implement tasks. Wave 1 ready: [N] tasks"
+
+**Retrospective**:
+> "All tasks complete! Run `/scud:retrospective` to capture learnings"
+
+**Cycle Complete**:
+> "Cycle complete. Run `/scud:pm` to start new work"
+
+## Instructions
+
+- Be CONCISE - relevant info only
 - Use emojis for visual clarity
-- ALWAYS provide specific next steps
-- If blocked, explain exactly what needs to be done
-- Keep status display under 30 lines when possible
-
-## Examples of Next Steps Guidance
-
-**Ideation Phase**: "Run `/scud:pm` to create your Product Requirements Document"
-
-**Planning Phase**: "Parse your PRD into SCUD: `scud parse-prd phase-1.md --tag=phase-1`"
-
-**Architecture Phase**: "Run `/scud:architect` to design the technical solution"
-
-**Implementation Phase**: "Run `/scud:dev` to start implementing tasks"
-
-**Ready for Retrospective**: "All tasks complete! Run `/scud:retrospective` to capture learnings"
+- ALWAYS provide specific next step
+- If blocked, explain exactly why
+- Run actual SCUD commands to get real data
+- Keep under 30 lines when possible
