@@ -224,23 +224,47 @@ async function initProject() {
   }
 
   const packageRoot = path.join(__dirname, '..');
-  const sourceScud = path.join(packageRoot, '.claude', 'commands', 'scud');
-  const targetScud = path.join(cwd, '.claude', 'commands', 'scud');
+
+  // Claude Code commands (.claude/commands/scud/)
+  const sourceClaudeScud = path.join(packageRoot, '.claude', 'commands', 'scud');
+  const targetClaudeScud = path.join(cwd, '.claude', 'commands', 'scud');
+
+  // OpenCode commands (.opencode/command/scud/)
+  const sourceOpenCodeScud = path.join(packageRoot, '.opencode', 'command', 'scud');
+  const targetOpenCodeScud = path.join(cwd, '.opencode', 'command', 'scud');
 
   if (installAgents) {
-    if (fs.existsSync(sourceScud)) {
-      // Copy SCUD agent files to .claude/commands/scud/
-      copyScudAgents(sourceScud, targetScud);
+    let installedClaude = false;
+    let installedOpenCode = false;
 
-      log('✓ Slash commands installed to .claude/commands/scud/', 'green');
-      log('  • /scud-status', 'blue');
-      log('  • /scud-pm', 'blue');
-      log('  • /scud-sm', 'blue');
-      log('  • /scud-architect', 'blue');
-      log('  • /scud-dev', 'blue');
-      log('  • /scud-retrospective', 'blue');
+    // Install Claude Code commands
+    if (fs.existsSync(sourceClaudeScud)) {
+      copyScudAgents(sourceClaudeScud, targetClaudeScud);
+      installedClaude = true;
+    }
+
+    // Install OpenCode commands
+    if (fs.existsSync(sourceOpenCodeScud)) {
+      copyScudAgents(sourceOpenCodeScud, targetOpenCodeScud);
+      installedOpenCode = true;
+    }
+
+    if (installedClaude || installedOpenCode) {
+      log('✓ Slash commands installed:', 'green');
+      if (installedClaude) {
+        log('  Claude Code: .claude/commands/scud/', 'blue');
+      }
+      if (installedOpenCode) {
+        log('  OpenCode:    .opencode/command/scud/', 'blue');
+      }
+      log('  • /scud:status', 'blue');
+      log('  • /scud:pm', 'blue');
+      log('  • /scud:sm', 'blue');
+      log('  • /scud:architect', 'blue');
+      log('  • /scud:dev', 'blue');
+      log('  • /scud:retrospective', 'blue');
     } else {
-      log('⚠ Could not find source commands at ' + sourceScud, 'yellow');
+      log('⚠ Could not find source commands', 'yellow');
     }
   } else {
     log('⊘ Skipped agent installation', 'yellow');
@@ -270,10 +294,10 @@ async function initProject() {
   log('Next steps:', 'blue');
   log('  1. Run: scud status');
   if (installAgents) {
-    log('  2. Start with: /scud-pm (Claude Code slash command)\n');
+    log('  2. Start with: /scud:pm (slash command)\n');
   } else {
     log('  2. Add agents: scud config agents add --all');
-    log('  3. Start with: /scud-pm (Claude Code slash command)\n');
+    log('  3. Start with: /scud:pm (slash command)\n');
   }
 }
 
