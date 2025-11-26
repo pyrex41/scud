@@ -236,23 +236,64 @@ impl LLMClient {
         let response_text = self.complete(prompt).await?;
 
         // Try to find JSON in the response (LLM might include markdown or explanations)
-        let json_str = if let Some(start) = response_text.find('[') {
-            if let Some(end) = response_text.rfind(']') {
-                &response_text[start..=end]
-            } else {
-                &response_text
-            }
-        } else if let Some(start) = response_text.find('{') {
-            if let Some(end) = response_text.rfind('}') {
-                &response_text[start..=end]
-            } else {
-                &response_text
-            }
-        } else {
-            &response_text
-        };
+        let json_str = Self::extract_json(&response_text);
 
-        serde_json::from_str(json_str).context("Failed to parse JSON from LLM response")
+        serde_json::from_str(json_str).with_context(|| {
+            // Provide helpful error context
+            let preview = if json_str.len() > 500 {
+                format!("{}...", &json_str[..500])
+            } else {
+                json_str.to_string()
+            };
+            format!(
+                "Failed to parse JSON from LLM response. Response preview:\n{}",
+                preview
+            )
+        })
+    }
+
+    /// Extract JSON from LLM response, handling markdown code blocks and extra text
+    fn extract_json(response: &str) -> &str {
+        // First, try to extract from markdown code blocks
+        if let Some(start) = response.find("```json") {
+            let content_start = start + 7; // Skip "```json"
+            if let Some(end) = response[content_start..].find("```") {
+                return response[content_start..content_start + end].trim();
+            }
+        }
+
+        // Try plain code blocks
+        if let Some(start) = response.find("```") {
+            let content_start = start + 3;
+            // Skip language identifier if present (e.g., "```\n")
+            let content_start = response[content_start..]
+                .find('\n')
+                .map(|i| content_start + i + 1)
+                .unwrap_or(content_start);
+            if let Some(end) = response[content_start..].find("```") {
+                return response[content_start..content_start + end].trim();
+            }
+        }
+
+        // Try to find array JSON
+        if let Some(start) = response.find('[') {
+            if let Some(end) = response.rfind(']') {
+                if end > start {
+                    return &response[start..=end];
+                }
+            }
+        }
+
+        // Try to find object JSON
+        if let Some(start) = response.find('{') {
+            if let Some(end) = response.rfind('}') {
+                if end > start {
+                    return &response[start..=end];
+                }
+            }
+        }
+
+        response.trim()
     }
 
     async fn complete_claude_cli(
