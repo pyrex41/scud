@@ -18,6 +18,7 @@ const command = args.find(arg => !arg.startsWith('--')) || 'init';
 const flags = {
   agents: args.includes('--agents'),
   noAgents: args.includes('--no-agents'),
+  provider: args.find(arg => arg.startsWith('--provider='))?.split('=')[1],
 };
 
 // ANSI colors
@@ -45,6 +46,43 @@ function checkScud() {
       return false;
     }
   }
+}
+
+/**
+ * Prompt user for a numbered selection
+ * @param {string} question - Question to ask
+ * @param {string[]} options - Array of options
+ * @param {number} defaultIndex - Default selection (0-indexed)
+ * @returns {Promise<number>} - Selected index
+ */
+function askSelection(question, options, defaultIndex = 0) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    log(`\n${question}`, 'blue');
+    options.forEach((opt, i) => {
+      const marker = i === defaultIndex ? '>' : ' ';
+      log(`  ${marker} ${i + 1}) ${opt}`, 'reset');
+    });
+
+    rl.question(`\nSelect [1-${options.length}] (default: ${defaultIndex + 1}): `, (answer) => {
+      rl.close();
+      const normalized = answer.trim();
+      if (normalized === '') {
+        resolve(defaultIndex);
+      } else {
+        const num = parseInt(normalized, 10);
+        if (num >= 1 && num <= options.length) {
+          resolve(num - 1);
+        } else {
+          resolve(defaultIndex);
+        }
+      }
+    });
+  });
 }
 
 /**
@@ -99,14 +137,49 @@ async function initProject() {
 
   // Check SCUD CLI
   log('Step 1: Checking SCUD CLI...', 'blue');
-  if (checkScud()) {
+  const hasScudCli = checkScud();
+  if (hasScudCli) {
     log('✓ SCUD CLI found', 'green');
   } else {
     log('⚠ SCUD CLI not found (optional for AI features)', 'yellow');
   }
 
+  // Step 2: AI Provider selection
+  log('\nStep 2: AI Provider Configuration...', 'blue');
+
+  const providers = [
+    { name: 'xAI (Grok)', id: 'xai', model: 'grok-3-fast-latest', env: 'XAI_API_KEY' },
+    { name: 'Anthropic (Claude)', id: 'anthropic', model: 'claude-sonnet-4-20250514', env: 'ANTHROPIC_API_KEY' },
+    { name: 'OpenAI (GPT)', id: 'openai', model: 'gpt-4.1', env: 'OPENAI_API_KEY' },
+    { name: 'OpenRouter', id: 'openrouter', model: 'anthropic/claude-sonnet-4', env: 'OPENROUTER_API_KEY' },
+  ];
+
+  let selectedProvider;
+
+  if (flags.provider) {
+    // --provider flag provided
+    selectedProvider = providers.find(p => p.id === flags.provider.toLowerCase());
+    if (!selectedProvider) {
+      log(`⚠ Unknown provider: ${flags.provider}. Using default (xAI).`, 'yellow');
+      selectedProvider = providers[0];
+    }
+    log(`Using provider: ${selectedProvider.name} (--provider flag)`, 'blue');
+  } else {
+    // Interactive selection
+    const providerIndex = await askSelection(
+      'Select your AI provider for SCUD CLI features:',
+      providers.map(p => p.name),
+      0
+    );
+    selectedProvider = providers[providerIndex];
+  }
+
+  log(`✓ Provider: ${selectedProvider.name}`, 'green');
+  log(`  Model: ${selectedProvider.model}`, 'reset');
+  log(`  Requires: export ${selectedProvider.env}=your-api-key`, 'yellow');
+
   // Create .scud directory
-  log('\nStep 2: Creating SCUD structure...', 'blue');
+  log('\nStep 3: Creating SCUD structure...', 'blue');
   const scudDir = path.join(cwd, '.scud');
   const tasksDir = path.join(scudDir, 'tasks');
 
@@ -126,16 +199,22 @@ async function initProject() {
     log('✓ tasks.scg already exists', 'green');
   }
 
-  const legacyTasksJson = path.join(tasksDir, 'tasks.json');
-  if (!fs.existsSync(legacyTasksJson)) {
-    fs.writeFileSync(legacyTasksJson, '{}');
-    log('✓ Created tasks.json (legacy compatibility)', 'green');
+  // Create config file with selected provider
+  const configFile = path.join(scudDir, 'config.toml');
+  if (!fs.existsSync(configFile)) {
+    const configContent = `[llm]
+provider = "${selectedProvider.id}"
+model = "${selectedProvider.model}"
+max_tokens = 4096
+`;
+    fs.writeFileSync(configFile, configContent);
+    log('✓ Created config.toml', 'green');
   } else {
-    log('✓ tasks.json already exists', 'green');
+    log('✓ config.toml already exists', 'green');
   }
 
   // Create workflow state
-  log('\nStep 3: Creating workflow state...', 'blue');
+  log('\nStep 4: Creating workflow state...', 'blue');
   const workflowFile = path.join(scudDir, 'workflow-state.json');
   if (!fs.existsSync(workflowFile)) {
     const workflowState = {
@@ -185,7 +264,7 @@ async function initProject() {
   }
 
   // Create docs directories
-  log('\nStep 4: Creating documentation directories...', 'blue');
+  log('\nStep 5: Creating documentation directories...', 'blue');
   const docsDirs = ['docs/prd', 'docs/phases', 'docs/architecture', 'docs/retrospectives'];
   docsDirs.forEach(dir => {
     const fullPath = path.join(cwd, dir);
@@ -195,8 +274,8 @@ async function initProject() {
   });
   log('✓ Documentation directories created', 'green');
 
-  // Step 5: Agent installation (interactive or flag-based)
-  log('\nStep 5: SCUD Workflow Agents...', 'blue');
+  // Step 6: Agent installation (interactive or flag-based)
+  log('\nStep 6: SCUD Workflow Agents...', 'blue');
 
   let installAgents = false;
 
@@ -272,7 +351,7 @@ async function initProject() {
   }
 
   // Create .gitignore entry
-  log('\nStep 6: Updating .gitignore...', 'blue');
+  log('\nStep 7: Updating .gitignore...', 'blue');
   const gitignorePath = path.join(cwd, '.gitignore');
   const gitignoreEntry = '\n# SCUD\n.scud/\n';
 
@@ -291,13 +370,21 @@ async function initProject() {
 
   // Success message
   log('\n✅ SCUD initialized successfully!\n', 'green');
+  log('Configuration:', 'blue');
+  log(`  Provider: ${selectedProvider.name}`, 'reset');
+  log(`  Model: ${selectedProvider.model}`, 'reset');
+  log('');
+  log('Environment variable required:', 'yellow');
+  log(`  export ${selectedProvider.env}=your-api-key`, 'reset');
+  log('');
   log('Next steps:', 'blue');
-  log('  1. Run: scud status');
+  log(`  1. Set your API key: export ${selectedProvider.env}=your-key`);
+  log('  2. Run: scud status');
   if (installAgents) {
-    log('  2. Start with: /scud:pm (slash command)\n');
-  } else {
-    log('  2. Add agents: scud config agents add --all');
     log('  3. Start with: /scud:pm (slash command)\n');
+  } else {
+    log('  3. Add agents: scud config agents add --all');
+    log('  4. Start with: /scud:pm (slash command)\n');
   }
 }
 
