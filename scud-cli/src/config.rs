@@ -21,7 +21,7 @@ impl Default for Config {
         Config {
             llm: LLMConfig {
                 provider: "anthropic".to_string(),
-                model: "claude-sonnet-4-20250514".to_string(),
+                model: "claude-sonnet-4-5-20250929".to_string(),
                 max_tokens: 4096,
             },
         }
@@ -77,29 +77,44 @@ impl Config {
 
     pub fn default_model_for_provider(provider: &str) -> &str {
         match provider {
-            "anthropic" => "claude-sonnet-4-20250514",
+            "anthropic" => "claude-sonnet-4-5-20250929",
             "xai" => "grok-4-1-fast-reasoning",
-            "openai" => "gpt-4-turbo",
-            "openrouter" => "anthropic/claude-sonnet-4",
+            "openai" => "o3-mini",
+            "openrouter" => "anthropic/claude-sonnet-4.5",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
-            _ => "claude-sonnet-4-20250514",
+            _ => "claude-sonnet-4-5-20250929",
         }
     }
 
     /// Get suggested models for a provider (for display in init)
     pub fn suggested_models_for_provider(provider: &str) -> Vec<&str> {
         match provider {
-            "xai" => vec!["grok-4-1-fast-reasoning", "grok-4-1-fast", "grok-3-fast", "grok-3"],
-            "anthropic" => vec![
-                "claude-sonnet-4-20250514",
-                "claude-opus-4-20250514",
-                "claude-3-5-sonnet-20241022",
+            "xai" => vec![
+                "grok-4-1-fast-reasoning",
+                "grok-4-1-fast",
+                "grok-3-fast",
+                "grok-3",
             ],
-            "openai" => vec!["gpt-4-turbo", "gpt-4o", "gpt-4o-mini", "o1", "o1-mini"],
+            "anthropic" => vec![
+                "claude-sonnet-4-5-20250929",
+                "claude-opus-4-5-20251101",
+                "claude-haiku-4-5-20251001",
+                "claude-opus-4-1-20250805",
+            ],
+            "openai" => vec![
+                "o3-mini",
+                "o3",
+                "o4-mini",
+                "gpt-4.1",
+                "gpt-4o",
+                "gpt-4o-mini",
+            ],
             "openrouter" => vec![
-                "anthropic/claude-sonnet-4",
-                "openai/gpt-4-turbo",
-                "google/gemini-pro-1.5",
+                "anthropic/claude-sonnet-4.5",
+                "anthropic/claude-opus-4.5",
+                "openai/o3-mini",
+                "openai/gpt-4.1",
+                "xai/grok-4-1-fast-reasoning",
             ],
             _ => vec![],
         }
@@ -115,7 +130,7 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.llm.provider, "anthropic");
-        assert_eq!(config.llm.model, "claude-sonnet-4-20250514");
+        assert_eq!(config.llm.model, "claude-sonnet-4-5-20250929");
         assert_eq!(config.llm.max_tokens, 4096);
     }
 
@@ -182,12 +197,12 @@ mod tests {
     fn test_default_models() {
         assert_eq!(
             Config::default_model_for_provider("anthropic"),
-            "claude-sonnet-4-20250514"
+            "claude-sonnet-4-5-20250929"
         );
         assert_eq!(
             Config::default_model_for_provider("xai"),
             "grok-4-1-fast-reasoning"
         );
-        assert_eq!(Config::default_model_for_provider("openai"), "gpt-4-turbo");
+        assert_eq!(Config::default_model_for_provider("openai"), "o3-mini");
     }
 }
