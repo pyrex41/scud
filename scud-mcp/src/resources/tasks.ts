@@ -14,8 +14,8 @@ import { join } from 'path';
 export const TASK_RESOURCES: Resource[] = [
   {
     uri: 'scud://tasks/list',
-    name: 'All tasks in active epic',
-    description: 'Read all tasks for the currently active epic',
+    name: 'All tasks in active phase',
+    description: 'Read all tasks for the currently active phase',
     mimeType: 'application/json',
   },
 ];
@@ -45,23 +45,23 @@ export async function handleTaskResource(
       const content = await readFile(tasksFile, 'utf-8');
       const allTasks = JSON.parse(content);
 
-      // Read workflow state to get active epic
+      // Read workflow state to get active phase
       const stateFile = resolveDataPath('workflow-state.json');
       const stateContent = await readFile(stateFile, 'utf-8');
       const state = JSON.parse(stateContent);
 
-      if (!state.active_epic) {
+      if (!state.active_group) {
         return {
           contents: [{
             uri,
             mimeType: 'text/plain',
-            text: 'No active epic set',
+            text: 'No active phase set',
           }],
         };
       }
 
-      // Get tasks for active epic
-      const activeTasks = allTasks[state.active_epic] || { tasks: [] };
+      // Get tasks for active phase
+      const activeTasks = allTasks[state.active_group] || { tasks: [] };
 
       return {
         contents: [{

@@ -18,7 +18,7 @@ import {
 
 // Import all tool handlers
 import { CORE_TOOLS, handleCoreTool } from './tools/core.js';
-import { EPIC_TOOLS, handleEpicTool } from './tools/epic.js';
+import { PHASE_TOOLS, handlePhaseTool } from './tools/phase.js';
 import { TASK_TOOLS, handleTaskTool } from './tools/task.js';
 import { AI_TOOLS, handleAITool } from './tools/ai.js';
 import { PARALLEL_TOOLS, handleParallelTool } from './tools/parallel.js';
@@ -33,7 +33,7 @@ import { checkScudAvailable } from './utils/exec.js';
 // Combine all tools
 const ALL_TOOLS = [
   ...CORE_TOOLS,
-  ...EPIC_TOOLS,
+  ...PHASE_TOOLS,
   ...TASK_TOOLS,
   ...AI_TOOLS,
   ...PARALLEL_TOOLS,
@@ -76,8 +76,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return handleCoreTool(request);
   }
 
-  if (EPIC_TOOLS.some(t => t.name === toolName)) {
-    return handleEpicTool(request);
+  if (PHASE_TOOLS.some(t => t.name === toolName)) {
+    return handlePhaseTool(request);
   }
 
   if (TASK_TOOLS.some(t => t.name === toolName)) {

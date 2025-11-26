@@ -12,17 +12,17 @@ import { executeScudCommand } from '../utils/exec.js';
 export const AI_TOOLS: Tool[] = [
   {
     name: 'scud_parse_prd',
-    description: 'Parse a PRD/epic markdown file into tasks using AI. Requires ANTHROPIC_API_KEY environment variable.',
+    description: 'Parse a PRD markdown file into tasks using AI. Requires ANTHROPIC_API_KEY environment variable.',
     inputSchema: {
       type: 'object',
       properties: {
         file: {
           type: 'string',
-          description: 'Path to PRD/epic markdown file (e.g., "docs/epics/epic-1-auth.md")',
+          description: 'Path to PRD markdown file (e.g., "docs/phases/phase-1-auth.md")',
         },
         tag: {
           type: 'string',
-          description: 'Epic tag to create (e.g., "epic-1-auth")',
+          description: 'Phase tag to create (e.g., "phase-1-auth")',
         },
       },
       required: ['file', 'tag'],

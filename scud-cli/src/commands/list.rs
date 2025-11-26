@@ -13,12 +13,12 @@ pub fn run(
 ) -> Result<()> {
     let storage = Storage::new(project_root);
 
-    // Resolve epic tag (explicit --tag, active epic, or interactive selection)
-    let epic_tag = resolve_group_tag(&storage, tag, true)?;
+    // Resolve phase tag (explicit --tag, active phase, or interactive selection)
+    let phase_tag = resolve_group_tag(&storage, tag, true)?;
     let tasks = storage.load_tasks()?;
-    let epic = tasks
-        .get(&epic_tag)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
+    let phase = tasks
+        .get(&phase_tag)
+        .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
 
     // Parse filter status once
     let filter_status = status_filter
@@ -30,7 +30,7 @@ pub fn run(
         .transpose()?;
 
     // OPTIMIZED: Use iterator instead of clone
-    let task_iter = epic.tasks.iter().filter(|t| {
+    let task_iter = phase.tasks.iter().filter(|t| {
         filter_status
             .as_ref()
             .map(|fs| t.status == *fs)
@@ -42,7 +42,7 @@ pub fn run(
         return Ok(());
     }
 
-    println!("{} {}", "Tasks in epic:".blue().bold(), epic.name.green());
+    println!("{} {}", "Tasks in phase:".blue().bold(), phase.name.green());
     println!();
 
     for task in task_iter {

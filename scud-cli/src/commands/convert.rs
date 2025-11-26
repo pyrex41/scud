@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::formats::{parse_scg, serialize_scg, Format};
-use crate::models::Epic;
+use crate::models::Phase;
 use crate::storage::Storage;
 
 pub fn run(
@@ -64,35 +64,35 @@ pub fn run(
         .with_context(|| format!("Failed to read {}", source_file.display()))?;
 
     // Parse based on source format
-    let epics: HashMap<String, Epic> = match from {
+    let phases: HashMap<String, Phase> = match from {
         Format::Json => serde_json::from_str(&content).with_context(|| "Failed to parse JSON")?,
         Format::Scg => {
-            // Parse multi-epic SCG
-            parse_multi_epic_scg(&content)?
+            // Parse multi-phase SCG
+            parse_multi_phase_scg(&content)?
         }
     };
 
-    println!("  {} epic(s) found", epics.len());
-    for (tag, epic) in &epics {
-        println!("    {} {} tasks", tag.cyan(), epic.tasks.len());
+    println!("  {} phase(s) found", phases.len());
+    for (tag, phase) in &phases {
+        println!("    {} {} tasks", tag.cyan(), phase.tasks.len());
     }
 
     // Serialize to target format
     let output = match to {
         Format::Json => {
-            serde_json::to_string_pretty(&epics).with_context(|| "Failed to serialize to JSON")?
+            serde_json::to_string_pretty(&phases).with_context(|| "Failed to serialize to JSON")?
         }
         Format::Scg => {
             let mut out = String::new();
-            let mut sorted_tags: Vec<_> = epics.keys().collect();
+            let mut sorted_tags: Vec<_> = phases.keys().collect();
             sorted_tags.sort();
 
             for (i, tag) in sorted_tags.iter().enumerate() {
                 if i > 0 {
                     out.push_str("\n---\n\n");
                 }
-                let epic = epics.get(*tag).unwrap();
-                out.push_str(&serialize_scg(epic));
+                let phase = phases.get(*tag).unwrap();
+                out.push_str(&serialize_scg(phase));
             }
             out
         }
@@ -130,15 +130,15 @@ pub fn run(
     Ok(())
 }
 
-fn parse_multi_epic_scg(content: &str) -> Result<HashMap<String, Epic>> {
-    let mut epics = HashMap::new();
+fn parse_multi_phase_scg(content: &str) -> Result<HashMap<String, Phase>> {
+    let mut phases = HashMap::new();
 
     // Empty content returns empty map
     if content.trim().is_empty() {
-        return Ok(epics);
+        return Ok(phases);
     }
 
-    // Split by epic separator (---)
+    // Split by phase separator (---)
     let sections: Vec<&str> = content.split("\n---\n").collect();
 
     for section in sections {
@@ -147,10 +147,10 @@ fn parse_multi_epic_scg(content: &str) -> Result<HashMap<String, Epic>> {
             continue;
         }
 
-        let epic = parse_scg(section).with_context(|| "Failed to parse SCG section")?;
+        let phase = parse_scg(section).with_context(|| "Failed to parse SCG section")?;
 
-        epics.insert(epic.name.clone(), epic);
+        phases.insert(phase.name.clone(), phase);
     }
 
-    Ok(epics)
+    Ok(phases)
 }

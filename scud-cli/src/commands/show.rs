@@ -8,15 +8,15 @@ use crate::storage::Storage;
 pub fn run(project_root: Option<PathBuf>, task_id: &str, tag: Option<&str>) -> Result<()> {
     let storage = Storage::new(project_root);
 
-    let epic_tag = resolve_group_tag(&storage, tag, true)?;
+    let phase_tag = resolve_group_tag(&storage, tag, true)?;
     let tasks = storage.load_tasks()?;
-    let epic = tasks
-        .get(&epic_tag)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
+    let phase = tasks
+        .get(&phase_tag)
+        .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
 
-    let task = epic
+    let task = phase
         .get_task(task_id)
-        .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, epic_tag))?;
+        .ok_or_else(|| anyhow::anyhow!("Task {} not found in phase '{}'", task_id, phase_tag))?;
 
     println!("\n{}", "Task Details".blue().bold());
     println!("{}", "=============".blue());

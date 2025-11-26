@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 
-use crate::models::{Epic, Priority, Task, TaskStatus};
+use crate::models::{Phase, Priority, Task, TaskStatus};
 
 const FORMAT_VERSION: &str = "v1";
 const HEADER_PREFIX: &str = "# SCUD Graph";
@@ -114,8 +114,8 @@ fn split_by_pipe(line: &str) -> Vec<String> {
     parts
 }
 
-/// Parse SCG format into Epic
-pub fn parse_scg(content: &str) -> Result<Epic> {
+/// Parse SCG format into Phase
+pub fn parse_scg(content: &str) -> Result<Phase> {
     let mut lines = content.lines().peekable();
 
     // Parse header
@@ -128,13 +128,14 @@ pub fn parse_scg(content: &str) -> Result<Epic> {
         );
     }
 
-    let epic_line = lines.next().context("Missing epic tag line")?;
-    let epic_tag = epic_line
-        .strip_prefix("# Epic:")
+    let phase_line = lines.next().context("Missing phase tag line")?;
+    let phase_tag = phase_line
+        .strip_prefix("# Phase:")
+        .or_else(|| phase_line.strip_prefix("# Epic:")) // backwards compatibility
         .map(|s| s.trim())
-        .context("Invalid epic line format")?;
+        .context("Invalid phase line format")?;
 
-    let mut epic = Epic::new(epic_tag.to_string());
+    let mut phase = Phase::new(phase_tag.to_string());
     let mut tasks: HashMap<String, Task> = HashMap::new();
     let mut edges: Vec<(String, String)> = Vec::new();
     let mut parents: HashMap<String, Vec<String>> = HashMap::new();
@@ -200,9 +201,9 @@ pub fn parse_scg(content: &str) -> Result<Epic> {
                 // Parse "key value" pairs
                 if let Some((key, value)) = trimmed.split_once(char::is_whitespace) {
                     let value = value.trim();
-                    // Meta fields are informational, epic name is already set
-                    if key == "name" && epic.name != value {
-                        epic = Epic::new(value.to_string());
+                    // Meta fields are informational, phase name is already set
+                    if key == "name" && phase.name != value {
+                        phase = Phase::new(value.to_string());
                     }
                 }
             }
@@ -337,13 +338,13 @@ pub fn parse_scg(content: &str) -> Result<Epic> {
         }
     }
 
-    // Add all tasks to epic
-    epic.tasks = tasks.into_values().collect();
+    // Add all tasks to phase
+    phase.tasks = tasks.into_values().collect();
 
     // Sort tasks by ID for consistent ordering
-    epic.tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
+    phase.tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
 
-    Ok(epic)
+    Ok(phase)
 }
 
 /// Natural sort for task IDs: "1" < "2" < "10", "1.1" < "1.2" < "1.10"
@@ -385,23 +386,23 @@ fn flush_detail(
     }
 }
 
-/// Serialize Epic to SCG format
-pub fn serialize_scg(epic: &Epic) -> String {
+/// Serialize Phase to SCG format
+pub fn serialize_scg(phase: &Phase) -> String {
     let mut output = String::new();
 
     // Header
     output.push_str(&format!("{} {}\n", HEADER_PREFIX, FORMAT_VERSION));
-    output.push_str(&format!("# Epic: {}\n\n", epic.name));
+    output.push_str(&format!("# Phase: {}\n\n", phase.name));
 
     // Meta section
     let now = chrono::Utc::now().to_rfc3339();
     output.push_str("@meta {\n");
-    output.push_str(&format!("  name {}\n", epic.name));
+    output.push_str(&format!("  name {}\n", phase.name));
     output.push_str(&format!("  updated {}\n", now));
     output.push_str("}\n\n");
 
     // Sort tasks for consistent output
-    let mut sorted_tasks = epic.tasks.clone();
+    let mut sorted_tasks = phase.tasks.clone();
     sorted_tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
 
     // Nodes section
@@ -539,7 +540,7 @@ mod tests {
 
     #[test]
     fn test_round_trip() {
-        let mut epic = Epic::new("test-epic".to_string());
+        let mut epic = Phase::new("test-epic".to_string());
 
         let mut task1 = Task::new(
             "1".to_string(),
@@ -578,7 +579,7 @@ mod tests {
 
     #[test]
     fn test_parent_child() {
-        let mut epic = Epic::new("parent-test".to_string());
+        let mut epic = Phase::new("parent-test".to_string());
 
         let mut parent = Task::new(
             "1".to_string(),
@@ -628,16 +629,16 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_epic() {
-        let content = "# SCUD Graph v1\n# Epic: empty\n\n@nodes\n# id | title | status | complexity | priority\n";
-        let epic = parse_scg(content).unwrap();
-        assert_eq!(epic.name, "empty");
-        assert!(epic.tasks.is_empty());
+    fn test_empty_phase() {
+        let content = "# SCUD Graph v1\n# Phase: empty\n\n@nodes\n# id | title | status | complexity | priority\n";
+        let phase = parse_scg(content).unwrap();
+        assert_eq!(phase.name, "empty");
+        assert!(phase.tasks.is_empty());
     }
 
     #[test]
     fn test_special_characters_in_title() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let task = Task::new(
             "1".to_string(),
             "Task with | pipe".to_string(),
@@ -653,7 +654,7 @@ mod tests {
 
     #[test]
     fn test_multiline_description() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let task = Task::new(
             "1".to_string(),
             "Task".to_string(),
@@ -670,7 +671,7 @@ mod tests {
 
     #[test]
     fn test_assignments() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let mut task = Task::new("1".to_string(), "Task".to_string(), "Desc".to_string());
         task.assigned_to = Some("alice".to_string());
         task.locked_by = Some("alice".to_string());
@@ -688,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_natural_sort_order() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
 
         // Add tasks in random order
         for id in ["10", "2", "1", "1.10", "1.2", "1.1"] {
@@ -705,7 +706,7 @@ mod tests {
 
     #[test]
     fn test_all_statuses() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
 
         let statuses = [
             ("1", TaskStatus::Pending),
@@ -739,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_all_priorities() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
 
         let priorities = [
             ("1", Priority::High),
@@ -768,7 +769,7 @@ mod tests {
 
     #[test]
     fn test_details_and_test_strategy() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let mut task = Task::new(
             "1".to_string(),
             "Task".to_string(),
@@ -794,7 +795,7 @@ mod tests {
 
     #[test]
     fn test_backslash_escape() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let task = Task::new(
             "1".to_string(),
             "Task with \\ backslash".to_string(),
@@ -813,7 +814,7 @@ mod tests {
 
     #[test]
     fn test_multiple_special_chars() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let task = Task::new(
             "1".to_string(),
             "Task with | pipe and \\ backslash".to_string(),
@@ -831,7 +832,7 @@ mod tests {
 
     #[test]
     fn test_unicode_content() {
-        let mut epic = Epic::new("unicode-test".to_string());
+        let mut epic = Phase::new("unicode-test".to_string());
         let task = Task::new(
             "1".to_string(),
             "日本語タイトル 🚀 Émojis".to_string(),
@@ -849,7 +850,7 @@ mod tests {
 
     #[test]
     fn test_empty_dependencies() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let task = Task::new("1".to_string(), "Task".to_string(), "Desc".to_string());
         epic.add_task(task);
 
@@ -861,7 +862,7 @@ mod tests {
 
     #[test]
     fn test_multiple_dependencies() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
 
         let task1 = Task::new("1".to_string(), "Task 1".to_string(), String::new());
         let task2 = Task::new("2".to_string(), "Task 2".to_string(), String::new());
@@ -883,7 +884,7 @@ mod tests {
 
     #[test]
     fn test_complexity_boundary_values() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
 
         // Test all Fibonacci complexity values
         let complexities: Vec<u32> = vec![0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
@@ -913,7 +914,7 @@ mod tests {
 
     #[test]
     fn test_long_description() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let long_desc = "A".repeat(5000); // Max description length
         let task = Task::new("1".to_string(), "Task".to_string(), long_desc.clone());
         epic.add_task(task);
@@ -926,7 +927,7 @@ mod tests {
 
     #[test]
     fn test_empty_description() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let task = Task::new("1".to_string(), "Task".to_string(), String::new());
         epic.add_task(task);
 
@@ -939,7 +940,7 @@ mod tests {
     #[test]
     fn test_whitespace_handling() {
         // Ensure whitespace in titles is preserved
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
         let task = Task::new(
             "1".to_string(),
             "  Task with   spaces  ".to_string(),
@@ -958,7 +959,7 @@ mod tests {
 
     #[test]
     fn test_nested_subtasks() {
-        let mut epic = Epic::new("test".to_string());
+        let mut epic = Phase::new("test".to_string());
 
         // Create hierarchy: 1 -> 1.1, 1.2 -> 1.2.1
         let mut parent = Task::new("1".to_string(), "Parent".to_string(), String::new());

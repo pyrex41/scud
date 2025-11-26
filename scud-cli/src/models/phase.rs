@@ -2,14 +2,14 @@ use super::task::Task;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Epic {
+pub struct Phase {
     pub name: String,
     pub tasks: Vec<Task>,
 }
 
-impl Epic {
+impl Phase {
     pub fn new(name: String) -> Self {
-        Epic {
+        Phase {
             name,
             tasks: Vec::new(),
         }
@@ -34,7 +34,7 @@ impl Epic {
             .map(|idx| self.tasks.remove(idx))
     }
 
-    pub fn get_stats(&self) -> EpicStats {
+    pub fn get_stats(&self) -> PhaseStats {
         let mut total = 0;
         let mut pending = 0;
         let mut in_progress = 0;
@@ -67,7 +67,7 @@ impl Epic {
             }
         }
 
-        EpicStats {
+        PhaseStats {
             total,
             pending,
             in_progress,
@@ -114,7 +114,7 @@ impl Epic {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EpicStats {
+pub struct PhaseStats {
     pub total: usize,
     pub pending: usize,
     pub in_progress: usize,
@@ -130,70 +130,70 @@ mod tests {
     use crate::models::task::{Task, TaskStatus};
 
     #[test]
-    fn test_epic_creation() {
-        let epic = Epic::new("epic-1-auth".to_string());
+    fn test_phase_creation() {
+        let phase = Phase::new("phase-1-auth".to_string());
 
-        assert_eq!(epic.name, "epic-1-auth");
-        assert!(epic.tasks.is_empty());
+        assert_eq!(phase.name, "phase-1-auth");
+        assert!(phase.tasks.is_empty());
     }
 
     #[test]
     fn test_add_task() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
         let task = Task::new(
             "TASK-1".to_string(),
             "Test Task".to_string(),
             "Description".to_string(),
         );
 
-        epic.add_task(task.clone());
+        phase.add_task(task.clone());
 
-        assert_eq!(epic.tasks.len(), 1);
-        assert_eq!(epic.tasks[0].id, "TASK-1");
+        assert_eq!(phase.tasks.len(), 1);
+        assert_eq!(phase.tasks[0].id, "TASK-1");
     }
 
     #[test]
     fn test_get_task() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
         let task = Task::new(
             "TASK-1".to_string(),
             "Test Task".to_string(),
             "Description".to_string(),
         );
-        epic.add_task(task);
+        phase.add_task(task);
 
-        let retrieved = epic.get_task("TASK-1");
+        let retrieved = phase.get_task("TASK-1");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id, "TASK-1");
 
-        let missing = epic.get_task("TASK-99");
+        let missing = phase.get_task("TASK-99");
         assert!(missing.is_none());
     }
 
     #[test]
     fn test_get_task_mut() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
         let task = Task::new(
             "TASK-1".to_string(),
             "Test Task".to_string(),
             "Description".to_string(),
         );
-        epic.add_task(task);
+        phase.add_task(task);
 
         {
-            let task_mut = epic.get_task_mut("TASK-1").unwrap();
+            let task_mut = phase.get_task_mut("TASK-1").unwrap();
             task_mut.set_status(TaskStatus::InProgress);
         }
 
         assert_eq!(
-            epic.get_task("TASK-1").unwrap().status,
+            phase.get_task("TASK-1").unwrap().status,
             TaskStatus::InProgress
         );
     }
 
     #[test]
     fn test_remove_task() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
         let task1 = Task::new(
             "TASK-1".to_string(),
             "Task 1".to_string(),
@@ -204,23 +204,23 @@ mod tests {
             "Task 2".to_string(),
             "Desc".to_string(),
         );
-        epic.add_task(task1);
-        epic.add_task(task2);
+        phase.add_task(task1);
+        phase.add_task(task2);
 
-        let removed = epic.remove_task("TASK-1");
+        let removed = phase.remove_task("TASK-1");
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().id, "TASK-1");
-        assert_eq!(epic.tasks.len(), 1);
-        assert_eq!(epic.tasks[0].id, "TASK-2");
+        assert_eq!(phase.tasks.len(), 1);
+        assert_eq!(phase.tasks[0].id, "TASK-2");
 
-        let missing = epic.remove_task("TASK-99");
+        let missing = phase.remove_task("TASK-99");
         assert!(missing.is_none());
     }
 
     #[test]
-    fn test_get_stats_empty_epic() {
-        let epic = Epic::new("epic-1".to_string());
-        let stats = epic.get_stats();
+    fn test_get_stats_empty_phase() {
+        let phase = Phase::new("phase-1".to_string());
+        let stats = phase.get_stats();
 
         assert_eq!(stats.total, 0);
         assert_eq!(stats.pending, 0);
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_get_stats_with_tasks() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
 
         let mut task1 = Task::new(
             "TASK-1".to_string(),
@@ -266,12 +266,12 @@ mod tests {
         task4.complexity = 2;
         task4.set_status(TaskStatus::Blocked);
 
-        epic.add_task(task1);
-        epic.add_task(task2);
-        epic.add_task(task3);
-        epic.add_task(task4);
+        phase.add_task(task1);
+        phase.add_task(task2);
+        phase.add_task(task3);
+        phase.add_task(task4);
 
-        let stats = epic.get_stats();
+        let stats = phase.get_stats();
 
         assert_eq!(stats.total, 4);
         assert_eq!(stats.pending, 1);
@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_find_next_task_no_dependencies() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
 
         let mut task1 = Task::new(
             "TASK-1".to_string(),
@@ -306,18 +306,18 @@ mod tests {
         );
         // Pending, no dependencies
 
-        epic.add_task(task1);
-        epic.add_task(task2);
-        epic.add_task(task3);
+        phase.add_task(task1);
+        phase.add_task(task2);
+        phase.add_task(task3);
 
-        let next = epic.find_next_task();
+        let next = phase.find_next_task();
         assert!(next.is_some());
         assert_eq!(next.unwrap().id, "TASK-2"); // First pending task
     }
 
     #[test]
     fn test_find_next_task_with_dependencies() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
 
         let mut task1 = Task::new(
             "TASK-1".to_string(),
@@ -341,18 +341,18 @@ mod tests {
         task3.dependencies = vec!["TASK-1".to_string(), "TASK-2".to_string()];
         // Pending, but depends on TASK-2 which is not done
 
-        epic.add_task(task1);
-        epic.add_task(task2);
-        epic.add_task(task3);
+        phase.add_task(task1);
+        phase.add_task(task2);
+        phase.add_task(task3);
 
-        let next = epic.find_next_task();
+        let next = phase.find_next_task();
         assert!(next.is_some());
         assert_eq!(next.unwrap().id, "TASK-2"); // TASK-3 blocked by dependencies
     }
 
     #[test]
     fn test_find_next_task_dependencies_met() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
 
         let mut task1 = Task::new(
             "TASK-1".to_string(),
@@ -376,18 +376,18 @@ mod tests {
         task3.dependencies = vec!["TASK-1".to_string(), "TASK-2".to_string()];
         // Pending, dependencies met
 
-        epic.add_task(task1);
-        epic.add_task(task2);
-        epic.add_task(task3);
+        phase.add_task(task1);
+        phase.add_task(task2);
+        phase.add_task(task3);
 
-        let next = epic.find_next_task();
+        let next = phase.find_next_task();
         assert!(next.is_some());
         assert_eq!(next.unwrap().id, "TASK-3"); // Dependencies met
     }
 
     #[test]
     fn test_find_next_task_none_available() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
 
         let mut task1 = Task::new(
             "TASK-1".to_string(),
@@ -403,16 +403,16 @@ mod tests {
         );
         task2.set_status(TaskStatus::InProgress);
 
-        epic.add_task(task1);
-        epic.add_task(task2);
+        phase.add_task(task1);
+        phase.add_task(task2);
 
-        let next = epic.find_next_task();
+        let next = phase.find_next_task();
         assert!(next.is_none()); // No pending tasks
     }
 
     #[test]
     fn test_get_tasks_needing_expansion() {
-        let mut epic = Epic::new("epic-1".to_string());
+        let mut phase = Phase::new("phase-1".to_string());
 
         let mut task1 = Task::new(
             "TASK-1".to_string(),
@@ -442,12 +442,12 @@ mod tests {
         );
         task4.complexity = 34;
 
-        epic.add_task(task1);
-        epic.add_task(task2);
-        epic.add_task(task3);
-        epic.add_task(task4);
+        phase.add_task(task1);
+        phase.add_task(task2);
+        phase.add_task(task3);
+        phase.add_task(task4);
 
-        let needing_expansion = epic.get_tasks_needing_expansion();
+        let needing_expansion = phase.get_tasks_needing_expansion();
 
         assert_eq!(needing_expansion.len(), 4); // All tasks with complexity >= 3
         assert!(needing_expansion.iter().any(|t| t.id == "TASK-1"));
@@ -457,20 +457,20 @@ mod tests {
     }
 
     #[test]
-    fn test_epic_serialization() {
-        let mut epic = Epic::new("epic-1".to_string());
+    fn test_phase_serialization() {
+        let mut phase = Phase::new("phase-1".to_string());
         let task = Task::new(
             "TASK-1".to_string(),
             "Test Task".to_string(),
             "Description".to_string(),
         );
-        epic.add_task(task);
+        phase.add_task(task);
 
-        let json = serde_json::to_string(&epic).unwrap();
-        let deserialized: Epic = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&phase).unwrap();
+        let deserialized: Phase = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(epic.name, deserialized.name);
-        assert_eq!(epic.tasks.len(), deserialized.tasks.len());
-        assert_eq!(epic.tasks[0].id, deserialized.tasks[0].id);
+        assert_eq!(phase.name, deserialized.name);
+        assert_eq!(phase.tasks.len(), deserialized.tasks.len());
+        assert_eq!(phase.tasks[0].id, deserialized.tasks[0].id);
     }
 }

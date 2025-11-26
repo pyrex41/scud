@@ -47,19 +47,19 @@ enum Commands {
         provider: Option<String>,
     },
 
-    /// List epic tags or set active tag
+    /// List phase tags or set active tag
     Tags {
         /// Tag to set as active (lists tags if not provided)
         tag: Option<String>,
     },
 
-    /// List tasks in active epic
+    /// List tasks in active phase
     List {
         /// Filter by status
         #[arg(short, long)]
         status: Option<String>,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
@@ -69,7 +69,7 @@ enum Commands {
         /// Task ID
         task_id: String,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
@@ -81,14 +81,14 @@ enum Commands {
         /// New status
         status: String,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
 
     /// Find next available task (EXPERIMENTAL: use --claim for dynamic-wave mode)
     Next {
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
 
@@ -105,9 +105,9 @@ enum Commands {
         release: bool,
     },
 
-    /// Show epic statistics
+    /// Show phase statistics
     Stats {
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
@@ -121,7 +121,7 @@ enum Commands {
 
     /// Plan parallel execution waves based on task dependencies
     Waves {
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
 
@@ -129,7 +129,7 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "5")]
         max_parallel: usize,
 
-        /// Plan across all epics
+        /// Plan across all phases
         #[arg(long)]
         all_tags: bool,
     },
@@ -140,12 +140,12 @@ enum Commands {
         command: ConfigCommands,
     },
 
-    /// Parse PRD/epic markdown into tasks (AI-powered)
+    /// Parse PRD/phase markdown into tasks (AI-powered)
     ParsePrd {
-        /// Path to PRD/epic markdown file
+        /// Path to PRD/phase markdown file
         file: PathBuf,
 
-        /// Epic tag to create
+        /// Phase tag to create
         #[arg(short, long)]
         tag: String,
     },
@@ -156,7 +156,7 @@ enum Commands {
         #[arg(short = 'i', long)]
         task: Option<String>,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
@@ -170,7 +170,7 @@ enum Commands {
         #[arg(short, long)]
         all: bool,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
@@ -190,7 +190,7 @@ enum Commands {
         /// Assignee name
         assignee: String,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
@@ -204,7 +204,7 @@ enum Commands {
         #[arg(short, long)]
         name: String,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short = 'e', long)]
         tag: Option<String>,
     },
@@ -218,14 +218,14 @@ enum Commands {
         #[arg(short, long)]
         force: bool,
 
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short = 'e', long)]
         tag: Option<String>,
     },
 
     /// Show who is working on what
     WhoIs {
-        /// Epic tag (uses active epic if not provided)
+        /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
     },
@@ -247,7 +247,7 @@ enum Commands {
 
     /// [EXPERIMENTAL] Diagnose stuck workflow states
     Doctor {
-        /// Epic tag (checks all epics if not provided)
+        /// Phase tag (checks all phases if not provided)
         #[arg(short, long)]
         tag: Option<String>,
 

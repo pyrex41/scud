@@ -1,5 +1,5 @@
 /**
- * Statistics resources - provides read-only access to epic statistics
+ * Statistics resources - provides read-only access to phase statistics
  */
 
 import type {
@@ -11,9 +11,9 @@ import { executeScudCommand } from '../utils/exec.js';
 
 export const STATS_RESOURCES: Resource[] = [
   {
-    uri: 'scud://stats/epic',
-    name: 'Epic statistics',
-    description: 'Read statistics for the active epic (task counts, complexity breakdown)',
+    uri: 'scud://stats/phase',
+    name: 'Phase statistics',
+    description: 'Read statistics for the active phase (task counts, complexity breakdown)',
     mimeType: 'text/plain',
   },
 ];
@@ -23,7 +23,7 @@ export async function handleStatsResource(
 ): Promise<ReadResourceResult> {
   const { uri } = request.params;
 
-  if (uri === 'scud://stats/epic') {
+  if (uri === 'scud://stats/phase') {
     try {
       const result = await executeScudCommand(['stats']);
 

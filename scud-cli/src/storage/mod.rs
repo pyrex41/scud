@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::formats::{parse_scg, serialize_scg};
-use crate::models::{Epic, WorkflowState};
+use crate::models::{Phase, WorkflowState};
 
 pub struct Storage {
     project_root: PathBuf,
@@ -161,12 +161,12 @@ impl Storage {
         // Initialize tasks.scg with empty content (and JSON mirror for legacy tooling)
         let tasks_file = self.tasks_file();
         if !tasks_file.exists() {
-            let empty_tasks: HashMap<String, Epic> = HashMap::new();
+            let empty_tasks: HashMap<String, Phase> = HashMap::new();
             self.save_tasks(&empty_tasks)?;
         } else {
             let json_path = self.tasks_json_file();
             if !json_path.exists() {
-                let empty: HashMap<String, Epic> = HashMap::new();
+                let empty: HashMap<String, Phase> = HashMap::new();
                 // Best effort: if parsing existing SCG fails, fall back to empty JSON
                 match self.load_tasks() {
                     Ok(tasks) => self.write_tasks_json(&tasks)?,
@@ -219,26 +219,26 @@ impl Storage {
         Ok(())
     }
 
-    pub fn load_tasks(&self) -> Result<HashMap<String, Epic>> {
+    pub fn load_tasks(&self) -> Result<HashMap<String, Phase>> {
         let path = self.tasks_file();
         if !path.exists() {
             anyhow::bail!("Tasks file not found: {}\nRun: scud init", path.display());
         }
 
         let content = self.read_with_lock(&path)?;
-        self.parse_multi_epic_scg(&content)
+        self.parse_multi_phase_scg(&content)
     }
 
-    /// Parse multi-epic SCG format (multiple epics separated by ---)
-    fn parse_multi_epic_scg(&self, content: &str) -> Result<HashMap<String, Epic>> {
-        let mut epics = HashMap::new();
+    /// Parse multi-phase SCG format (multiple phases separated by ---)
+    fn parse_multi_phase_scg(&self, content: &str) -> Result<HashMap<String, Phase>> {
+        let mut phases = HashMap::new();
 
         // Empty file returns empty map
         if content.trim().is_empty() {
-            return Ok(epics);
+            return Ok(phases);
         }
 
-        // Split by epic separator (---)
+        // Split by phase separator (---)
         let sections: Vec<&str> = content.split("\n---\n").collect();
 
         for section in sections {
@@ -247,19 +247,19 @@ impl Storage {
                 continue;
             }
 
-            // Parse the epic section
-            let epic = parse_scg(section).with_context(|| "Failed to parse SCG section")?;
+            // Parse the phase section
+            let phase = parse_scg(section).with_context(|| "Failed to parse SCG section")?;
 
-            epics.insert(epic.name.clone(), epic);
+            phases.insert(phase.name.clone(), phase);
         }
 
-        Ok(epics)
+        Ok(phases)
     }
 
-    pub fn save_tasks(&self, tasks: &HashMap<String, Epic>) -> Result<()> {
+    pub fn save_tasks(&self, tasks: &HashMap<String, Phase>) -> Result<()> {
         let path = self.tasks_file();
         self.write_with_lock(&path, || {
-            // Sort epics by tag for consistent output
+            // Sort phases by tag for consistent output
             let mut sorted_tags: Vec<_> = tasks.keys().collect();
             sorted_tags.sort();
 
@@ -268,8 +268,8 @@ impl Storage {
                 if i > 0 {
                     output.push_str("\n---\n\n");
                 }
-                let epic = tasks.get(*tag).unwrap();
-                output.push_str(&serialize_scg(epic));
+                let phase = tasks.get(*tag).unwrap();
+                output.push_str(&serialize_scg(phase));
             }
 
             Ok(output)
@@ -305,7 +305,7 @@ impl Storage {
         })
     }
 
-    fn write_tasks_json(&self, tasks: &HashMap<String, Epic>) -> Result<()> {
+    fn write_tasks_json(&self, tasks: &HashMap<String, Phase>) -> Result<()> {
         let json_path = self.tasks_json_file();
         self.write_with_lock(&json_path, || {
             serde_json::to_string_pretty(tasks)
@@ -357,11 +357,11 @@ impl Storage {
 
     /// Load a single task group by tag
     /// Parses the SCG file and extracts the requested group
-    pub fn load_group(&self, group_tag: &str) -> Result<Epic> {
+    pub fn load_group(&self, group_tag: &str) -> Result<Phase> {
         let path = self.tasks_file();
         let content = self.read_with_lock(&path)?;
 
-        let groups = self.parse_multi_epic_scg(&content)?;
+        let groups = self.parse_multi_phase_scg(&content)?;
 
         groups
             .get(group_tag)
@@ -371,7 +371,7 @@ impl Storage {
 
     /// Load the active task group directly (optimized)
     /// Combines get_active_group() and load_group() in one call
-    pub fn load_active_group(&self) -> Result<Epic> {
+    pub fn load_active_group(&self) -> Result<Phase> {
         let active_tag = self
             .get_active_group()?
             .ok_or_else(|| anyhow::anyhow!("No active task group. Run: scud use-tag <tag>"))?;
@@ -381,7 +381,7 @@ impl Storage {
 
     /// Update a single task group atomically
     /// Holds exclusive lock across read-modify-write cycle to prevent races
-    pub fn update_group(&self, group_tag: &str, group: &Epic) -> Result<()> {
+    pub fn update_group(&self, group_tag: &str, group: &Phase) -> Result<()> {
         use std::io::{Read, Seek, SeekFrom, Write};
 
         let path = self.tasks_file();
@@ -410,7 +410,7 @@ impl Storage {
             .with_context(|| format!("Failed to read from {}", path.display()))?;
 
         // Parse, modify, and serialize
-        let mut groups = self.parse_multi_epic_scg(&content)?;
+        let mut groups = self.parse_multi_phase_scg(&content)?;
         groups.insert(group_tag.to_string(), group.clone());
 
         let mut sorted_tags: Vec<_> = groups.keys().collect();
@@ -498,7 +498,7 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
         let mut tasks = HashMap::new();
 
-        let epic = crate::models::Epic::new("TEST-1".to_string());
+        let epic = crate::models::Phase::new("TEST-1".to_string());
         tasks.insert("TEST-1".to_string(), epic);
 
         // Save tasks
@@ -542,7 +542,7 @@ mod tests {
             let storage_clone = Arc::clone(&storage);
             let handle = thread::spawn(move || {
                 let mut tasks = HashMap::new();
-                let epic = crate::models::Epic::new(format!("EPIC-{}", i));
+                let epic = crate::models::Phase::new(format!("EPIC-{}", i));
                 tasks.insert(format!("EPIC-{}", i), epic);
 
                 // Each thread writes multiple times
@@ -674,7 +674,7 @@ mod tests {
         // Don't call initialize()
 
         let mut tasks = HashMap::new();
-        let epic = crate::models::Epic::new("TEST-1".to_string());
+        let epic = crate::models::Phase::new("TEST-1".to_string());
         tasks.insert("TEST-1".to_string(), epic);
 
         // Should create directory and file
@@ -733,7 +733,7 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         let mut tasks = HashMap::new();
-        let mut epic = crate::models::Epic::new("TEST-UNICODE".to_string());
+        let mut epic = crate::models::Phase::new("TEST-UNICODE".to_string());
 
         // Add task with unicode content
         let task = crate::models::Task::new(
@@ -763,7 +763,7 @@ mod tests {
 
         // Create 100 epics with 50 tasks each
         for i in 0..100 {
-            let mut epic = crate::models::Epic::new(format!("EPIC-{}", i));
+            let mut epic = crate::models::Phase::new(format!("EPIC-{}", i));
 
             for j in 0..50 {
                 let task = crate::models::Task::new(
@@ -798,7 +798,7 @@ mod tests {
 
         // Initialize with some data
         let mut tasks = HashMap::new();
-        let epic = crate::models::Epic::new("INITIAL".to_string());
+        let epic = crate::models::Phase::new("INITIAL".to_string());
         tasks.insert("INITIAL".to_string(), epic);
         storage.save_tasks(&tasks).unwrap();
 
@@ -822,7 +822,7 @@ mod tests {
             let handle = thread::spawn(move || {
                 for j in 0..5 {
                     let mut tasks = HashMap::new();
-                    let epic = crate::models::Epic::new(format!("WRITER-{}-{}", i, j));
+                    let epic = crate::models::Phase::new(format!("WRITER-{}-{}", i, j));
                     tasks.insert(format!("WRITER-{}-{}", i, j), epic);
                     storage_clone.save_tasks(&tasks).unwrap();
                     thread::sleep(Duration::from_millis(2));

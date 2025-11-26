@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 use crate::llm::{LLMClient, Prompts};
-use crate::models::{Epic, Priority, Task};
+use crate::models::{Phase, Priority, Task};
 use crate::storage::Storage;
 
 #[derive(Debug, Deserialize)]
@@ -56,7 +56,7 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
     ));
 
     // Convert to our task model
-    let mut group = Epic::new(tag.to_string());
+    let mut group = Phase::new(tag.to_string());
 
     for (idx, parsed) in parsed_tasks.iter().enumerate() {
         let task_id = (idx + 1).to_string();

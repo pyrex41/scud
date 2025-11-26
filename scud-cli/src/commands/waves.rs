@@ -26,28 +26,28 @@ pub fn run(
     let storage = Storage::new(project_root);
     let all_tasks = storage.load_tasks()?;
 
-    // Determine which epic(s) to plan
-    let epic_tags: Vec<String> = if all_tags {
+    // Determine which phase(s) to plan
+    let phase_tags: Vec<String> = if all_tags {
         all_tasks.keys().cloned().collect()
     } else if let Some(t) = tag {
         if !all_tasks.contains_key(t) {
-            anyhow::bail!("Epic '{}' not found. Run: scud tags", t);
+            anyhow::bail!("Phase '{}' not found. Run: scud tags", t);
         }
         vec![t.to_string()]
     } else {
-        // Use active epic
+        // Use active phase
         let active = storage.get_active_group()?;
         match active {
             Some(t) => vec![t],
-            None => anyhow::bail!("No active task group. Use --tag <epic-tag> or run: scud tags"),
+            None => anyhow::bail!("No active task group. Use --tag <phase-tag> or run: scud tags"),
         }
     };
 
-    // Collect actionable tasks from specified epic(s)
+    // Collect actionable tasks from specified phase(s)
     let mut actionable: Vec<&Task> = Vec::new();
-    for tag in &epic_tags {
-        if let Some(epic) = all_tasks.get(tag) {
-            for task in &epic.tasks {
+    for tag in &phase_tags {
+        if let Some(phase) = all_tasks.get(tag) {
+            for task in &phase.tasks {
                 // Only include actionable tasks (not done, not expanded parents, not cancelled)
                 if task.status != TaskStatus::Done
                     && task.status != TaskStatus::Expanded
@@ -55,7 +55,7 @@ pub fn run(
                 {
                     // If it's a subtask, only include if parent is expanded
                     if let Some(ref parent_id) = task.parent_id {
-                        let parent_expanded = epic
+                        let parent_expanded = phase
                             .get_task(parent_id)
                             .map(|p| p.is_expanded())
                             .unwrap_or(false);
@@ -199,10 +199,10 @@ pub fn run(
 }
 
 /// Compute execution waves using Kahn's algorithm (topological sort with level assignment)
-/// When processing tasks from multiple epics, we namespace task IDs to avoid collisions
+/// When processing tasks from multiple phases, we namespace task IDs to avoid collisions
 fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
     // Build a map from task pointer to its namespaced ID
-    // This handles the case where multiple epics have tasks with the same local ID
+    // This handles the case where multiple phases have tasks with the same local ID
     let task_ids: HashSet<String> = tasks.iter().map(|t| t.id.clone()).collect();
 
     // Build in-degree map (how many dependencies does each task have within our set?)

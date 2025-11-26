@@ -1,5 +1,5 @@
 /**
- * Parallel development tools - epic groups and task assignments
+ * Parallel development tools - phase groups and task assignments
  */
 
 import type {
@@ -12,7 +12,7 @@ import { executeScudCommand } from '../utils/exec.js';
 export const PARALLEL_TOOLS: Tool[] = [
   {
     name: 'scud_create_group',
-    description: 'Create an epic group for parallel development across multiple epics.',
+    description: 'Create a phase group for parallel development across multiple phases.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -20,21 +20,21 @@ export const PARALLEL_TOOLS: Tool[] = [
           type: 'string',
           description: 'Group name (e.g., "sprint-1")',
         },
-        epics: {
+        phases: {
           type: 'string',
-          description: 'Comma-separated list of epic tags (e.g., "epic-1,epic-2,epic-3")',
+          description: 'Comma-separated list of phase tags (e.g., "phase-1,phase-2,phase-3")',
         },
         description: {
           type: 'string',
           description: 'Optional group description',
         },
       },
-      required: ['name', 'epics'],
+      required: ['name', 'phases'],
     },
   },
   {
     name: 'scud_list_groups',
-    description: 'List all epic groups.',
+    description: 'List all phase groups.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -42,7 +42,7 @@ export const PARALLEL_TOOLS: Tool[] = [
   },
   {
     name: 'scud_group_status',
-    description: 'Show status and progress for an epic group.',
+    description: 'Show status and progress for a phase group.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -126,11 +126,11 @@ export async function handleParallelTool(
 
   switch (name) {
     case 'scud_create_group': {
-      if (!args?.name || !args?.epics) {
+      if (!args?.name || !args?.phases) {
         return {
           content: [{
             type: 'text',
-            text: 'Error: name and epics are required',
+            text: 'Error: name and phases are required',
           }],
           isError: true,
         };
@@ -139,8 +139,8 @@ export async function handleParallelTool(
       const cmdArgs = [
         'create-group',
         args.name as string,
-        '--epics',
-        args.epics as string,
+        '--phases',
+        args.phases as string,
       ];
 
       if (args.description) {
@@ -183,7 +183,7 @@ export async function handleParallelTool(
       return {
         content: [{
           type: 'text',
-          text: result.stdout || 'No epic groups found',
+          text: result.stdout || 'No phase groups found',
         }],
       };
     }

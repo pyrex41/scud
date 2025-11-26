@@ -20,10 +20,10 @@ pub enum NextTaskResult<'a> {
 
 /// Find the next available task, considering locks
 pub fn find_next_available<'a>(
-    epic: &'a crate::models::epic::Epic,
+    phase: &'a crate::models::phase::Phase,
     exclude_locked: bool,
 ) -> NextTaskResult<'a> {
-    let pending_tasks: Vec<_> = epic
+    let pending_tasks: Vec<_> = phase
         .tasks
         .iter()
         .filter(|t| t.status == TaskStatus::Pending)
@@ -36,7 +36,7 @@ pub fn find_next_available<'a>(
     // Find tasks with dependencies met
     let deps_met: Vec<_> = pending_tasks
         .iter()
-        .filter(|t| t.has_dependencies_met(&epic.tasks))
+        .filter(|t| t.has_dependencies_met(&phase.tasks))
         .collect();
 
     if deps_met.is_empty() {
@@ -63,28 +63,28 @@ pub fn run(
     release: bool,
 ) -> Result<()> {
     let storage = Storage::new(project_root);
-    let epic_tag = resolve_group_tag(&storage, tag, true)?;
+    let phase_tag = resolve_group_tag(&storage, tag, true)?;
 
     // Handle --release mode
     if release {
         let agent_name =
             name.ok_or_else(|| anyhow::anyhow!("--name is required with --release"))?;
-        return handle_release(&storage, &epic_tag, agent_name);
+        return handle_release(&storage, &phase_tag, agent_name);
     }
 
     // Handle --claim mode (experimental dynamic-wave)
     if claim {
         let agent_name = name.ok_or_else(|| anyhow::anyhow!("--name is required with --claim"))?;
-        return handle_claim(&storage, &epic_tag, agent_name);
+        return handle_claim(&storage, &phase_tag, agent_name);
     }
 
     // Standard next task behavior (read-only)
     let tasks = storage.load_tasks()?;
-    let epic = tasks
-        .get(&epic_tag)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
+    let phase = tasks
+        .get(&phase_tag)
+        .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
 
-    match find_next_available(epic, false) {
+    match find_next_available(phase, false) {
         NextTaskResult::Available(task) => {
             print_task_details(task);
             print_standard_instructions(&task.id);
@@ -110,7 +110,7 @@ pub fn run(
     Ok(())
 }
 
-fn handle_claim(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<()> {
+fn handle_claim(storage: &Storage, phase_tag: &str, agent_name: &str) -> Result<()> {
     println!(
         "{}",
         "[EXPERIMENTAL] Dynamic-wave mode: claiming next task"
@@ -121,11 +121,11 @@ fn handle_claim(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<(
 
     // Use atomic update_group to hold lock across read-modify-write cycle
     // This prevents race conditions when multiple agents claim simultaneously
-    let mut epic = storage.load_group(epic_tag)?;
+    let mut phase = storage.load_group(phase_tag)?;
 
     // Find next available task (exclude locked ones)
     let task_id = {
-        let pending_tasks: Vec<_> = epic
+        let pending_tasks: Vec<_> = phase
             .tasks
             .iter()
             .filter(|t| t.status == TaskStatus::Pending)
@@ -147,14 +147,14 @@ fn handle_claim(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<(
         // Find first task with dependencies met that isn't locked
         let available: Vec<_> = pending_tasks
             .iter()
-            .filter(|t| t.has_dependencies_met(&epic.tasks) && !t.is_locked())
+            .filter(|t| t.has_dependencies_met(&phase.tasks) && !t.is_locked())
             .collect();
 
         if available.is_empty() {
             // Check if blocked by deps or by locks
             let deps_met: Vec<_> = pending_tasks
                 .iter()
-                .filter(|t| t.has_dependencies_met(&epic.tasks))
+                .filter(|t| t.has_dependencies_met(&phase.tasks))
                 .collect();
 
             if deps_met.is_empty() {
@@ -201,7 +201,7 @@ fn handle_claim(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<(
     };
 
     // Claim the task
-    let task = epic
+    let task = phase
         .get_task_mut(&task_id)
         .ok_or_else(|| anyhow::anyhow!("Task {} not found", task_id))?;
 
@@ -216,7 +216,7 @@ fn handle_claim(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<(
     let task_test_strategy = task.test_strategy.clone();
 
     // Use atomic update_group which holds lock across read-modify-write
-    storage.update_group(epic_tag, &epic)?;
+    storage.update_group(phase_tag, &phase)?;
 
     // Print claimed task details
     println!("{}", "Task claimed successfully!".green().bold());
@@ -268,7 +268,7 @@ fn handle_claim(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<(
     Ok(())
 }
 
-fn handle_release(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result<()> {
+fn handle_release(storage: &Storage, phase_tag: &str, agent_name: &str) -> Result<()> {
     println!(
         "{}",
         "[EXPERIMENTAL] Releasing tasks for agent".yellow().bold()
@@ -276,11 +276,11 @@ fn handle_release(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result
     println!();
 
     // Use atomic update_group to hold lock across read-modify-write cycle
-    let mut epic = storage.load_group(epic_tag)?;
+    let mut phase = storage.load_group(phase_tag)?;
 
     // Find tasks locked by this agent
     let mut released_count = 0;
-    for task in &mut epic.tasks {
+    for task in &mut phase.tasks {
         if task.is_locked_by(agent_name) {
             let task_id = task.id.clone();
             let task_title = task.title.clone();
@@ -310,7 +310,7 @@ fn handle_release(storage: &Storage, epic_tag: &str, agent_name: &str) -> Result
     }
 
     // Use atomic update_group which holds lock across read-modify-write
-    storage.update_group(epic_tag, &epic)?;
+    storage.update_group(phase_tag, &phase)?;
 
     println!();
     println!("{} {} task(s) released", "✓".green(), released_count);
@@ -376,11 +376,11 @@ fn print_standard_instructions(task_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::epic::Epic;
+    use crate::models::phase::Phase;
     use crate::models::task::{Task, TaskStatus};
 
-    fn create_test_epic() -> Epic {
-        let mut epic = Epic::new("test-epic".to_string());
+    fn create_test_phase() -> Phase {
+        let mut phase = Phase::new("test-phase".to_string());
 
         let mut task1 = Task::new("1".to_string(), "Task 1".to_string(), "Desc 1".to_string());
         task1.set_status(TaskStatus::Done);
@@ -393,18 +393,18 @@ mod tests {
         task3.dependencies = vec!["2".to_string()];
         // task3 is pending with deps NOT met
 
-        epic.add_task(task1);
-        epic.add_task(task2);
-        epic.add_task(task3);
+        phase.add_task(task1);
+        phase.add_task(task2);
+        phase.add_task(task3);
 
-        epic
+        phase
     }
 
     #[test]
     fn test_find_next_available_basic() {
-        let epic = create_test_epic();
+        let phase = create_test_phase();
 
-        match find_next_available(&epic, false) {
+        match find_next_available(&phase, false) {
             NextTaskResult::Available(task) => {
                 assert_eq!(task.id, "2");
             }
@@ -414,13 +414,13 @@ mod tests {
 
     #[test]
     fn test_find_next_available_exclude_locked() {
-        let mut epic = create_test_epic();
+        let mut phase = create_test_phase();
 
         // Lock task 2
-        epic.get_task_mut("2").unwrap().claim("alice").unwrap();
+        phase.get_task_mut("2").unwrap().claim("alice").unwrap();
 
         // Without exclude_locked, should still find task 2
-        match find_next_available(&epic, false) {
+        match find_next_available(&phase, false) {
             NextTaskResult::Available(task) => {
                 assert_eq!(task.id, "2");
             }
@@ -428,7 +428,7 @@ mod tests {
         }
 
         // With exclude_locked, should return AllLocked
-        match find_next_available(&epic, true) {
+        match find_next_available(&phase, true) {
             NextTaskResult::AllLocked => {}
             _ => panic!("Expected AllLocked result"),
         }
@@ -436,12 +436,12 @@ mod tests {
 
     #[test]
     fn test_find_next_no_pending() {
-        let mut epic = Epic::new("test".to_string());
+        let mut phase = Phase::new("test".to_string());
         let mut task = Task::new("1".to_string(), "Done".to_string(), "Desc".to_string());
         task.set_status(TaskStatus::Done);
-        epic.add_task(task);
+        phase.add_task(task);
 
-        match find_next_available(&epic, false) {
+        match find_next_available(&phase, false) {
             NextTaskResult::NoPendingTasks => {}
             _ => panic!("Expected NoPendingTasks result"),
         }
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_find_next_blocked_by_deps() {
-        let mut epic = Epic::new("test".to_string());
+        let mut phase = Phase::new("test".to_string());
 
         let task1 = Task::new("1".to_string(), "Task 1".to_string(), "Desc".to_string());
         // task1 is pending
@@ -459,11 +459,11 @@ mod tests {
         // task2 depends on pending task1
 
         // Add task2 first, task1 second (so task2 is checked first)
-        epic.add_task(task2);
-        epic.add_task(task1);
+        phase.add_task(task2);
+        phase.add_task(task1);
 
         // task1 should be found since it has no deps
-        match find_next_available(&epic, false) {
+        match find_next_available(&phase, false) {
             NextTaskResult::Available(task) => {
                 assert_eq!(task.id, "1");
             }
@@ -473,15 +473,15 @@ mod tests {
 
     #[test]
     fn test_find_next_all_blocked() {
-        let mut epic = Epic::new("test".to_string());
+        let mut phase = Phase::new("test".to_string());
 
         let mut task1 = Task::new("1".to_string(), "Task 1".to_string(), "Desc".to_string());
         task1.dependencies = vec!["nonexistent".to_string()];
         // task1 depends on non-existent task
 
-        epic.add_task(task1);
+        phase.add_task(task1);
 
-        match find_next_available(&epic, false) {
+        match find_next_available(&phase, false) {
             NextTaskResult::BlockedByDependencies => {}
             _ => panic!("Expected BlockedByDependencies result"),
         }

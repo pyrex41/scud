@@ -8,14 +8,14 @@ use crate::storage::Storage;
 pub fn run(project_root: Option<PathBuf>, tag: Option<&str>) -> Result<()> {
     let storage = Storage::new(project_root);
 
-    let epic_tag = resolve_group_tag(&storage, tag, true)?;
+    let phase_tag = resolve_group_tag(&storage, tag, true)?;
     let tasks = storage.load_tasks()?;
-    let epic = tasks
-        .get(&epic_tag)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
-    let active_epic = &epic.name;
+    let phase = tasks
+        .get(&phase_tag)
+        .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
+    let active_phase = &phase.name;
 
-    let stats = epic.get_stats();
+    let stats = phase.get_stats();
 
     let completion_pct = if stats.total > 0 {
         (stats.done as f32 / stats.total as f32 * 100.0) as u32
@@ -25,8 +25,8 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>) -> Result<()> {
 
     println!(
         "\n{} {}",
-        "Epic Statistics:".blue().bold(),
-        active_epic.green()
+        "Phase Statistics:".blue().bold(),
+        active_phase.green()
     );
     println!("{}", "=================".blue());
     println!();

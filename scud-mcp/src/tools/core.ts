@@ -16,12 +16,18 @@ export const CORE_TOOLS: Tool[] = [
     description: 'Initialize SCUD in the current directory. Creates .scud/ directory structure.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        provider: {
+          type: 'string',
+          description: 'LLM provider to use (xai, anthropic, openai, openrouter). Defaults to anthropic.',
+          enum: ['xai', 'anthropic', 'openai', 'openrouter'],
+        },
+      },
     },
   },
   {
     name: 'scud_list',
-    description: 'List all tasks in the active epic. Optionally filter by status.',
+    description: 'List all tasks in the active phase. Optionally filter by status.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -43,7 +49,7 @@ export const CORE_TOOLS: Tool[] = [
   },
   {
     name: 'scud_stats',
-    description: 'Show statistics for the active epic (task counts, complexity breakdown).',
+    description: 'Show statistics for the active phase (task counts, complexity breakdown).',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -58,7 +64,12 @@ export async function handleCoreTool(
 
   switch (name) {
     case 'scud_init': {
-      const result = await executeScudCommand(['init']);
+      const cmdArgs = ['init'];
+      if (args?.provider) {
+        cmdArgs.push('--provider', args.provider as string);
+      }
+
+      const result = await executeScudCommand(cmdArgs);
 
       if (result.exitCode !== 0) {
         return {

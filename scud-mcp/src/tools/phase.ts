@@ -1,5 +1,5 @@
 /**
- * Epic management tools - working with epic tags
+ * Phase management tools - working with phase tags
  */
 
 import type {
@@ -9,10 +9,10 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import { executeScudCommand } from '../utils/exec.js';
 
-export const EPIC_TOOLS: Tool[] = [
+export const PHASE_TOOLS: Tool[] = [
   {
     name: 'scud_tags',
-    description: 'List all available epic tags in the project.',
+    description: 'List all available phase tags in the project.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -20,13 +20,13 @@ export const EPIC_TOOLS: Tool[] = [
   },
   {
     name: 'scud_use_tag',
-    description: 'Set the active epic tag to work with.',
+    description: 'Set the active phase tag to work with.',
     inputSchema: {
       type: 'object',
       properties: {
         tag: {
           type: 'string',
-          description: 'The epic tag to activate (e.g., "epic-1-auth")',
+          description: 'The phase tag to activate (e.g., "phase-1-auth")',
         },
       },
       required: ['tag'],
@@ -34,7 +34,7 @@ export const EPIC_TOOLS: Tool[] = [
   },
 ];
 
-export async function handleEpicTool(
+export async function handlePhaseTool(
   request: CallToolRequest
 ): Promise<CallToolResult> {
   const { name, arguments: args } = request.params;
@@ -56,7 +56,7 @@ export async function handleEpicTool(
       return {
         content: [{
           type: 'text',
-          text: result.stdout || 'No epic tags found',
+          text: result.stdout || 'No phase tags found',
         }],
       };
     }
@@ -87,7 +87,7 @@ export async function handleEpicTool(
       return {
         content: [{
           type: 'text',
-          text: result.stdout || `Active epic set to: ${args.tag}`,
+          text: result.stdout || `Active phase set to: ${args.tag}`,
         }],
       };
     }
@@ -96,7 +96,7 @@ export async function handleEpicTool(
       return {
         content: [{
           type: 'text',
-          text: `Unknown epic tool: ${name}`,
+          text: `Unknown phase tool: ${name}`,
         }],
         isError: true,
       };

@@ -1,14 +1,14 @@
 pub struct Prompts;
 
 impl Prompts {
-    pub fn parse_prd(epic_content: &str) -> String {
+    pub fn parse_prd(phase_content: &str) -> String {
         format!(
-            r#"You are a Scrum Master parsing an epic into actionable development tasks.
+            r#"You are a Scrum Master parsing a phase into actionable development tasks.
 
-Epic Content:
+Phase Content:
 {}
 
-Parse this epic into discrete, actionable tasks. Return a JSON array of tasks with the following structure:
+Parse this phase into discrete, actionable tasks. Return a JSON array of tasks with the following structure:
 
 [
   {{
@@ -35,7 +35,7 @@ Guidelines:
 - Each task should have clear success criteria
 
 Return ONLY the JSON array, no additional explanation."#,
-            epic_content
+            phase_content
         )
     }
 

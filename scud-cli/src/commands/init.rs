@@ -3,6 +3,7 @@ use colored::Colorize;
 use dialoguer::Select;
 use std::path::PathBuf;
 
+use crate::commands::helpers::is_interactive;
 use crate::config::{Config, LLMConfig};
 use crate::storage::Storage;
 
@@ -31,7 +32,7 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         }
         let model = Config::default_model_for_provider(&provider).to_string();
         (provider, model)
-    } else {
+    } else if is_interactive() {
         // Interactive mode - prompt for LLM provider
         let providers = vec![
             "xAI (Grok)",
@@ -56,6 +57,11 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             _ => ("anthropic", Config::default_model_for_provider("anthropic")),
         };
 
+        (provider.to_string(), model.to_string())
+    } else {
+        // Non-interactive without provider arg: use default (anthropic)
+        let provider = "anthropic";
+        let model = Config::default_model_for_provider(provider);
         (provider.to_string(), model.to_string())
     };
 

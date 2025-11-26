@@ -35,42 +35,42 @@ export type TaskStatus =
 
 export type Priority = 'high' | 'medium' | 'low';
 
-export interface ScudEpic {
+export interface ScudPhase {
   tag: string;
   tasks: ScudTask[];
 }
 
 export interface WorkflowState {
-  active_epic?: string;
-  current_phase: string;
-  phases: Record<string, PhaseInfo>;
-  completed_epics: CompletedEpic[];
+  active_phase?: string;
+  current_stage: string;
+  stages: Record<string, StageInfo>;
+  completed_phases: CompletedPhase[];
 }
 
-export interface PhaseInfo {
+export interface StageInfo {
   status: string;
   started_at?: string;
   completed_at?: string;
 }
 
-export interface CompletedEpic {
+export interface CompletedPhase {
   tag: string;
   completed_at: string;
   total_tasks: number;
   total_complexity: number;
 }
 
-export interface EpicStats {
+export interface PhaseStats {
   total_tasks: number;
   by_status: Record<TaskStatus, number>;
   total_complexity: number;
   completed_complexity: number;
 }
 
-export interface EpicGroup {
+export interface PhaseGroup {
   id: string;
   name: string;
   description?: string;
-  epic_tags: string[];
+  phase_tags: string[];
   created_at: string;
 }

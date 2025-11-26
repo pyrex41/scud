@@ -15,7 +15,7 @@ export const WORKFLOW_RESOURCES: Resource[] = [
   {
     uri: 'scud://workflow/state',
     name: 'Current workflow state',
-    description: 'Read the current workflow state including active epic and phase information',
+    description: 'Read the current workflow state including active phase information',
     mimeType: 'application/json',
   },
 ];
