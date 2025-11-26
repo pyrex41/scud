@@ -86,6 +86,25 @@ function askSelection(question, options, defaultIndex = 0) {
 }
 
 /**
+ * Prompt user for text input
+ * @param {string} question - Question to ask
+ * @returns {Promise<string>}
+ */
+function askText(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    rl.question(`${question}: `, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
  * Prompt user for yes/no confirmation
  * @param {string} question - Question to ask
  * @param {boolean} defaultYes - Default answer if user just presses Enter
@@ -148,13 +167,38 @@ async function initProject() {
   log('\nStep 2: AI Provider Configuration...', 'blue');
 
   const providers = [
-    { name: 'xAI (Grok)', id: 'xai', model: 'grok-3-fast-latest', env: 'XAI_API_KEY' },
-    { name: 'Anthropic (Claude)', id: 'anthropic', model: 'claude-sonnet-4-20250514', env: 'ANTHROPIC_API_KEY' },
-    { name: 'OpenAI (GPT)', id: 'openai', model: 'gpt-4.1', env: 'OPENAI_API_KEY' },
-    { name: 'OpenRouter', id: 'openrouter', model: 'anthropic/claude-sonnet-4', env: 'OPENROUTER_API_KEY' },
+    {
+      name: 'xAI (Grok)',
+      id: 'xai',
+      model: 'grok-4-1-fast-reasoning',
+      env: 'XAI_API_KEY',
+      models: ['grok-4-1-fast-reasoning', 'grok-4-1-fast', 'grok-3-fast', 'grok-code-fast-1']
+    },
+    {
+      name: 'Anthropic (Claude)',
+      id: 'anthropic',
+      model: 'claude-sonnet-4-5-20250929',
+      env: 'ANTHROPIC_API_KEY',
+      models: ['claude-sonnet-4-5-20250929', 'claude-opus-4-5-20251101', 'claude-haiku-4-5-20251001', 'claude-opus-4-1-20250805']
+    },
+    {
+      name: 'OpenAI (GPT)',
+      id: 'openai',
+      model: 'o3-mini',
+      env: 'OPENAI_API_KEY',
+      models: ['gpt-5.1', 'gpt-5.1-mini', 'o3-mini', 'o3', 'o4-mini', 'gpt-4.1']
+    },
+    {
+      name: 'OpenRouter',
+      id: 'openrouter',
+      model: 'anthropic/claude-sonnet-4.5',
+      env: 'OPENROUTER_API_KEY',
+      models: ['anthropic/claude-sonnet-4.5', 'anthropic/claude-opus-4.5', 'openai/o3-mini', 'openai/gpt-4.1']
+    },
   ];
 
   let selectedProvider;
+  let selectedModel;
 
   if (flags.provider) {
     // --provider flag provided
@@ -163,19 +207,39 @@ async function initProject() {
       log(`⚠ Unknown provider: ${flags.provider}. Using default (xAI).`, 'yellow');
       selectedProvider = providers[0];
     }
+    selectedModel = selectedProvider.model;
     log(`Using provider: ${selectedProvider.name} (--provider flag)`, 'blue');
   } else {
-    // Interactive selection
+    // Interactive provider selection
     const providerIndex = await askSelection(
-      'Select your AI provider for SCUD CLI features:',
+      'Select your AI provider:',
       providers.map(p => p.name),
       0
     );
     selectedProvider = providers[providerIndex];
+
+    // Interactive model selection
+    const modelOptions = [...selectedProvider.models, 'Custom (enter model name)'];
+    const modelIndex = await askSelection(
+      `Select model for ${selectedProvider.name}:`,
+      modelOptions,
+      0
+    );
+
+    if (modelIndex === modelOptions.length - 1) {
+      // User selected "Custom"
+      selectedModel = await askText('Enter model name');
+      if (!selectedModel) {
+        selectedModel = selectedProvider.model;
+        log(`Using default model: ${selectedModel}`, 'yellow');
+      }
+    } else {
+      selectedModel = selectedProvider.models[modelIndex];
+    }
   }
 
   log(`✓ Provider: ${selectedProvider.name}`, 'green');
-  log(`  Model: ${selectedProvider.model}`, 'reset');
+  log(`  Model: ${selectedModel}`, 'reset');
   log(`  Requires: export ${selectedProvider.env}=your-api-key`, 'yellow');
 
   // Create .scud directory
@@ -199,12 +263,12 @@ async function initProject() {
     log('✓ tasks.scg already exists', 'green');
   }
 
-  // Create config file with selected provider
+  // Create config file with selected provider and model
   const configFile = path.join(scudDir, 'config.toml');
   if (!fs.existsSync(configFile)) {
     const configContent = `[llm]
 provider = "${selectedProvider.id}"
-model = "${selectedProvider.model}"
+model = "${selectedModel}"
 max_tokens = 4096
 `;
     fs.writeFileSync(configFile, configContent);
@@ -372,7 +436,7 @@ max_tokens = 4096
   log('\n✅ SCUD initialized successfully!\n', 'green');
   log('Configuration:', 'blue');
   log(`  Provider: ${selectedProvider.name}`, 'reset');
-  log(`  Model: ${selectedProvider.model}`, 'reset');
+  log(`  Model: ${selectedModel}`, 'reset');
   log('');
   log('Environment variable required:', 'yellow');
   log(`  export ${selectedProvider.env}=your-api-key`, 'reset');
