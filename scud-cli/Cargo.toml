@@ -29,6 +29,8 @@ dirs = "5.0"
 fs2 = "0.4"  # File locking for concurrent access
 toml = "0.8"  # TOML parsing for config files
 dialoguer = "0.11"  # Interactive CLI prompts
+atty = "0.2"  # TTY detection for interactive mode
+futures = "0.3"  # Async utilities for parallel execution
 
 [dev-dependencies]
 tempfile = "3.8"  # Temporary directories for tests

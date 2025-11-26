@@ -340,32 +340,6 @@ impl Storage {
     pub fn read_file(&self, path: &Path) -> Result<String> {
         fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
     }
-
-    // Epic Groups management
-    pub fn groups_file(&self) -> PathBuf {
-        self.taskmaster_dir().join("epic-groups.json")
-    }
-
-    pub fn load_groups(&self) -> Result<crate::models::EpicGroups> {
-        let path = self.groups_file();
-        if !path.exists() {
-            return Ok(crate::models::EpicGroups::new());
-        }
-
-        let content = self.read_with_lock(&path)?;
-        let groups: crate::models::EpicGroups = serde_json::from_str(&content)
-            .with_context(|| "Failed to parse epic-groups.json".to_string())?;
-
-        Ok(groups)
-    }
-
-    pub fn save_groups(&self, groups: &crate::models::EpicGroups) -> Result<()> {
-        let path = self.groups_file();
-        self.write_with_lock(&path, || {
-            serde_json::to_string_pretty(groups)
-                .with_context(|| "Failed to serialize groups to JSON".to_string())
-        })
-    }
 }
 
 #[cfg(test)]
@@ -451,27 +425,6 @@ mod tests {
         let loaded_state = storage.load_workflow_state().unwrap();
 
         assert_eq!(loaded_state.active_epic, Some("TEST-1".to_string()));
-    }
-
-    #[test]
-    fn test_save_and_load_groups_with_locking() {
-        let (storage, _temp_dir) = create_test_storage();
-
-        let mut groups = crate::models::EpicGroups::new();
-        let group = crate::models::EpicGroup::new(
-            "group-1".to_string(),
-            "Test Group".to_string(),
-            vec!["epic-1".to_string()],
-        );
-        groups.add_group(group);
-
-        // Save groups
-        storage.save_groups(&groups).unwrap();
-
-        // Load groups
-        let loaded_groups = storage.load_groups().unwrap();
-
-        assert!(loaded_groups.get_group("group-1").is_some());
     }
 
     #[test]
@@ -579,19 +532,6 @@ mod tests {
     }
 
     #[test]
-    fn test_load_groups_with_malformed_json() {
-        let (storage, _temp_dir) = create_test_storage();
-        let groups_file = storage.groups_file();
-
-        // Write malformed JSON
-        fs::write(&groups_file, r#"{unclosed bracket"#).unwrap();
-
-        // Should return error
-        let result = storage.load_groups();
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_load_tasks_with_empty_file() {
         let (storage, _temp_dir) = create_test_storage();
         let tasks_file = storage.tasks_file();
@@ -623,16 +563,6 @@ mod tests {
         let state = storage.load_workflow_state().unwrap();
         assert_eq!(state.current_phase, "ideation");
         assert_eq!(state.active_epic, None);
-    }
-
-    #[test]
-    fn test_load_groups_missing_file_creates_default() {
-        let (storage, _temp_dir) = create_test_storage();
-        // Don't create groups file
-
-        // Should return empty EpicGroups
-        let groups = storage.load_groups().unwrap();
-        assert_eq!(groups.groups.len(), 0);
     }
 
     #[test]

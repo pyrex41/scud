@@ -11,6 +11,7 @@ pub enum TaskStatus {
     Blocked,
     Deferred,
     Cancelled,
+    Expanded, // Task has been broken into subtasks
 }
 
 impl TaskStatus {
@@ -23,6 +24,7 @@ impl TaskStatus {
             TaskStatus::Blocked => "blocked",
             TaskStatus::Deferred => "deferred",
             TaskStatus::Cancelled => "cancelled",
+            TaskStatus::Expanded => "expanded",
         }
     }
 
@@ -36,6 +38,7 @@ impl TaskStatus {
             "blocked" => Some(TaskStatus::Blocked),
             "deferred" => Some(TaskStatus::Deferred),
             "cancelled" => Some(TaskStatus::Cancelled),
+            "expanded" => Some(TaskStatus::Expanded),
             _ => None,
         }
     }
@@ -49,6 +52,7 @@ impl TaskStatus {
             "blocked",
             "deferred",
             "cancelled",
+            "expanded",
         ]
     }
 }
@@ -79,6 +83,13 @@ pub struct Task {
 
     #[serde(default)]
     pub dependencies: Vec<String>,
+
+    // Parent-child relationship for expanded tasks
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subtasks: Vec<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
@@ -112,6 +123,9 @@ impl Task {
     const MAX_DESCRIPTION_LENGTH: usize = 5000;
     const VALID_FIBONACCI_NUMBERS: &'static [u32] = &[0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
 
+    /// ID separator for namespaced IDs (epic:local_id)
+    pub const ID_SEPARATOR: char = ':';
+
     pub fn new(id: String, title: String, description: String) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Task {
@@ -122,6 +136,8 @@ impl Task {
             complexity: 0,
             priority: Priority::Medium,
             dependencies: Vec::new(),
+            parent_id: None,
+            subtasks: Vec::new(),
             details: None,
             test_strategy: None,
             complexity_analysis: None,
@@ -133,7 +149,42 @@ impl Task {
         }
     }
 
-    /// Validate task ID - must contain only alphanumeric characters and hyphens
+    /// Parse a task ID into (epic_tag, local_id) parts
+    /// e.g., "phase1:10.1" -> Some(("phase1", "10.1"))
+    /// e.g., "10.1" -> None (legacy format)
+    pub fn parse_id(id: &str) -> Option<(&str, &str)> {
+        id.split_once(Self::ID_SEPARATOR)
+    }
+
+    /// Create a namespaced task ID
+    pub fn make_id(epic_tag: &str, local_id: &str) -> String {
+        format!("{}{}{}", epic_tag, Self::ID_SEPARATOR, local_id)
+    }
+
+    /// Get the local ID part (without epic prefix)
+    pub fn local_id(&self) -> &str {
+        Self::parse_id(&self.id)
+            .map(|(_, local)| local)
+            .unwrap_or(&self.id)
+    }
+
+    /// Get the epic tag from a namespaced ID
+    pub fn epic_tag(&self) -> Option<&str> {
+        Self::parse_id(&self.id).map(|(tag, _)| tag)
+    }
+
+    /// Check if this is a subtask (has parent)
+    pub fn is_subtask(&self) -> bool {
+        self.parent_id.is_some()
+    }
+
+    /// Check if this task has been expanded into subtasks
+    pub fn is_expanded(&self) -> bool {
+        self.status == TaskStatus::Expanded || !self.subtasks.is_empty()
+    }
+
+    /// Validate task ID - must contain only alphanumeric characters, hyphens, underscores,
+    /// colons (for namespacing), and dots (for subtask IDs)
     pub fn validate_id(id: &str) -> Result<(), String> {
         if id.is_empty() {
             return Err("Task ID cannot be empty".to_string());
@@ -143,13 +194,14 @@ impl Task {
             return Err("Task ID too long (max 100 characters)".to_string());
         }
 
+        // Allow alphanumeric, hyphen, underscore, colon (namespacing), and dot (subtask IDs)
         let valid_chars = id
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':' || c == '.');
 
         if !valid_chars {
             return Err(
-                "Task ID can only contain alphanumeric characters, hyphens, and underscores"
+                "Task ID can only contain alphanumeric characters, hyphens, underscores, colons, and dots"
                     .to_string(),
             );
         }
@@ -255,8 +307,9 @@ impl Task {
 
     /// Returns whether this task should be expanded into subtasks
     /// All tasks with complexity >= 3 can benefit from expansion
+    /// Subtasks and already-expanded tasks don't need expansion
     pub fn needs_expansion(&self) -> bool {
-        self.complexity >= 3 && !self.title.starts_with("[PARENT]")
+        self.complexity >= 3 && !self.is_expanded() && !self.is_subtask()
     }
 
     /// Returns the recommended number of subtasks based on complexity
@@ -267,7 +320,12 @@ impl Task {
     /// Complexity 13: 5-6 subtasks
     /// Complexity 21+: 6-8 subtasks
     pub fn recommended_subtasks(&self) -> usize {
-        match self.complexity {
+        Self::recommended_subtasks_for_complexity(self.complexity)
+    }
+
+    /// Static version for use when we only have complexity value
+    pub fn recommended_subtasks_for_complexity(complexity: u32) -> usize {
+        match complexity {
             0..=2 => 2,
             3 => 3,
             5 => 4,
@@ -612,9 +670,19 @@ mod tests {
         task.complexity = 21;
         assert!(task.needs_expansion());
 
-        // Already expanded tasks (marked with [PARENT]) should not need expansion
-        task.title = "[PARENT] Test".to_string();
+        // Already expanded tasks (with Expanded status) should not need expansion
+        task.status = TaskStatus::Expanded;
         assert!(!task.needs_expansion());
+
+        // Reset status and test subtask case
+        task.status = TaskStatus::Pending;
+        task.parent_id = Some("parent:1".to_string());
+        assert!(!task.needs_expansion()); // Subtasks don't need expansion
+
+        // Reset and test tasks with subtasks
+        task.parent_id = None;
+        task.subtasks = vec!["TASK-1.1".to_string()];
+        assert!(!task.needs_expansion()); // Already has subtasks
     }
 
     #[test]
@@ -658,7 +726,7 @@ mod tests {
     #[test]
     fn test_status_all() {
         let all_statuses = TaskStatus::all();
-        assert_eq!(all_statuses.len(), 7);
+        assert_eq!(all_statuses.len(), 8);
         assert!(all_statuses.contains(&"pending"));
         assert!(all_statuses.contains(&"in-progress"));
         assert!(all_statuses.contains(&"done"));
@@ -666,6 +734,7 @@ mod tests {
         assert!(all_statuses.contains(&"blocked"));
         assert!(all_statuses.contains(&"deferred"));
         assert!(all_statuses.contains(&"cancelled"));
+        assert!(all_statuses.contains(&"expanded"));
     }
 
     #[test]
@@ -803,6 +872,10 @@ mod tests {
         assert!(Task::validate_id("TASK-123").is_ok());
         assert!(Task::validate_id("task_456").is_ok());
         assert!(Task::validate_id("Feature-789").is_ok());
+        // Namespaced IDs
+        assert!(Task::validate_id("phase1:10").is_ok());
+        assert!(Task::validate_id("phase1:10.1").is_ok());
+        assert!(Task::validate_id("my-epic:subtask-1.2.3").is_ok());
     }
 
     #[test]
@@ -825,7 +898,9 @@ mod tests {
         assert!(Task::validate_id("TASK@123").is_err());
         assert!(Task::validate_id("TASK 123").is_err());
         assert!(Task::validate_id("TASK#123").is_err());
-        assert!(Task::validate_id("TASK.123").is_err());
+        // Note: dot and colon are now valid for namespaced IDs
+        assert!(Task::validate_id("TASK.123").is_ok()); // Valid for subtask IDs like "10.1"
+        assert!(Task::validate_id("epic:TASK-1").is_ok()); // Valid namespaced ID
     }
 
     #[test]

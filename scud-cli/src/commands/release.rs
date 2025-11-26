@@ -2,22 +2,26 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::commands::helpers::resolve_epic_tag;
 use crate::storage::Storage;
 
-pub fn run(project_root: Option<PathBuf>, task_id: &str, force: bool) -> Result<()> {
+pub fn run(
+    project_root: Option<PathBuf>,
+    task_id: &str,
+    force: bool,
+    tag: Option<&str>,
+) -> Result<()> {
     let storage = Storage::new(project_root);
-    let active_epic = storage
-        .get_active_epic()?
-        .ok_or_else(|| anyhow::anyhow!("No active epic. Run: scud use-tag <epic-tag>"))?;
+    let epic_tag = resolve_epic_tag(&storage, tag, true)?;
 
     let mut all_tasks = storage.load_tasks()?;
     let epic = all_tasks
-        .get_mut(&active_epic)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", active_epic))?;
+        .get_mut(&epic_tag)
+        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
 
     let task = epic
         .get_task_mut(task_id)
-        .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, active_epic))?;
+        .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, epic_tag))?;
 
     if !task.is_locked() {
         println!("{}", "⊘ Task is not locked".yellow());

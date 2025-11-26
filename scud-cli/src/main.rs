@@ -47,13 +47,10 @@ enum Commands {
         provider: Option<String>,
     },
 
-    /// List all epic tags
-    Tags,
-
-    /// Set active epic tag
-    UseTag {
-        /// Epic tag to activate
-        tag: String,
+    /// List epic tags or set active tag
+    Tags {
+        /// Tag to set as active (lists tags if not provided)
+        tag: Option<String>,
     },
 
     /// List tasks in active epic
@@ -61,12 +58,20 @@ enum Commands {
         /// Filter by status
         #[arg(short, long)]
         status: Option<String>,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
     /// Show detailed task information
     Show {
         /// Task ID
         task_id: String,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
     /// Update task status
@@ -75,13 +80,47 @@ enum Commands {
         task_id: String,
         /// New status
         status: String,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
     /// Find next available task
-    Next,
+    Next {
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+    },
 
     /// Show epic statistics
-    Stats,
+    Stats {
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+    },
+
+    /// Migrate task data to new format (namespaced IDs, parent-child relationships)
+    Migrate {
+        /// Show what would change without making changes
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Plan parallel execution waves based on task dependencies
+    Waves {
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Maximum parallel tasks per round (default: 5)
+        #[arg(short = 'n', long, default_value = "5")]
+        max_parallel: usize,
+
+        /// Plan across all epics
+        #[arg(long)]
+        all_tags: bool,
+    },
 
     /// Configuration management
     Config {
@@ -102,8 +141,12 @@ enum Commands {
     /// Analyze task complexity (AI-powered)
     AnalyzeComplexity {
         /// Specific task ID (analyzes all if not provided)
-        #[arg(short, long)]
+        #[arg(short = 'i', long)]
         task: Option<String>,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
     /// Expand complex task into subtasks (AI-powered)
@@ -114,45 +157,16 @@ enum Commands {
         /// Expand all tasks with complexity > 13
         #[arg(short, long)]
         all: bool,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
     /// Research a topic using web search (AI-powered)
     Research {
         /// Research query
         query: String,
-    },
-
-    // Epic Group commands
-    /// Create a new epic group
-    CreateGroup {
-        /// Group name
-        name: String,
-
-        /// Comma-separated list of epic tags
-        #[arg(short, long)]
-        epics: String,
-
-        /// Optional description
-        #[arg(short, long)]
-        description: Option<String>,
-    },
-
-    /// List all epic groups
-    ListGroups,
-
-    /// Show group status and aggregated stats
-    GroupStatus {
-        /// Group ID
-        group_id: String,
-    },
-
-    /// Add epic to a group
-    AddToGroup {
-        /// Group ID
-        group_id: String,
-
-        /// Epic tag to add
-        epic_tag: String,
     },
 
     // Task Assignment commands
@@ -163,6 +177,10 @@ enum Commands {
 
         /// Assignee name
         assignee: String,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
     /// Claim a task for yourself
@@ -173,6 +191,10 @@ enum Commands {
         /// Your name/identifier
         #[arg(short, long)]
         name: String,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short = 'e', long)]
+        tag: Option<String>,
     },
 
     /// Release task assignment/lock
@@ -183,10 +205,18 @@ enum Commands {
         /// Force release even if locked by someone else
         #[arg(short, long)]
         force: bool,
+
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short = 'e', long)]
+        tag: Option<String>,
     },
 
     /// Show who is working on what
-    WhoIs,
+    WhoIs {
+        /// Epic tag (uses active epic if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -195,15 +225,24 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Init { provider } => commands::init::run(cli.project, provider),
-        Commands::Tags => commands::tags::run(cli.project),
-        Commands::UseTag { tag } => commands::use_tag::run(cli.project, &tag),
-        Commands::List { status } => commands::list::run(cli.project, status.as_deref()),
-        Commands::Show { task_id } => commands::show::run(cli.project, &task_id),
-        Commands::SetStatus { task_id, status } => {
-            commands::set_status::run(cli.project, &task_id, &status)
+        Commands::Tags { tag } => commands::tags::run(cli.project, tag.as_deref()),
+        Commands::List { status, tag } => {
+            commands::list::run(cli.project, status.as_deref(), tag.as_deref())
         }
-        Commands::Next => commands::next::run(cli.project),
-        Commands::Stats => commands::stats::run(cli.project),
+        Commands::Show { task_id, tag } => {
+            commands::show::run(cli.project, &task_id, tag.as_deref())
+        }
+        Commands::SetStatus { task_id, status, tag } => {
+            commands::set_status::run(cli.project, &task_id, &status, tag.as_deref())
+        }
+        Commands::Next { tag } => commands::next::run(cli.project, tag.as_deref()),
+        Commands::Stats { tag } => commands::stats::run(cli.project, tag.as_deref()),
+        Commands::Migrate { dry_run } => commands::migrate::run(cli.project, dry_run),
+        Commands::Waves {
+            tag,
+            max_parallel,
+            all_tags,
+        } => commands::waves::run(cli.project, tag.as_deref(), max_parallel, all_tags),
         Commands::Config { command } => match command {
             ConfigCommands::Show => commands::config::show(cli.project),
             ConfigCommands::SetProvider { provider, model } => {
@@ -216,30 +255,25 @@ async fn main() -> Result<()> {
         Commands::ParsePrd { file, tag } => {
             commands::ai::parse_prd::run(cli.project, &file, &tag).await
         }
-        Commands::AnalyzeComplexity { task } => {
-            commands::ai::analyze_complexity::run(cli.project, task.as_deref()).await
+        Commands::AnalyzeComplexity { task, tag } => {
+            commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())
+                .await
         }
-        Commands::Expand { task_id, all } => {
-            commands::ai::expand::run(cli.project, task_id.as_deref(), all).await
+        Commands::Expand { task_id, all, tag } => {
+            commands::ai::expand::run(cli.project, task_id.as_deref(), all, tag.as_deref()).await
         }
         Commands::Research { query } => commands::ai::research::run(cli.project, &query).await,
-        Commands::CreateGroup {
-            name,
-            epics,
-            description,
-        } => commands::create_group::run(cli.project, &name, &epics, description.as_deref()),
-        Commands::ListGroups => commands::list_groups::run(cli.project),
-        Commands::GroupStatus { group_id } => commands::group_status::run(cli.project, &group_id),
-        Commands::AddToGroup { group_id, epic_tag } => {
-            commands::add_to_group::run(cli.project, &group_id, &epic_tag)
+        Commands::Assign {
+            task_id,
+            assignee,
+            tag,
+        } => commands::assign::run(cli.project, &task_id, &assignee, tag.as_deref()),
+        Commands::Claim { task_id, name, tag } => {
+            commands::claim::run(cli.project, &task_id, &name, tag.as_deref())
         }
-        Commands::Assign { task_id, assignee } => {
-            commands::assign::run(cli.project, &task_id, &assignee)
+        Commands::Release { task_id, force, tag } => {
+            commands::release::run(cli.project, &task_id, force, tag.as_deref())
         }
-        Commands::Claim { task_id, name } => commands::claim::run(cli.project, &task_id, &name),
-        Commands::Release { task_id, force } => {
-            commands::release::run(cli.project, &task_id, force)
-        }
-        Commands::WhoIs => commands::whois::run(cli.project),
+        Commands::WhoIs { tag } => commands::whois::run(cli.project, tag.as_deref()),
     }
 }

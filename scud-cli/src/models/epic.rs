@@ -35,20 +35,34 @@ impl Epic {
     }
 
     pub fn get_stats(&self) -> EpicStats {
-        let total = self.tasks.len();
+        let mut total = 0;
         let mut pending = 0;
         let mut in_progress = 0;
         let mut done = 0;
         let mut blocked = 0;
+        let mut expanded = 0;
         let mut total_complexity = 0;
 
         for task in &self.tasks {
-            total_complexity += task.complexity;
+            // Don't count subtasks in total (they're part of parent)
+            if task.is_subtask() {
+                continue;
+            }
+
+            total += 1;
+
+            // Only count complexity for non-expanded tasks
+            // (expanded tasks have their work represented by subtasks)
+            if !task.is_expanded() {
+                total_complexity += task.complexity;
+            }
+
             match task.status {
                 super::task::TaskStatus::Pending => pending += 1,
                 super::task::TaskStatus::InProgress => in_progress += 1,
                 super::task::TaskStatus::Done => done += 1,
                 super::task::TaskStatus::Blocked => blocked += 1,
+                super::task::TaskStatus::Expanded => expanded += 1,
                 _ => {}
             }
         }
@@ -59,8 +73,32 @@ impl Epic {
             in_progress,
             done,
             blocked,
+            expanded,
             total_complexity,
         }
+    }
+
+    /// Get actionable tasks (not expanded, not subtasks of incomplete parents)
+    pub fn get_actionable_tasks(&self) -> Vec<&Task> {
+        self.tasks
+            .iter()
+            .filter(|t| {
+                // Exclude expanded parents (work on subtasks instead)
+                if t.is_expanded() {
+                    return false;
+                }
+                // Include subtasks only if they're actionable
+                if let Some(ref parent_id) = t.parent_id {
+                    // Parent must be expanded
+                    self.get_task(parent_id)
+                        .map(|p| p.is_expanded())
+                        .unwrap_or(false)
+                } else {
+                    // Top-level task
+                    true
+                }
+            })
+            .collect()
     }
 
     pub fn find_next_task(&self) -> Option<&Task> {
@@ -82,6 +120,7 @@ pub struct EpicStats {
     pub in_progress: usize,
     pub done: usize,
     pub blocked: usize,
+    pub expanded: usize,
     pub total_complexity: u32,
 }
 

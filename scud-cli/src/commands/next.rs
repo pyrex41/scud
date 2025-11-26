@@ -2,13 +2,17 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::commands::helpers::resolve_epic_tag;
 use crate::storage::Storage;
 
-pub fn run(project_root: Option<PathBuf>) -> Result<()> {
+pub fn run(project_root: Option<PathBuf>, tag: Option<&str>) -> Result<()> {
     let storage = Storage::new(project_root);
 
-    // OPTIMIZED: Load only active epic (uses cache + lazy loading)
-    let epic = storage.load_active_epic()?;
+    let epic_tag = resolve_epic_tag(&storage, tag, true)?;
+    let tasks = storage.load_tasks()?;
+    let epic = tasks
+        .get(&epic_tag)
+        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
 
     match epic.find_next_task() {
         Some(task) => {

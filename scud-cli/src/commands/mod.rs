@@ -1,19 +1,15 @@
 pub mod ai;
 pub mod config;
+pub mod helpers;
 pub mod init;
 pub mod list;
+pub mod migrate;
 pub mod next;
 pub mod set_status;
 pub mod show;
 pub mod stats;
 pub mod tags;
-pub mod use_tag;
-
-// Epic group commands
-pub mod add_to_group;
-pub mod create_group;
-pub mod group_status;
-pub mod list_groups;
+pub mod waves;
 
 // Task assignment commands
 pub mod assign;

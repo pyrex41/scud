@@ -1,8 +1,10 @@
 use anyhow::Result;
 use colored::Colorize;
-use indicatif::{ProgressBar, ProgressStyle};
+use futures::stream::{self, StreamExt};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::llm::{LLMClient, Prompts};
 use crate::storage::Storage;
@@ -13,78 +15,177 @@ struct ComplexityAnalysis {
     reasoning: String,
 }
 
-pub async fn run(project_root: Option<PathBuf>, task_id: Option<&str>) -> Result<()> {
+/// Result of analyzing a single task's complexity
+struct TaskAnalysisResult {
+    id: String,
+    title: String,
+    complexity: u32,
+    reasoning: String,
+}
+
+/// Number of concurrent LLM requests
+const CONCURRENCY: usize = 5;
+
+pub async fn run(
+    project_root: Option<PathBuf>,
+    task_id: Option<&str>,
+    tag: Option<&str>,
+) -> Result<()> {
     let storage = Storage::new(project_root);
-    let active_epic = storage
-        .get_active_epic()?
-        .ok_or_else(|| anyhow::anyhow!("No active epic. Run: scud use-tag <epic-tag>"))?;
+    let epic_tag = crate::commands::helpers::resolve_epic_tag(&storage, tag, true)?;
 
     let mut all_tasks = storage.load_tasks()?;
     let epic = all_tasks
-        .get_mut(&active_epic)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", active_epic))?;
+        .get_mut(&epic_tag)
+        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
 
-    let client = LLMClient::new()?;
+    let client = Arc::new(LLMClient::new()?);
 
     // Determine which tasks to analyze
-    let task_ids: Vec<String> = if let Some(id) = task_id {
-        vec![id.to_string()]
+    let tasks_to_analyze: Vec<(String, String, String, Option<String>)> = if let Some(id) = task_id
+    {
+        let task = epic
+            .get_task(id)
+            .ok_or_else(|| anyhow::anyhow!("Task {} not found", id))?;
+        vec![(
+            task.id.clone(),
+            task.title.clone(),
+            task.description.clone(),
+            task.details.clone(),
+        )]
     } else {
-        epic.tasks.iter().map(|t| t.id.clone()).collect()
+        epic.tasks
+            .iter()
+            .map(|t| {
+                (
+                    t.id.clone(),
+                    t.title.clone(),
+                    t.description.clone(),
+                    t.details.clone(),
+                )
+            })
+            .collect()
     };
 
-    if task_ids.is_empty() {
+    if tasks_to_analyze.is_empty() {
         println!("{}", "No tasks to analyze".yellow());
         return Ok(());
     }
 
+    let task_count = tasks_to_analyze.len();
     println!(
-        "{} {} task(s)...",
+        "{} {} task(s) with {} concurrent requests...",
         "Analyzing complexity for".blue(),
-        task_ids.len()
+        task_count,
+        CONCURRENCY
     );
 
-    for id in task_ids {
-        let task = epic
-            .get_task_mut(&id)
-            .ok_or_else(|| anyhow::anyhow!("Task {} not found", id))?;
+    // Set up multi-progress display
+    let multi_progress = MultiProgress::new();
+    let overall_progress = multi_progress.add(ProgressBar::new(task_count as u64));
+    overall_progress.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.blue} [{bar:40.cyan/blue}] {pos}/{len} tasks")
+            .unwrap()
+            .progress_chars("█▓░"),
+    );
 
-        let spinner = ProgressBar::new_spinner();
-        spinner.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.blue} {msg}")
-                .unwrap(),
-        );
-        spinner.set_message(format!("Analyzing task {}: {}", id, task.title));
-        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+    // Process tasks in parallel with bounded concurrency
+    let results: Vec<Result<TaskAnalysisResult, (String, anyhow::Error)>> =
+        stream::iter(tasks_to_analyze)
+            .map(|(id, title, description, details)| {
+                let client = Arc::clone(&client);
+                let mp = multi_progress.clone();
+                let overall = overall_progress.clone();
 
-        let prompt =
-            Prompts::analyze_complexity(&task.title, &task.description, task.details.as_deref());
+                async move {
+                    let spinner = mp.add(ProgressBar::new_spinner());
+                    spinner.set_style(
+                        ProgressStyle::default_spinner()
+                            .template("{spinner:.blue} {msg}")
+                            .unwrap(),
+                    );
+                    spinner.set_message(format!("Task {}: {}", id, title));
+                    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-        let analysis: ComplexityAnalysis = client.complete_json(&prompt).await?;
+                    let prompt =
+                        Prompts::analyze_complexity(&title, &description, details.as_deref());
 
-        task.complexity = analysis.complexity;
-        task.complexity_analysis = Some(analysis.reasoning.clone());
-        task.update();
+                    // Retry logic
+                    let mut last_error = None;
+                    for attempt in 1..=3 {
+                        match client.complete_json::<ComplexityAnalysis>(&prompt).await {
+                            Ok(analysis) => {
+                                spinner.finish_and_clear();
+                                overall.inc(1);
+                                return Ok(TaskAnalysisResult {
+                                    id,
+                                    title,
+                                    complexity: analysis.complexity,
+                                    reasoning: analysis.reasoning,
+                                });
+                            }
+                            Err(e) => {
+                                last_error = Some(e);
+                                if attempt < 3 {
+                                    spinner.set_message(format!(
+                                        "Task {} (retry {}/3): {}",
+                                        id,
+                                        attempt + 1,
+                                        title
+                                    ));
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                }
+                            }
+                        }
+                    }
 
-        spinner.finish_with_message(format!(
-            "{} Task {}: {} → complexity {}",
-            "✓".green(),
-            id.cyan(),
-            task.title,
-            analysis.complexity.to_string().yellow()
-        ));
+                    spinner.finish_and_clear();
+                    overall.inc(1);
+                    Err((id, last_error.unwrap()))
+                }
+            })
+            .buffer_unordered(CONCURRENCY)
+            .collect()
+            .await;
 
-        if analysis.complexity > 13 {
-            println!(
-                "  {} Task complexity >13. Consider running: scud expand {}",
-                "⚠".yellow(),
-                id
-            );
+    overall_progress.finish_and_clear();
+
+    // Process results and update tasks
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut high_complexity_tasks = Vec::new();
+
+    for result in results {
+        match result {
+            Ok(analysis) => {
+                if let Some(task) = epic.get_task_mut(&analysis.id) {
+                    task.complexity = analysis.complexity;
+                    task.complexity_analysis = Some(analysis.reasoning);
+                    task.update();
+
+                    println!(
+                        "{} Task {}: {} → complexity {}",
+                        "✓".green(),
+                        analysis.id.cyan(),
+                        analysis.title,
+                        analysis.complexity.to_string().yellow()
+                    );
+
+                    if analysis.complexity > 13 {
+                        high_complexity_tasks.push(analysis.id.clone());
+                    }
+                    success_count += 1;
+                }
+            }
+            Err((id, e)) => {
+                println!("{} Task {} failed: {}", "✗".red(), id.cyan(), e);
+                error_count += 1;
+            }
         }
     }
 
-    // Get stats and tasks needing expansion before saving (to avoid borrow checker issues)
+    // Get stats before saving
     let stats = epic.get_stats();
     let tasks_needing_expansion: Vec<_> = epic
         .get_tasks_needing_expansion()
@@ -94,10 +195,20 @@ pub async fn run(project_root: Option<PathBuf>, task_id: Option<&str>) -> Result
 
     storage.save_tasks(&all_tasks)?;
 
+    // Summary
     println!("\n{}", "✅ Complexity analysis complete!".green().bold());
-
-    // Show summary
     println!();
+    println!(
+        "{:<25} {} ({} succeeded, {} failed)",
+        "Analyzed:".yellow(),
+        task_count,
+        success_count.to_string().green(),
+        if error_count > 0 {
+            error_count.to_string().red()
+        } else {
+            error_count.to_string().normal()
+        }
+    );
     println!(
         "{:<25} {}",
         "Total complexity:".yellow(),
@@ -107,7 +218,7 @@ pub async fn run(project_root: Option<PathBuf>, task_id: Option<&str>) -> Result
     if !tasks_needing_expansion.is_empty() {
         println!();
         println!(
-            "{} {} task(s) with complexity >13:",
+            "{} {} task(s) with complexity ≥3 need expansion:",
             "⚠".yellow(),
             tasks_needing_expansion.len()
         );

@@ -2,10 +2,16 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::commands::helpers::resolve_epic_tag;
 use crate::models::TaskStatus;
 use crate::storage::Storage;
 
-pub fn run(project_root: Option<PathBuf>, task_id: &str, status_str: &str) -> Result<()> {
+pub fn run(
+    project_root: Option<PathBuf>,
+    task_id: &str,
+    status_str: &str,
+    tag: Option<&str>,
+) -> Result<()> {
     let new_status = TaskStatus::from_str(status_str).ok_or_else(|| {
         anyhow::anyhow!(
             "Invalid status: {}. Valid: {:?}",
@@ -16,22 +22,16 @@ pub fn run(project_root: Option<PathBuf>, task_id: &str, status_str: &str) -> Re
 
     let storage = Storage::new(project_root);
 
-    // OPTIMIZED: Get active epic from cache
-    let active_tag = storage
-        .get_active_epic()?
-        .ok_or_else(|| anyhow::anyhow!("No active epic. Run: scud use-tag <epic-tag>"))?;
-
-    // OPTIMIZED: Load only active epic
-    let mut epic = storage.load_epic(&active_tag)?;
+    let epic_tag = resolve_epic_tag(&storage, tag, true)?;
+    let mut epic = storage.load_epic(&epic_tag)?;
 
     let task = epic
         .get_task_mut(task_id)
-        .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, active_tag))?;
+        .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, epic_tag))?;
 
     task.set_status(new_status);
 
-    // OPTIMIZED: Save only active epic
-    storage.update_epic(&active_tag, &epic)?;
+    storage.update_epic(&epic_tag, &epic)?;
 
     println!(
         "{} Task {} → {}",
