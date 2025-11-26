@@ -18,7 +18,7 @@ struct ParsedTask {
     dependencies: Vec<String>,
 }
 
-pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> Result<()> {
+pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str, num_tasks: u32) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
     if !storage.is_initialized() {
@@ -46,7 +46,7 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
     // Call LLM to parse the PRD
-    let prompt = Prompts::parse_prd(&prd_content);
+    let prompt = Prompts::parse_prd(&prd_content, num_tasks);
     let parsed_tasks: Vec<ParsedTask> = client.complete_json(&prompt).await?;
 
     spinner.finish_with_message(format!(

@@ -1,14 +1,14 @@
 pub struct Prompts;
 
 impl Prompts {
-    pub fn parse_prd(phase_content: &str) -> String {
+    pub fn parse_prd(phase_content: &str, num_tasks: u32) -> String {
         format!(
             r#"You are a Scrum Master parsing a phase into actionable development tasks.
 
 Phase Content:
 {}
 
-Parse this phase into discrete, actionable tasks. Return a JSON array of tasks with the following structure:
+Parse this phase into approximately {} discrete, actionable tasks. Return a JSON array of tasks with the following structure:
 
 [
   {{
@@ -21,6 +21,7 @@ Parse this phase into discrete, actionable tasks. Return a JSON array of tasks w
 ]
 
 Guidelines:
+- Generate approximately {} tasks (can vary by 1-2 if needed for logical breakdown)
 - Each task should be atomic and independently testable
 - Use Fibonacci complexity scale:
   * 1 = Trivial (~30 min, e.g., update config value)
@@ -35,7 +36,7 @@ Guidelines:
 - Each task should have clear success criteria
 
 Return ONLY the JSON array, no additional explanation."#,
-            phase_content
+            phase_content, num_tasks, num_tasks
         )
     }
 

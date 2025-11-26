@@ -134,7 +134,7 @@ impl Storage {
     }
 
     pub fn docs_dir(&self) -> PathBuf {
-        self.project_root.join("docs")
+        self.scud_dir().join("docs")
     }
 
     pub fn is_initialized(&self) -> bool {

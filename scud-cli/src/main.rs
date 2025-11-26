@@ -174,6 +174,10 @@ enum Commands {
         /// Phase tag to create
         #[arg(short, long)]
         tag: String,
+
+        /// Number of tasks to generate (default: 10)
+        #[arg(short = 'n', long, default_value = "10")]
+        num_tasks: u32,
     },
 
     /// Analyze task complexity (AI-powered)
@@ -338,8 +342,8 @@ async fn main() -> Result<()> {
                 }
             },
         },
-        Commands::ParsePrd { file, tag } => {
-            commands::ai::parse_prd::run(cli.project, &file, &tag).await
+        Commands::ParsePrd { file, tag, num_tasks } => {
+            commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks).await
         }
         Commands::AnalyzeComplexity { task, tag } => {
             commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())

@@ -246,12 +246,17 @@ async function initProject() {
   log('\nStep 3: Creating SCUD structure...', 'blue');
   const scudDir = path.join(cwd, '.scud');
   const tasksDir = path.join(scudDir, 'tasks');
+  const docsDir = path.join(scudDir, 'docs');
 
   if (!fs.existsSync(scudDir)) {
     fs.mkdirSync(scudDir, { recursive: true });
   }
   if (!fs.existsSync(tasksDir)) {
     fs.mkdirSync(tasksDir, { recursive: true });
+  }
+  if (!fs.existsSync(docsDir)) {
+    fs.mkdirSync(docsDir, { recursive: true });
+    log('✓ Created .scud/docs/', 'green');
   }
 
   // Create empty tasks.scg file (SCG format)
@@ -327,16 +332,16 @@ max_tokens = 4096
     log('✓ workflow-state.json already exists', 'green');
   }
 
-  // Create docs directories
+  // Create docs subdirectories inside .scud/docs/
   log('\nStep 5: Creating documentation directories...', 'blue');
-  const docsDirs = ['docs/prd', 'docs/phases', 'docs/architecture', 'docs/retrospectives'];
-  docsDirs.forEach(dir => {
-    const fullPath = path.join(cwd, dir);
+  const docSubDirs = ['prd', 'phases', 'architecture', 'retrospectives'];
+  docSubDirs.forEach(subdir => {
+    const fullPath = path.join(docsDir, subdir);
     if (!fs.existsSync(fullPath)) {
       fs.mkdirSync(fullPath, { recursive: true });
     }
   });
-  log('✓ Documentation directories created', 'green');
+  log('✓ Documentation directories created in .scud/docs/', 'green');
 
   // Step 6: Agent installation (interactive or flag-based)
   log('\nStep 6: SCUD Workflow Agents...', 'blue');
