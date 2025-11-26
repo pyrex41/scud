@@ -143,24 +143,4 @@ Return ONLY the JSON array, no additional explanation."#,
         )
     }
 
-    pub fn research_topic(query: &str) -> String {
-        format!(
-            r#"You are a technical research assistant helping a developer.
-
-Research Query: {}
-
-Provide a comprehensive but concise response covering:
-1. Key concepts and best practices
-2. Common pitfalls to avoid
-3. Recommended approaches
-4. Code examples if relevant
-5. Links to documentation or resources (if you're aware of them)
-
-Focus on practical, actionable information that helps with implementation.
-Be concise but thorough - aim for 200-400 words.
-
-Format your response in markdown."#,
-            query
-        )
-    }
 }

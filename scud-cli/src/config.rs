@@ -14,9 +14,6 @@ pub struct LLMConfig {
     pub model: String,
     #[serde(default)]
     pub max_tokens: u32,
-    /// Optional separate model for research tasks (defaults to main model if not set)
-    #[serde(default)]
-    pub research_model: Option<String>,
 }
 
 impl Default for Config {
@@ -26,7 +23,6 @@ impl Default for Config {
                 provider: "anthropic".to_string(),
                 model: "claude-sonnet-4-20250514".to_string(),
                 max_tokens: 4096,
-                research_model: None,
             },
         }
     }
@@ -151,7 +147,6 @@ mod tests {
                 provider: "xai".to_string(),
                 model: "grok-code-fast-1".to_string(),
                 max_tokens: 8192,
-                research_model: None,
             },
         };
 

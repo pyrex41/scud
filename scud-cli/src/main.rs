@@ -18,10 +18,36 @@ enum ConfigCommands {
         model: Option<String>,
     },
 
-    /// Set research-specific model (optional, overrides main model for research command)
-    SetResearchModel {
-        /// Model name (leave empty to clear and use main model)
-        model: Option<String>,
+    /// Manage SCUD workflow agents (Claude Code slash commands)
+    Agents {
+        #[command(subcommand)]
+        command: AgentsCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentsCommands {
+    /// List installed SCUD agents
+    List,
+
+    /// Add SCUD agent(s) to the project
+    Add {
+        /// Agent name (pm, sm, architect, dev, retrospective, status) or use --all
+        name: Option<String>,
+
+        /// Add all SCUD agents
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Remove SCUD agent(s) from the project
+    Remove {
+        /// Agent name (pm, sm, architect, dev, retrospective, status) or use --all
+        name: Option<String>,
+
+        /// Remove all SCUD agents
+        #[arg(long)]
+        all: bool,
     },
 }
 
@@ -175,12 +201,6 @@ enum Commands {
         tag: Option<String>,
     },
 
-    /// Research a topic using web search (AI-powered)
-    Research {
-        /// Research query
-        query: String,
-    },
-
     // Task Assignment commands
     /// Assign task to a developer
     Assign {
@@ -297,9 +317,15 @@ async fn main() -> Result<()> {
             ConfigCommands::SetProvider { provider, model } => {
                 commands::config::set_provider(cli.project, &provider, model)
             }
-            ConfigCommands::SetResearchModel { model } => {
-                commands::config::set_research_model(cli.project, model)
-            }
+            ConfigCommands::Agents { command } => match command {
+                AgentsCommands::List => commands::config::agents_list(cli.project),
+                AgentsCommands::Add { name, all } => {
+                    commands::config::agents_add(cli.project, name, all)
+                }
+                AgentsCommands::Remove { name, all } => {
+                    commands::config::agents_remove(cli.project, name, all)
+                }
+            },
         },
         Commands::ParsePrd { file, tag } => {
             commands::ai::parse_prd::run(cli.project, &file, &tag).await
@@ -311,7 +337,6 @@ async fn main() -> Result<()> {
         Commands::Expand { task_id, all, tag } => {
             commands::ai::expand::run(cli.project, task_id.as_deref(), all, tag.as_deref()).await
         }
-        Commands::Research { query } => commands::ai::research::run(cli.project, &query).await,
         Commands::Assign {
             task_id,
             assignee,

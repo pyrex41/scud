@@ -70,7 +70,6 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             provider,
             model,
             max_tokens: 4096,
-            research_model: None,
         },
     };
 
