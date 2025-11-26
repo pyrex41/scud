@@ -93,7 +93,7 @@ impl Config {
                 "grok-4-1-fast-reasoning",
                 "grok-4-1-fast",
                 "grok-3-fast",
-                "grok-3",
+                "grok-code-fast-1",
             ],
             "anthropic" => vec![
                 "claude-sonnet-4-5-20250929",
@@ -102,12 +102,12 @@ impl Config {
                 "claude-opus-4-1-20250805",
             ],
             "openai" => vec![
+                "gpt-5.1",
+                "gpt-5.1-mini",
                 "o3-mini",
                 "o3",
                 "o4-mini",
                 "gpt-4.1",
-                "gpt-4o",
-                "gpt-4o-mini",
             ],
             "openrouter" => vec![
                 "anthropic/claude-sonnet-4.5",
