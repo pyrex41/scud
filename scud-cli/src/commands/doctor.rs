@@ -465,8 +465,7 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
         results.warning_count().to_string().blue()
     );
 
-    if !fix_attempted
-        && (!results.stale_locks.is_empty() || !results.orphan_in_progress.is_empty())
+    if !fix_attempted && (!results.stale_locks.is_empty() || !results.orphan_in_progress.is_empty())
     {
         println!();
         println!("{}", "To auto-fix recoverable issues, run:".blue());
