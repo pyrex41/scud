@@ -133,7 +133,7 @@ pub fn run(
     }
 
     // If we couldn't load tasks, show what we found and exit
-    if results.corrupt_files.len() > 0 {
+    if !results.corrupt_files.is_empty() {
         print_results(&results, fix);
         return Ok(());
     }
@@ -465,7 +465,9 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
         results.warning_count().to_string().blue()
     );
 
-    if !fix_attempted && (results.stale_locks.len() > 0 || results.orphan_in_progress.len() > 0) {
+    if !fix_attempted
+        && (!results.stale_locks.is_empty() || !results.orphan_in_progress.is_empty())
+    {
         println!();
         println!("{}", "To auto-fix recoverable issues, run:".blue());
         println!("  scud doctor --fix");

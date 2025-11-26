@@ -35,7 +35,7 @@ fn bench_load_all_vs_load_one(c: &mut Criterion) {
 
     group.bench_function("load_one_epic_directly", |b| {
         b.iter(|| {
-            let epic = storage.load_epic("EPIC-25").unwrap();
+            let epic = storage.load_group("EPIC-25").unwrap();
             black_box(&epic);
         })
     });
@@ -51,24 +51,24 @@ fn bench_active_epic_cache(c: &mut Criterion) {
     let mut tasks = HashMap::new();
     tasks.insert("TEST-1".to_string(), Epic::new("TEST-1".to_string()));
     storage.save_tasks(&tasks).unwrap();
-    storage.set_active_epic("TEST-1").unwrap();
+    storage.set_active_group("TEST-1").unwrap();
 
     let mut group = c.benchmark_group("active_epic_cache");
 
     group.bench_function("first_call_no_cache", |b| {
         b.iter(|| {
             storage.clear_cache();
-            let active = storage.get_active_epic().unwrap();
+            let active = storage.get_active_group().unwrap();
             black_box(active);
         })
     });
 
     group.bench_function("second_call_with_cache", |b| {
         // Prime the cache
-        storage.get_active_epic().unwrap();
+        storage.get_active_group().unwrap();
 
         b.iter(|| {
-            let active = storage.get_active_epic().unwrap();
+            let active = storage.get_active_group().unwrap();
             black_box(active);
         })
     });
