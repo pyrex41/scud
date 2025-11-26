@@ -54,7 +54,7 @@ pub struct PhaseInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompletedEpic {
+pub struct CompletedGroup {
     pub tag: String,
     pub completed_at: String,
     pub metrics: Option<HashMap<String, serde_json::Value>>,
@@ -64,10 +64,14 @@ pub struct CompletedEpic {
 pub struct WorkflowState {
     pub version: String,
     pub current_phase: String,
-    pub active_epic: Option<String>,
+    /// Active task group (replaces active_epic)
+    #[serde(alias = "active_epic")]
+    pub active_group: Option<String>,
     pub phases: HashMap<String, PhaseInfo>,
     pub history: Vec<serde_json::Value>,
-    pub completed_epics: Vec<CompletedEpic>,
+    /// Completed task groups (replaces completed_groups)
+    #[serde(alias = "completed_groups")]
+    pub completed_groups: Vec<CompletedGroup>,
     pub last_updated: Option<String>,
 }
 
@@ -128,10 +132,10 @@ impl WorkflowState {
         WorkflowState {
             version: "1.0.0".to_string(),
             current_phase: "ideation".to_string(),
-            active_epic: None,
+            active_group: None,
             phases,
             history: Vec::new(),
-            completed_epics: Vec::new(),
+            completed_groups: Vec::new(),
             last_updated: None,
         }
     }
@@ -218,10 +222,10 @@ mod tests {
 
         assert_eq!(state.version, "1.0.0");
         assert_eq!(state.current_phase, "ideation");
-        assert_eq!(state.active_epic, None);
+        assert_eq!(state.active_group, None);
         assert_eq!(state.phases.len(), 5);
         assert_eq!(state.history.len(), 0);
-        assert_eq!(state.completed_epics.len(), 0);
+        assert_eq!(state.completed_groups.len(), 0);
         assert_eq!(state.last_updated, None);
     }
 
@@ -232,7 +236,7 @@ mod tests {
 
         assert_eq!(state.version, new_state.version);
         assert_eq!(state.current_phase, new_state.current_phase);
-        assert_eq!(state.active_epic, new_state.active_epic);
+        assert_eq!(state.active_group, new_state.active_group);
     }
 
     #[test]
@@ -301,13 +305,13 @@ mod tests {
     #[test]
     fn test_active_epic_management() {
         let mut state = WorkflowState::new();
-        assert_eq!(state.active_epic, None);
+        assert_eq!(state.active_group, None);
 
-        state.active_epic = Some("epic-1-auth".to_string());
-        assert_eq!(state.active_epic, Some("epic-1-auth".to_string()));
+        state.active_group = Some("epic-1-auth".to_string());
+        assert_eq!(state.active_group, Some("epic-1-auth".to_string()));
 
-        state.active_epic = None;
-        assert_eq!(state.active_epic, None);
+        state.active_group = None;
+        assert_eq!(state.active_group, None);
     }
 
     #[test]
@@ -327,19 +331,19 @@ mod tests {
     }
 
     #[test]
-    fn test_completed_epics() {
+    fn test_completed_groups() {
         let mut state = WorkflowState::new();
-        assert_eq!(state.completed_epics.len(), 0);
+        assert_eq!(state.completed_groups.len(), 0);
 
-        let epic = CompletedEpic {
+        let epic = CompletedGroup {
             tag: "epic-1-auth".to_string(),
             completed_at: "2025-11-16T10:30:00Z".to_string(),
             metrics: None,
         };
 
-        state.completed_epics.push(epic);
-        assert_eq!(state.completed_epics.len(), 1);
-        assert_eq!(state.completed_epics[0].tag, "epic-1-auth");
+        state.completed_groups.push(epic);
+        assert_eq!(state.completed_groups.len(), 1);
+        assert_eq!(state.completed_groups[0].tag, "epic-1-auth");
     }
 
     #[test]
@@ -354,7 +358,7 @@ mod tests {
             serde_json::Value::Number(serde_json::Number::from(55)),
         );
 
-        let epic = CompletedEpic {
+        let epic = CompletedGroup {
             tag: "epic-2-dashboard".to_string(),
             completed_at: "2025-11-16T12:00:00Z".to_string(),
             metrics: Some(metrics),
@@ -373,7 +377,7 @@ mod tests {
 
         assert_eq!(deserialized.version, state.version);
         assert_eq!(deserialized.current_phase, state.current_phase);
-        assert_eq!(deserialized.active_epic, state.active_epic);
+        assert_eq!(deserialized.active_group, state.active_group);
         assert_eq!(deserialized.phases.len(), state.phases.len());
     }
 
@@ -397,7 +401,7 @@ mod tests {
     #[test]
     fn test_full_workflow_cycle() {
         let mut state = WorkflowState::new();
-        state.active_epic = Some("epic-1-test".to_string());
+        state.active_group = Some("epic-1-test".to_string());
 
         // Progress through all phases
         assert_eq!(state.get_current_phase(), Some(Phase::Ideation));
@@ -415,18 +419,18 @@ mod tests {
         assert_eq!(state.get_current_phase(), Some(Phase::Retrospective));
 
         // Complete epic
-        let epic = CompletedEpic {
-            tag: state.active_epic.clone().unwrap(),
+        let epic = CompletedGroup {
+            tag: state.active_group.clone().unwrap(),
             completed_at: chrono::Utc::now().to_rfc3339(),
             metrics: None,
         };
-        state.completed_epics.push(epic);
-        state.active_epic = None;
+        state.completed_groups.push(epic);
+        state.active_group = None;
 
         // Reset to ideation
         state.set_phase(Phase::Ideation);
         assert_eq!(state.get_current_phase(), Some(Phase::Ideation));
-        assert_eq!(state.active_epic, None);
-        assert_eq!(state.completed_epics.len(), 1);
+        assert_eq!(state.active_group, None);
+        assert_eq!(state.completed_groups.len(), 1);
     }
 }

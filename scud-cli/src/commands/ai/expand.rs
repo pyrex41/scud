@@ -37,7 +37,7 @@ pub async fn run(
     tag: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root);
-    let epic_tag = crate::commands::helpers::resolve_epic_tag(&storage, tag, true)?;
+    let epic_tag = crate::commands::helpers::resolve_group_tag(&storage, tag, true)?;
 
     let mut all_tasks = storage.load_tasks()?;
     let epic = all_tasks

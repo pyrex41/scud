@@ -6,7 +6,7 @@
  * Main entry point for scud commands
  */
 
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -89,30 +89,33 @@ https://github.com/yourusername/scud
 
 function init() {
   const installScript = path.join(__dirname, '..', 'bin', 'install.js');
-  try {
-    execSync(`node "${installScript}" init`, { stdio: 'inherit' });
-  } catch (error) {
-    console.error('Installation failed:', error.message);
+  const result = spawnSync('node', [installScript, 'init'], { stdio: 'inherit' });
+  if (result.status !== 0) {
+    console.error('Installation failed');
     process.exit(1);
   }
 }
 
 function install() {
   const installScript = path.join(__dirname, '..', 'bin', 'install.js');
-  const installArgs = args.join(' ');
-  try {
-    execSync(`node "${installScript}" ${installArgs}`, { stdio: 'inherit' });
-  } catch (error) {
-    console.error('Installation failed:', error.message);
+  const result = spawnSync('node', [installScript, ...args], { stdio: 'inherit' });
+  if (result.status !== 0) {
+    console.error('Installation failed');
     process.exit(1);
   }
 }
 
 function status() {
-  const validator = path.join(__dirname, '..', 'src', 'validators', 'taskmaster-validator.js');
+  const validator = path.join(__dirname, '..', 'src', 'validators', 'scud-validator.js');
+  const result = spawnSync('node', [validator, 'get-command-availability'], { encoding: 'utf8' });
+
+  if (result.status !== 0) {
+    console.error('Status check failed:', result.stderr);
+    process.exit(1);
+  }
+
   try {
-    const result = execSync(`node "${validator}" get-command-availability`, { encoding: 'utf8' });
-    const availability = JSON.parse(result);
+    const availability = JSON.parse(result.stdout);
 
     console.log('\n📊 SCUD Workflow Status\n');
     console.log('Available Commands:');
@@ -130,11 +133,12 @@ function status() {
 }
 
 function validate() {
-  const validator = path.join(__dirname, '..', 'src', 'validators', 'taskmaster-validator.js');
-  try {
-    execSync(`node "${validator}" validate-cli`, { stdio: 'inherit' });
+  const validator = path.join(__dirname, '..', 'src', 'validators', 'scud-validator.js');
+  const result = spawnSync('node', [validator, 'validate-cli'], { stdio: 'inherit' });
+
+  if (result.status === 0) {
     console.log('✅ Validation passed');
-  } catch (error) {
+  } else {
     console.error('❌ Validation failed');
     process.exit(1);
   }
@@ -147,25 +151,23 @@ if (rustCommands.includes(command)) {
   const debugBinary = path.join(__dirname, '..', 'scud-cli', 'target', 'debug', 'scud');
 
   // Use release binary if available, otherwise fall back to debug
-  const scudBinary = fs.existsSync(rustBinary) ? rustBinary : debugBinary;
+  let scudBinary = fs.existsSync(rustBinary) ? rustBinary : debugBinary;
 
   if (!fs.existsSync(scudBinary)) {
     console.error('❌ SCUD Rust CLI not found. Building...');
-    try {
-      const scudCliDir = path.join(__dirname, '..', 'scud-cli');
-      execSync('cargo build --release', { cwd: scudCliDir, stdio: 'inherit' });
-    } catch (error) {
+    const scudCliDir = path.join(__dirname, '..', 'scud-cli');
+    const buildResult = spawnSync('cargo', ['build', '--release'], { cwd: scudCliDir, stdio: 'inherit' });
+
+    if (buildResult.status !== 0) {
       console.error('Failed to build Rust CLI. Please run: cd scud-cli && cargo build --release');
       process.exit(1);
     }
+    scudBinary = rustBinary;
   }
 
-  try {
-    execSync(`"${scudBinary}" ${command} ${args.join(' ')}`, { stdio: 'inherit' });
-    process.exit(0);
-  } catch (error) {
-    process.exit(1);
-  }
+  // Use spawnSync with argument array to properly handle spaces and special chars
+  const result = spawnSync(scudBinary, [command, ...args], { stdio: 'inherit' });
+  process.exit(result.status || 0);
 }
 
 switch (command) {

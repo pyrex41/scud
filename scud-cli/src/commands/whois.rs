@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::commands::helpers::resolve_epic_tag;
+use crate::commands::helpers::resolve_group_tag;
 use crate::storage::Storage;
 
 pub fn run(project_root: Option<PathBuf>, tag: Option<&str>) -> Result<()> {
@@ -11,7 +11,7 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>) -> Result<()> {
 
     // If tag provided, only show that epic. Otherwise show all epics.
     let (tasks, scope_label) = if let Some(t) = tag {
-        let epic_tag = resolve_epic_tag(&storage, Some(t), false)?;
+        let epic_tag = resolve_group_tag(&storage, Some(t), false)?;
         let all_tasks = storage.load_tasks()?;
         let epic = all_tasks
             .get(&epic_tag)

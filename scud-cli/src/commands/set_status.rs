@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
-use crate::commands::helpers::resolve_epic_tag;
+use crate::commands::helpers::resolve_group_tag;
 use crate::models::TaskStatus;
 use crate::storage::Storage;
 
@@ -22,8 +22,8 @@ pub fn run(
 
     let storage = Storage::new(project_root);
 
-    let epic_tag = resolve_epic_tag(&storage, tag, true)?;
-    let mut epic = storage.load_epic(&epic_tag)?;
+    let epic_tag = resolve_group_tag(&storage, tag, true)?;
+    let mut epic = storage.load_group(&epic_tag)?;
 
     let task = epic
         .get_task_mut(task_id)
@@ -31,7 +31,7 @@ pub fn run(
 
     task.set_status(new_status);
 
-    storage.update_epic(&epic_tag, &epic)?;
+    storage.update_group(&epic_tag, &epic)?;
 
     println!(
         "{} Task {} → {}",

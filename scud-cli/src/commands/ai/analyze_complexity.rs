@@ -32,20 +32,24 @@ pub async fn run(
     task_id: Option<&str>,
     tag: Option<&str>,
 ) -> Result<()> {
-    let storage = Storage::new(project_root);
-    let epic_tag = crate::commands::helpers::resolve_epic_tag(&storage, tag, true)?;
+    let storage = Storage::new(project_root.clone());
+    let group_tag = crate::commands::helpers::resolve_group_tag(&storage, tag, true)?;
 
     let mut all_tasks = storage.load_tasks()?;
-    let epic = all_tasks
-        .get_mut(&epic_tag)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
+    let group = all_tasks
+        .get_mut(&group_tag)
+        .ok_or_else(|| anyhow::anyhow!("Task group '{}' not found", group_tag))?;
 
-    let client = Arc::new(LLMClient::new()?);
+    // Use project_root for LLM config resolution
+    let client = Arc::new(match project_root {
+        Some(root) => LLMClient::new_with_project_root(root)?,
+        None => LLMClient::new()?,
+    });
 
     // Determine which tasks to analyze
     let tasks_to_analyze: Vec<(String, String, String, Option<String>)> = if let Some(id) = task_id
     {
-        let task = epic
+        let task = group
             .get_task(id)
             .ok_or_else(|| anyhow::anyhow!("Task {} not found", id))?;
         vec![(
@@ -55,7 +59,8 @@ pub async fn run(
             task.details.clone(),
         )]
     } else {
-        epic.tasks
+        group
+            .tasks
             .iter()
             .map(|t| {
                 (
@@ -160,7 +165,7 @@ pub async fn run(
     for result in results {
         match result {
             Ok(analysis) => {
-                if let Some(task) = epic.get_task_mut(&analysis.id) {
+                if let Some(task) = group.get_task_mut(&analysis.id) {
                     task.complexity = analysis.complexity;
                     task.update();
 
@@ -186,8 +191,8 @@ pub async fn run(
     }
 
     // Get stats before saving
-    let stats = epic.get_stats();
-    let tasks_needing_expansion: Vec<_> = epic
+    let stats = group.get_stats();
+    let tasks_needing_expansion: Vec<_> = group
         .get_tasks_needing_expansion()
         .iter()
         .map(|t| (t.id.clone(), t.title.clone(), t.complexity))

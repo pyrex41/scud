@@ -26,7 +26,7 @@ pub fn run(project_root: Option<PathBuf>, set_tag: Option<&str>) -> Result<()> {
         if !tasks.contains_key(tag) {
             anyhow::bail!("Epic '{}' not found", tag);
         }
-        storage.set_active_epic(tag)?;
+        storage.set_active_group(tag)?;
         println!("{} {}", "Active epic:".green(), tag.green().bold());
 
         if let Some(epic) = tasks.get(tag) {
@@ -40,7 +40,7 @@ pub fn run(project_root: Option<PathBuf>, set_tag: Option<&str>) -> Result<()> {
     }
 
     // Display all tags
-    let active_epic = storage.get_active_epic()?;
+    let active_epic = storage.get_active_group()?;
     println!("{}", "Epic Tags:".blue().bold());
     println!();
 
@@ -91,7 +91,7 @@ pub fn run(project_root: Option<PathBuf>, set_tag: Option<&str>) -> Result<()> {
 
         if let Some(idx) = selection {
             let selected = tag_list[idx];
-            storage.set_active_epic(selected)?;
+            storage.set_active_group(selected)?;
             println!("\n{} {}", "Active epic:".green(), selected.green().bold());
         }
     } else if active_epic.is_none() {

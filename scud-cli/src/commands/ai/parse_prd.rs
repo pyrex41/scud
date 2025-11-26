@@ -19,18 +19,21 @@ struct ParsedTask {
 }
 
 pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> Result<()> {
-    let storage = Storage::new(project_root);
+    let storage = Storage::new(project_root.clone());
 
     if !storage.is_initialized() {
         anyhow::bail!("SCUD not initialized. Run: scud init");
     }
 
-    // Read the epic file
-    println!("{} {}", "Reading epic from:".blue(), file_path.display());
-    let epic_content = storage.read_file(file_path)?;
+    // Read the PRD file
+    println!("{} {}", "Reading PRD from:".blue(), file_path.display());
+    let prd_content = storage.read_file(file_path)?;
 
-    // Create LLM client
-    let client = LLMClient::new()?;
+    // Create LLM client with proper project root
+    let client = match project_root {
+        Some(root) => LLMClient::new_with_project_root(root)?,
+        None => LLMClient::new()?,
+    };
 
     // Show progress
     let spinner = ProgressBar::new_spinner();
@@ -39,11 +42,11 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
             .template("{spinner:.blue} {msg}")
             .unwrap(),
     );
-    spinner.set_message("Parsing epic with AI...");
+    spinner.set_message("Parsing PRD with AI...");
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    // Call LLM to parse the epic
-    let prompt = Prompts::parse_prd(&epic_content);
+    // Call LLM to parse the PRD
+    let prompt = Prompts::parse_prd(&prd_content);
     let parsed_tasks: Vec<ParsedTask> = client.complete_json(&prompt).await?;
 
     spinner.finish_with_message(format!(
@@ -53,7 +56,7 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
     ));
 
     // Convert to our task model
-    let mut epic = Epic::new(tag.to_string());
+    let mut group = Epic::new(tag.to_string());
 
     for (idx, parsed) in parsed_tasks.iter().enumerate() {
         let task_id = (idx + 1).to_string();
@@ -73,28 +76,28 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
         task.priority = priority;
         task.dependencies = parsed.dependencies.clone();
 
-        epic.add_task(task);
+        group.add_task(task);
     }
 
-    // Load existing tasks and add new epic
-    let mut all_tasks = storage.load_tasks().unwrap_or_default();
+    // Load existing tasks (propagate errors - don't silently swallow them)
+    let mut all_tasks = storage.load_tasks()?;
 
     if all_tasks.contains_key(tag) {
         println!(
             "{}",
-            format!("⚠ Epic '{}' already exists. Overwriting...", tag).yellow()
+            format!("⚠ Task group '{}' already exists. Overwriting...", tag).yellow()
         );
     }
 
-    all_tasks.insert(tag.to_string(), epic);
+    all_tasks.insert(tag.to_string(), group);
     storage.save_tasks(&all_tasks)?;
 
-    // Set as active epic
-    storage.set_active_epic(tag)?;
+    // Set as active group
+    storage.set_active_group(tag)?;
 
     println!(
         "\n{}",
-        "✅ Epic parsed and created successfully!".green().bold()
+        "✅ PRD parsed and task group created!".green().bold()
     );
     println!();
     println!("{:<20} {}", "Tag:".yellow(), tag.cyan());
@@ -103,7 +106,7 @@ pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str) -> 
     println!("{}", "Next steps:".blue());
     println!("  1. Review tasks: scud list");
     println!("  2. Analyze complexity: scud analyze-complexity");
-    println!("  3. Use /tm-architect to add technical details");
+    println!("  3. Use /scud-architect to add technical details");
     println!();
 
     Ok(())

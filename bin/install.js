@@ -25,9 +25,9 @@ function log(message, color = 'reset') {
   console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
-function checkTaskMaster() {
+function checkScud() {
   try {
-    execSync('task-master --version', { stdio: 'ignore' });
+    execSync('scud --version', { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -37,45 +37,43 @@ function checkTaskMaster() {
 function initProject() {
   log('\n🚀 Initializing SCUD in your project\n', 'blue');
 
-  // Check Task Master
-  log('Step 1: Checking Task Master CLI...', 'blue');
-  if (checkTaskMaster()) {
-    log('✓ Task Master CLI found', 'green');
+  // Check SCUD CLI
+  log('Step 1: Checking SCUD CLI...', 'blue');
+  if (checkScud()) {
+    log('✓ SCUD CLI found', 'green');
   } else {
-    log('✗ Task Master CLI not found', 'red');
-    log('\nInstall Task Master CLI:', 'yellow');
-    log('  npm install -g task-master\n');
-    process.exit(1);
+    log('⚠ SCUD CLI not found (optional for AI features)', 'yellow');
   }
 
-  // Create .taskmaster directory
-  log('\nStep 2: Creating Task Master structure...', 'blue');
-  const taskmasterDir = path.join(cwd, '.taskmaster');
-  const tasksDir = path.join(taskmasterDir, 'tasks');
+  // Create .scud directory
+  log('\nStep 2: Creating SCUD structure...', 'blue');
+  const scudDir = path.join(cwd, '.scud');
+  const tasksDir = path.join(scudDir, 'tasks');
 
-  if (!fs.existsSync(taskmasterDir)) {
-    fs.mkdirSync(taskmasterDir, { recursive: true });
+  if (!fs.existsSync(scudDir)) {
+    fs.mkdirSync(scudDir, { recursive: true });
   }
   if (!fs.existsSync(tasksDir)) {
     fs.mkdirSync(tasksDir, { recursive: true });
   }
 
-  const tasksFile = path.join(tasksDir, 'tasks.json');
+  // Create empty tasks.scg file (SCG format)
+  const tasksFile = path.join(tasksDir, 'tasks.scg');
   if (!fs.existsSync(tasksFile)) {
-    fs.writeFileSync(tasksFile, '{}');
-    log('✓ Created tasks.json', 'green');
+    fs.writeFileSync(tasksFile, '');
+    log('✓ Created tasks.scg', 'green');
   } else {
-    log('✓ tasks.json already exists', 'green');
+    log('✓ tasks.scg already exists', 'green');
   }
 
   // Create workflow state
   log('\nStep 3: Creating workflow state...', 'blue');
-  const workflowFile = path.join(taskmasterDir, 'workflow-state.json');
+  const workflowFile = path.join(scudDir, 'workflow-state.json');
   if (!fs.existsSync(workflowFile)) {
     const workflowState = {
       version: '1.0.0',
       current_phase: 'ideation',
-      active_epic: null,
+      active_group: null,
       phases: {
         ideation: {
           status: 'active',
@@ -87,7 +85,7 @@ function initProject() {
           status: 'pending',
           completed_at: null,
           agent: 'scud-sm',
-          description: 'Epic parsing and task breakdown'
+          description: 'PRD parsing and task breakdown'
         },
         architecture: {
           status: 'pending',
@@ -105,11 +103,11 @@ function initProject() {
           status: 'pending',
           completed_at: null,
           agent: 'scud-retrospective',
-          description: 'Post-epic analysis and learning capture'
+          description: 'Post-phase analysis and learning capture'
         }
       },
       history: [],
-      completed_epics: [],
+      completed_groups: [],
       last_updated: null
     };
     fs.writeFileSync(workflowFile, JSON.stringify(workflowState, null, 2));
@@ -120,7 +118,7 @@ function initProject() {
 
   // Create docs directories
   log('\nStep 4: Creating documentation directories...', 'blue');
-  const docsDirs = ['docs/prd', 'docs/epics', 'docs/architecture', 'docs/retrospectives'];
+  const docsDirs = ['docs/prd', 'docs/phases', 'docs/architecture', 'docs/retrospectives'];
   docsDirs.forEach(dir => {
     const fullPath = path.join(cwd, dir);
     if (!fs.existsSync(fullPath)) {
@@ -151,11 +149,11 @@ function initProject() {
   // Create .gitignore entry
   log('\nStep 6: Updating .gitignore...', 'blue');
   const gitignorePath = path.join(cwd, '.gitignore');
-  const gitignoreEntry = '\n# SCUD\n.taskmaster/\n';
+  const gitignoreEntry = '\n# SCUD\n.scud/\n';
 
   if (fs.existsSync(gitignorePath)) {
     const content = fs.readFileSync(gitignorePath, 'utf8');
-    if (!content.includes('.taskmaster/')) {
+    if (!content.includes('.scud/')) {
       fs.appendFileSync(gitignorePath, gitignoreEntry);
       log('✓ Updated .gitignore', 'green');
     } else {

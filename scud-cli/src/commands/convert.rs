@@ -27,7 +27,7 @@ pub fn run(
     }
 
     let storage = Storage::new(project_root);
-    let taskmaster_dir = storage.taskmaster_dir();
+    let taskmaster_dir = storage.scud_dir();
     let tasks_dir = taskmaster_dir.join("tasks");
 
     // Determine source file

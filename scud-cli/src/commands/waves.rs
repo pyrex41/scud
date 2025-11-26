@@ -31,10 +31,10 @@ pub fn run(
         vec![t.to_string()]
     } else {
         // Use active epic
-        let active = storage.get_active_epic()?;
+        let active = storage.get_active_group()?;
         match active {
             Some(t) => vec![t],
-            None => anyhow::bail!("No active epic. Use --tag <epic-tag> or run: scud tags"),
+            None => anyhow::bail!("No active task group. Use --tag <epic-tag> or run: scud tags"),
         }
     };
 

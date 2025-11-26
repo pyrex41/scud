@@ -13,10 +13,10 @@ use crate::models::{Epic, WorkflowState};
 
 pub struct Storage {
     project_root: PathBuf,
-    /// Cache for active epic to avoid repeated workflow state loads
-    /// Option<Option<String>> represents: None = not cached, Some(None) = no active epic, Some(Some(tag)) = cached tag
+    /// Cache for active group to avoid repeated workflow state loads
+    /// Option<Option<String>> represents: None = not cached, Some(None) = no active group, Some(Some(tag)) = cached tag
     /// Uses RwLock for thread safety (useful for tests and potential daemon mode)
-    active_epic_cache: RwLock<Option<Option<String>>>,
+    active_group_cache: RwLock<Option<Option<String>>>,
 }
 
 impl Storage {
@@ -24,7 +24,7 @@ impl Storage {
         let root = project_root.unwrap_or_else(|| std::env::current_dir().unwrap());
         Storage {
             project_root: root,
-            active_epic_cache: RwLock::new(None),
+            active_group_cache: RwLock::new(None),
         }
     }
 
@@ -57,13 +57,15 @@ impl Storage {
     where
         F: FnOnce() -> Result<String>,
     {
+        use std::io::Write;
+
         let dir = path.parent().unwrap();
         if !dir.exists() {
             fs::create_dir_all(dir)?;
         }
 
         // Open file for writing
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
@@ -73,10 +75,12 @@ impl Storage {
         // Acquire lock with retry
         self.acquire_lock_with_retry(&file, 10)?;
 
-        // Generate content and write
+        // Generate content and write through the locked handle
         let content = writer()?;
-        fs::write(path, content)
+        file.write_all(content.as_bytes())
             .with_context(|| format!("Failed to write to {}", path.display()))?;
+        file.flush()
+            .with_context(|| format!("Failed to flush {}", path.display()))?;
 
         // Lock is automatically released when file is dropped
         Ok(())
@@ -84,12 +88,14 @@ impl Storage {
 
     /// Perform a locked read operation on a file
     fn read_with_lock(&self, path: &Path) -> Result<String> {
+        use std::io::Read;
+
         if !path.exists() {
             anyhow::bail!("File not found: {}", path.display());
         }
 
         // Open file for reading
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .read(true)
             .open(path)
             .with_context(|| format!("Failed to open file for reading: {}", path.display()))?;
@@ -98,28 +104,29 @@ impl Storage {
         file.lock_shared()
             .with_context(|| format!("Failed to acquire read lock on {}", path.display()))?;
 
-        // Read content
-        let content = fs::read_to_string(path)
+        // Read content through the locked handle
+        let mut content = String::new();
+        file.read_to_string(&mut content)
             .with_context(|| format!("Failed to read from {}", path.display()))?;
 
         // Lock is automatically released when file is dropped
         Ok(content)
     }
 
-    pub fn taskmaster_dir(&self) -> PathBuf {
-        self.project_root.join(".taskmaster")
+    pub fn scud_dir(&self) -> PathBuf {
+        self.project_root.join(".scud")
     }
 
     pub fn tasks_file(&self) -> PathBuf {
-        self.taskmaster_dir().join("tasks").join("tasks.scg")
+        self.scud_dir().join("tasks").join("tasks.scg")
     }
 
     pub fn workflow_file(&self) -> PathBuf {
-        self.taskmaster_dir().join("workflow-state.json")
+        self.scud_dir().join("workflow-state.json")
     }
 
     pub fn config_file(&self) -> PathBuf {
-        self.taskmaster_dir().join("config.toml")
+        self.scud_dir().join("config.toml")
     }
 
     pub fn docs_dir(&self) -> PathBuf {
@@ -127,9 +134,7 @@ impl Storage {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.taskmaster_dir().exists()
-            && self.tasks_file().exists()
-            && self.workflow_file().exists()
+        self.scud_dir().exists() && self.tasks_file().exists() && self.workflow_file().exists()
     }
 
     pub fn initialize(&self) -> Result<()> {
@@ -138,10 +143,10 @@ impl Storage {
     }
 
     pub fn initialize_with_config(&self, config: &Config) -> Result<()> {
-        // Create .taskmaster directory structure
-        let taskmaster = self.taskmaster_dir();
-        fs::create_dir_all(taskmaster.join("tasks"))
-            .context("Failed to create .taskmaster/tasks directory")?;
+        // Create .scud directory structure
+        let scud_dir = self.scud_dir();
+        fs::create_dir_all(scud_dir.join("tasks"))
+            .context("Failed to create .scud/tasks directory")?;
 
         // Initialize config.toml
         let config_file = self.config_file();
@@ -149,7 +154,7 @@ impl Storage {
             config.save(&config_file)?;
         }
 
-        // Initialize tasks.json with empty object
+        // Initialize tasks.scg with empty content
         let tasks_file = self.tasks_file();
         if !tasks_file.exists() {
             let empty_tasks: HashMap<String, Epic> = HashMap::new();
@@ -166,7 +171,7 @@ impl Storage {
         // Create docs directories
         let docs = self.docs_dir();
         fs::create_dir_all(docs.join("prd"))?;
-        fs::create_dir_all(docs.join("epics"))?;
+        fs::create_dir_all(docs.join("phases"))?;
         fs::create_dir_all(docs.join("architecture"))?;
         fs::create_dir_all(docs.join("retrospectives"))?;
 
@@ -186,11 +191,11 @@ impl Storage {
 
     fn update_gitignore(&self) -> Result<()> {
         let gitignore_path = self.project_root.join(".gitignore");
-        let entry = "\n# SCUD Task Master\n.taskmaster/\n";
+        let entry = "\n# SCUD\n.scud/\n";
 
         if gitignore_path.exists() {
             let content = fs::read_to_string(&gitignore_path)?;
-            if !content.contains(".taskmaster/") {
+            if !content.contains(".scud/") {
                 fs::write(&gitignore_path, format!("{}{}", content, entry))?;
             }
         } else {
@@ -281,10 +286,10 @@ impl Storage {
         })
     }
 
-    pub fn get_active_epic(&self) -> Result<Option<String>> {
+    pub fn get_active_group(&self) -> Result<Option<String>> {
         // Check cache first (read lock)
         {
-            let cache = self.active_epic_cache.read().unwrap();
+            let cache = self.active_group_cache.read().unwrap();
             if let Some(cached) = cache.as_ref() {
                 return Ok(cached.clone());
             }
@@ -292,90 +297,118 @@ impl Storage {
 
         // Load from file and cache (write lock)
         let state = self.load_workflow_state()?;
-        let active = state.active_epic.clone();
+        let active = state.active_group.clone();
 
         // Store in cache
-        *self.active_epic_cache.write().unwrap() = Some(active.clone());
+        *self.active_group_cache.write().unwrap() = Some(active.clone());
 
         Ok(active)
     }
 
-    pub fn set_active_epic(&self, epic_tag: &str) -> Result<()> {
+    pub fn set_active_group(&self, group_tag: &str) -> Result<()> {
         let tasks = self.load_tasks()?;
-        if !tasks.contains_key(epic_tag) {
-            anyhow::bail!("Epic '{}' not found", epic_tag);
+        if !tasks.contains_key(group_tag) {
+            anyhow::bail!("Task group '{}' not found", group_tag);
         }
 
         let mut state = self.load_workflow_state()?;
-        state.active_epic = Some(epic_tag.to_string());
+        state.active_group = Some(group_tag.to_string());
         state.update();
         self.save_workflow_state(&state)?;
 
         // Update cache
-        *self.active_epic_cache.write().unwrap() = Some(Some(epic_tag.to_string()));
+        *self.active_group_cache.write().unwrap() = Some(Some(group_tag.to_string()));
 
         Ok(())
     }
 
-    /// Clear the active epic cache
+    /// Clear the active group cache
     /// Useful when workflow state is modified externally or for testing
     pub fn clear_cache(&self) {
-        *self.active_epic_cache.write().unwrap() = None;
+        *self.active_group_cache.write().unwrap() = None;
     }
 
-    /// Load a single epic by tag
-    /// Parses the SCG file and extracts the requested epic
-    pub fn load_epic(&self, epic_tag: &str) -> Result<Epic> {
+    /// Load a single task group by tag
+    /// Parses the SCG file and extracts the requested group
+    pub fn load_group(&self, group_tag: &str) -> Result<Epic> {
         let path = self.tasks_file();
         let content = self.read_with_lock(&path)?;
 
-        let epics = self.parse_multi_epic_scg(&content)?;
+        let groups = self.parse_multi_epic_scg(&content)?;
 
-        epics
-            .get(epic_tag)
+        groups
+            .get(group_tag)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))
+            .ok_or_else(|| anyhow::anyhow!("Task group '{}' not found", group_tag))
     }
 
-    /// Load the active epic directly (optimized)
-    /// Combines get_active_epic() and load_epic() in one call
-    pub fn load_active_epic(&self) -> Result<Epic> {
+    /// Load the active task group directly (optimized)
+    /// Combines get_active_group() and load_group() in one call
+    pub fn load_active_group(&self) -> Result<Epic> {
         let active_tag = self
-            .get_active_epic()?
-            .ok_or_else(|| anyhow::anyhow!("No active epic. Run: scud use-tag <epic-tag>"))?;
+            .get_active_group()?
+            .ok_or_else(|| anyhow::anyhow!("No active task group. Run: scud use-tag <tag>"))?;
 
-        self.load_epic(&active_tag)
+        self.load_group(&active_tag)
     }
 
-    /// Update a single epic
-    /// Loads all epics, updates the specified one, and saves back
-    pub fn update_epic(&self, epic_tag: &str, epic: &Epic) -> Result<()> {
+    /// Update a single task group atomically
+    /// Holds exclusive lock across read-modify-write cycle to prevent races
+    pub fn update_group(&self, group_tag: &str, group: &Epic) -> Result<()> {
+        use std::io::{Read, Seek, SeekFrom, Write};
+
         let path = self.tasks_file();
 
-        // Read current content first (before write lock)
-        let content = self.read_with_lock(&path)?;
+        let dir = path.parent().unwrap();
+        if !dir.exists() {
+            fs::create_dir_all(dir)?;
+        }
 
-        self.write_with_lock(&path, || {
-            let mut epics = self.parse_multi_epic_scg(&content)?;
+        // Open file for read+write with exclusive lock held throughout
+        // Note: truncate(false) is explicit - we read first, then truncate manually after
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .with_context(|| format!("Failed to open file: {}", path.display()))?;
 
-            // Update specific epic
-            epics.insert(epic_tag.to_string(), epic.clone());
+        // Acquire exclusive lock with retry (held for entire operation)
+        self.acquire_lock_with_retry(&file, 10)?;
 
-            // Serialize all epics back to SCG format
-            let mut sorted_tags: Vec<_> = epics.keys().collect();
-            sorted_tags.sort();
+        // Read current content while holding lock
+        let mut content = String::new();
+        file.read_to_string(&mut content)
+            .with_context(|| format!("Failed to read from {}", path.display()))?;
 
-            let mut output = String::new();
-            for (i, tag) in sorted_tags.iter().enumerate() {
-                if i > 0 {
-                    output.push_str("\n---\n\n");
-                }
-                let epic = epics.get(*tag).unwrap();
-                output.push_str(&serialize_scg(epic));
+        // Parse, modify, and serialize
+        let mut groups = self.parse_multi_epic_scg(&content)?;
+        groups.insert(group_tag.to_string(), group.clone());
+
+        let mut sorted_tags: Vec<_> = groups.keys().collect();
+        sorted_tags.sort();
+
+        let mut output = String::new();
+        for (i, tag) in sorted_tags.iter().enumerate() {
+            if i > 0 {
+                output.push_str("\n---\n\n");
             }
+            let grp = groups.get(*tag).unwrap();
+            output.push_str(&serialize_scg(grp));
+        }
 
-            Ok(output)
-        })
+        // Truncate and write back while still holding lock
+        file.seek(SeekFrom::Start(0))
+            .with_context(|| "Failed to seek to beginning of file")?;
+        file.set_len(0).with_context(|| "Failed to truncate file")?;
+        file.write_all(output.as_bytes())
+            .with_context(|| format!("Failed to write to {}", path.display()))?;
+        file.flush()
+            .with_context(|| format!("Failed to flush {}", path.display()))?;
+
+        // Lock released when file is dropped
+        Ok(())
     }
 
     pub fn read_file(&self, path: &Path) -> Result<String> {
@@ -399,7 +432,7 @@ mod tests {
     #[test]
     fn test_write_with_lock_creates_file() {
         let (storage, _temp_dir) = create_test_storage();
-        let test_file = storage.taskmaster_dir().join("test.json");
+        let test_file = storage.scud_dir().join("test.json");
 
         storage
             .write_with_lock(&test_file, || Ok(r#"{"test": "data"}"#.to_string()))
@@ -413,7 +446,7 @@ mod tests {
     #[test]
     fn test_read_with_lock_reads_existing_file() {
         let (storage, _temp_dir) = create_test_storage();
-        let test_file = storage.taskmaster_dir().join("test.json");
+        let test_file = storage.scud_dir().join("test.json");
 
         // Create a file
         fs::write(&test_file, r#"{"test": "data"}"#).unwrap();
@@ -426,7 +459,7 @@ mod tests {
     #[test]
     fn test_read_with_lock_fails_on_missing_file() {
         let (storage, _temp_dir) = create_test_storage();
-        let test_file = storage.taskmaster_dir().join("nonexistent.json");
+        let test_file = storage.scud_dir().join("nonexistent.json");
 
         let result = storage.read_with_lock(&test_file);
         assert!(result.is_err());
@@ -457,7 +490,7 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         let mut state = crate::models::WorkflowState::new();
-        state.active_epic = Some("TEST-1".to_string());
+        state.active_group = Some("TEST-1".to_string());
 
         // Save state
         storage.save_workflow_state(&state).unwrap();
@@ -465,7 +498,7 @@ mod tests {
         // Load state
         let loaded_state = storage.load_workflow_state().unwrap();
 
-        assert_eq!(loaded_state.active_epic, Some("TEST-1".to_string()));
+        assert_eq!(loaded_state.active_group, Some("TEST-1".to_string()));
     }
 
     #[test]
@@ -511,7 +544,7 @@ mod tests {
 
         let (storage, _temp_dir) = create_test_storage();
         let storage = Arc::new(storage);
-        let test_file = storage.taskmaster_dir().join("lock-test.json");
+        let test_file = storage.scud_dir().join("lock-test.json");
 
         // Create file
         storage
@@ -604,7 +637,7 @@ mod tests {
         // Should return default WorkflowState
         let state = storage.load_workflow_state().unwrap();
         assert_eq!(state.current_phase, "ideation");
-        assert_eq!(state.active_epic, None);
+        assert_eq!(state.active_group, None);
     }
 
     #[test]
@@ -621,7 +654,7 @@ mod tests {
         let result = storage.save_tasks(&tasks);
         assert!(result.is_ok());
 
-        assert!(storage.taskmaster_dir().exists());
+        assert!(storage.scud_dir().exists());
         assert!(storage.tasks_file().exists());
     }
 
@@ -791,25 +824,25 @@ mod tests {
         let mut tasks = HashMap::new();
         tasks.insert("TEST-1".to_string(), Epic::new("TEST-1".to_string()));
         storage.save_tasks(&tasks).unwrap();
-        storage.set_active_epic("TEST-1").unwrap();
+        storage.set_active_group("TEST-1").unwrap();
 
         // First call - loads from file
-        let active1 = storage.get_active_epic().unwrap();
+        let active1 = storage.get_active_group().unwrap();
         assert_eq!(active1, Some("TEST-1".to_string()));
 
         // Modify file directly (bypass storage methods)
         let workflow_file = storage.workflow_file();
         let mut state = storage.load_workflow_state().unwrap();
-        state.active_epic = Some("DIFFERENT".to_string());
+        state.active_group = Some("DIFFERENT".to_string());
         fs::write(&workflow_file, serde_json::to_string(&state).unwrap()).unwrap();
 
         // Second call - should return cached value (not file value)
-        let active2 = storage.get_active_epic().unwrap();
+        let active2 = storage.get_active_group().unwrap();
         assert_eq!(active2, Some("TEST-1".to_string())); // Still cached
 
         // After cache clear - should reload from file
         storage.clear_cache();
-        let active3 = storage.get_active_epic().unwrap();
+        let active3 = storage.get_active_group().unwrap();
         assert_eq!(active3, Some("DIFFERENT".to_string())); // From file
     }
 
@@ -822,16 +855,16 @@ mod tests {
         tasks.insert("EPIC-2".to_string(), Epic::new("EPIC-2".to_string()));
         storage.save_tasks(&tasks).unwrap();
 
-        storage.set_active_epic("EPIC-1").unwrap();
+        storage.set_active_group("EPIC-1").unwrap();
         assert_eq!(
-            storage.get_active_epic().unwrap(),
+            storage.get_active_group().unwrap(),
             Some("EPIC-1".to_string())
         );
 
         // Change active epic - should update cache
-        storage.set_active_epic("EPIC-2").unwrap();
+        storage.set_active_group("EPIC-2").unwrap();
         assert_eq!(
-            storage.get_active_epic().unwrap(),
+            storage.get_active_group().unwrap(),
             Some("EPIC-2".to_string())
         );
     }
@@ -841,11 +874,11 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         // Load when no active epic is set
-        let active = storage.get_active_epic().unwrap();
+        let active = storage.get_active_group().unwrap();
         assert_eq!(active, None);
 
         // Should cache the None value
-        let active2 = storage.get_active_epic().unwrap();
+        let active2 = storage.get_active_group().unwrap();
         assert_eq!(active2, None);
     }
 
@@ -863,7 +896,7 @@ mod tests {
         storage.save_tasks(&tasks).unwrap();
 
         // Load single epic - should only deserialize that one
-        let epic = storage.load_epic("EPIC-25").unwrap();
+        let epic = storage.load_group("EPIC-25").unwrap();
         assert_eq!(epic.name, "EPIC-25");
     }
 
@@ -874,7 +907,7 @@ mod tests {
         let tasks = HashMap::new();
         storage.save_tasks(&tasks).unwrap();
 
-        let result = storage.load_epic("NONEXISTENT");
+        let result = storage.load_group("NONEXISTENT");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }
@@ -894,7 +927,7 @@ mod tests {
         storage.save_tasks(&tasks).unwrap();
 
         // Load via both methods
-        let epic_lazy = storage.load_epic("TEST-1").unwrap();
+        let epic_lazy = storage.load_group("TEST-1").unwrap();
         let tasks_full = storage.load_tasks().unwrap();
         let epic_full = tasks_full.get("TEST-1").unwrap();
 
@@ -916,10 +949,10 @@ mod tests {
         ));
         tasks.insert("ACTIVE-1".to_string(), epic);
         storage.save_tasks(&tasks).unwrap();
-        storage.set_active_epic("ACTIVE-1").unwrap();
+        storage.set_active_group("ACTIVE-1").unwrap();
 
         // Load active epic directly
-        let epic = storage.load_active_epic().unwrap();
+        let epic = storage.load_active_group().unwrap();
         assert_eq!(epic.name, "ACTIVE-1");
         assert_eq!(epic.tasks.len(), 1);
     }
@@ -929,9 +962,12 @@ mod tests {
         let (storage, _temp_dir) = create_test_storage();
 
         // Should error when no active epic
-        let result = storage.load_active_epic();
+        let result = storage.load_active_group();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No active epic"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No active task group"));
     }
 
     #[test]
@@ -944,20 +980,20 @@ mod tests {
         storage.save_tasks(&tasks).unwrap();
 
         // Update only EPIC-1
-        let mut epic1 = storage.load_epic("EPIC-1").unwrap();
+        let mut epic1 = storage.load_group("EPIC-1").unwrap();
         epic1.add_task(crate::models::Task::new(
             "new-task".to_string(),
             "New".to_string(),
             "Desc".to_string(),
         ));
-        storage.update_epic("EPIC-1", &epic1).unwrap();
+        storage.update_group("EPIC-1", &epic1).unwrap();
 
         // Verify update
-        let loaded = storage.load_epic("EPIC-1").unwrap();
+        let loaded = storage.load_group("EPIC-1").unwrap();
         assert_eq!(loaded.tasks.len(), 1);
 
         // Verify EPIC-2 unchanged
-        let epic2 = storage.load_epic("EPIC-2").unwrap();
+        let epic2 = storage.load_group("EPIC-2").unwrap();
         assert_eq!(epic2.tasks.len(), 0);
     }
 }
