@@ -1,6 +1,6 @@
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::Select;
+use dialoguer::{Input, Select};
 use std::path::PathBuf;
 
 use crate::commands::helpers::is_interactive;
@@ -46,18 +46,35 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             .default(0)
             .interact()?;
 
-        let (provider, model) = match provider_selection {
-            0 => ("xai", Config::default_model_for_provider("xai")),
-            1 => ("anthropic", Config::default_model_for_provider("anthropic")),
-            2 => ("openai", Config::default_model_for_provider("openai")),
-            3 => (
-                "openrouter",
-                Config::default_model_for_provider("openrouter"),
-            ),
-            _ => ("anthropic", Config::default_model_for_provider("anthropic")),
+        let provider = match provider_selection {
+            0 => "xai",
+            1 => "anthropic",
+            2 => "openai",
+            3 => "openrouter",
+            _ => "anthropic",
         };
 
-        (provider.to_string(), model.to_string())
+        // Build model options: suggested models + "Custom" option
+        let suggested = Config::suggested_models_for_provider(provider);
+        let mut model_options: Vec<String> = suggested.iter().map(|s| s.to_string()).collect();
+        model_options.push("Custom (enter model name)".to_string());
+
+        let model_selection = Select::new()
+            .with_prompt("Select model (or choose Custom to enter any model)")
+            .items(&model_options)
+            .default(0)
+            .interact()?;
+
+        let model = if model_selection == model_options.len() - 1 {
+            // User selected "Custom"
+            Input::<String>::new()
+                .with_prompt("Enter model name")
+                .interact_text()?
+        } else {
+            suggested[model_selection].to_string()
+        };
+
+        (provider.to_string(), model)
     } else {
         // Non-interactive without provider arg: use default (anthropic)
         let provider = "anthropic";
@@ -87,7 +104,7 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     println!("\n{}", "Next steps:".blue());
     println!("  1. Set your API key environment variable");
     println!("  2. Run: scud tags");
-    println!("  3. Start with: /tm-pm (or use Claude Code slash command)\n");
+    println!("  3. Start with: /scud:pm (or use Claude Code slash command)\n");
 
     Ok(())
 }

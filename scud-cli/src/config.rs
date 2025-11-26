@@ -78,11 +78,30 @@ impl Config {
     pub fn default_model_for_provider(provider: &str) -> &str {
         match provider {
             "anthropic" => "claude-sonnet-4-20250514",
-            "xai" => "grok-code-fast-1",
+            "xai" => "grok-3-fast",
             "openai" => "gpt-4-turbo",
             "openrouter" => "anthropic/claude-sonnet-4",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
             _ => "claude-sonnet-4-20250514",
+        }
+    }
+
+    /// Get suggested models for a provider (for display in init)
+    pub fn suggested_models_for_provider(provider: &str) -> Vec<&str> {
+        match provider {
+            "xai" => vec!["grok-3-fast", "grok-3", "grok-3-mini-fast", "grok-3-mini"],
+            "anthropic" => vec![
+                "claude-sonnet-4-20250514",
+                "claude-opus-4-20250514",
+                "claude-3-5-sonnet-20241022",
+            ],
+            "openai" => vec!["gpt-4-turbo", "gpt-4o", "gpt-4o-mini", "o1", "o1-mini"],
+            "openrouter" => vec![
+                "anthropic/claude-sonnet-4",
+                "openai/gpt-4-turbo",
+                "google/gemini-pro-1.5",
+            ],
+            _ => vec![],
         }
     }
 }
@@ -165,10 +184,7 @@ mod tests {
             Config::default_model_for_provider("anthropic"),
             "claude-sonnet-4-20250514"
         );
-        assert_eq!(
-            Config::default_model_for_provider("xai"),
-            "grok-code-fast-1"
-        );
+        assert_eq!(Config::default_model_for_provider("xai"), "grok-3-fast");
         assert_eq!(Config::default_model_for_provider("openai"), "gpt-4-turbo");
     }
 }

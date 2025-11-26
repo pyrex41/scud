@@ -103,7 +103,7 @@ class TaskMasterValidator {
     if (!state.active_epic) {
       return {
         valid: false,
-        error: 'No active epic in workflow state. Run /tm-pm to create one.'
+        error: 'No active epic in workflow state. Run /scud:pm to create one.'
       };
     }
 
@@ -416,51 +416,51 @@ class TaskMasterValidator {
     const currentPhase = state.current_phase;
 
     const commands = {
-      'tm-pm': { available: false, reason: '' },
-      'tm-architect': { available: false, reason: '' },
-      'tm-dev': { available: false, reason: '' },
-      'tm-retrospective': { available: false, reason: '' }
+      'scud:pm': { available: false, reason: '' },
+      'scud:architect': { available: false, reason: '' },
+      'scud:dev': { available: false, reason: '' },
+      'scud:retrospective': { available: false, reason: '' }
     };
 
-    // tm-pm: Always available in ideation/planning
+    // scud:pm: Always available in ideation/planning
     if (['ideation', 'planning'].includes(currentPhase)) {
-      commands['tm-pm'].available = true;
-      commands['tm-pm'].reason = 'Ready to create PRD or parse into Task Master';
+      commands['scud:pm'].available = true;
+      commands['scud:pm'].reason = 'Ready to create PRD or parse into SCUD';
     } else {
-      commands['tm-pm'].reason = `Only available in ideation/planning phases (current: ${currentPhase})`;
+      commands['scud:pm'].reason = `Only available in ideation/planning phases (current: ${currentPhase})`;
     }
 
-    // tm-architect: Available when planning complete and epic exists
+    // scud:architect: Available when planning complete and tag exists
     if (currentPhase === 'architecture' && state.active_epic) {
-      commands['tm-architect'].available = true;
-      commands['tm-architect'].reason = 'Ready to design architecture';
+      commands['scud:architect'].available = true;
+      commands['scud:architect'].reason = 'Ready to design architecture';
     } else if (!state.active_epic) {
-      commands['tm-architect'].reason = 'No epic in Task Master - run /tm-pm first';
+      commands['scud:architect'].reason = 'No tag in SCUD - run /scud:pm first';
     } else {
-      commands['tm-architect'].reason = `Only available in architecture phase (current: ${currentPhase})`;
+      commands['scud:architect'].reason = `Only available in architecture phase (current: ${currentPhase})`;
     }
 
-    // tm-dev: Available when architecture complete
+    // scud:dev: Available when architecture complete
     if (currentPhase === 'implementation' && state.active_epic) {
-      commands['tm-dev'].available = true;
-      commands['tm-dev'].reason = 'Ready to implement tasks';
+      commands['scud:dev'].available = true;
+      commands['scud:dev'].reason = 'Ready to implement tasks';
     } else if (!state.active_epic) {
-      commands['tm-dev'].reason = 'No epic in Task Master - complete planning first';
+      commands['scud:dev'].reason = 'No tag in SCUD - complete planning first';
     } else {
-      commands['tm-dev'].reason = `Only available in implementation phase (current: ${currentPhase})`;
+      commands['scud:dev'].reason = `Only available in implementation phase (current: ${currentPhase})`;
     }
 
-    // tm-retrospective: Available when all tasks done
+    // scud:retrospective: Available when all tasks done
     if (state.active_epic) {
       const epicComplete = this.validateEpicComplete(state.active_epic);
       if (epicComplete.valid) {
-        commands['tm-retrospective'].available = true;
-        commands['tm-retrospective'].reason = 'All tasks complete - ready for retrospective';
+        commands['scud:retrospective'].available = true;
+        commands['scud:retrospective'].reason = 'All tasks complete - ready for retrospective';
       } else {
-        commands['tm-retrospective'].reason = `Epic has ${epicComplete.incompleteTasks.length} incomplete tasks`;
+        commands['scud:retrospective'].reason = `Tag has ${epicComplete.incompleteTasks.length} incomplete tasks`;
       }
     } else {
-      commands['tm-retrospective'].reason = 'No active epic';
+      commands['scud:retrospective'].reason = 'No active tag';
     }
 
     return commands;
