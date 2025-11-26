@@ -1,10 +1,10 @@
 {
   "name": "scud-task",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Sprint Cycle Unified Development - Lightweight workflow orchestration for building software with Task Master and AI agents",
   "main": "src/validators/taskmaster-validator.js",
   "bin": {
-    "scud": "./bin/scud.js"
+    "scud": "bin/scud.js"
   },
   "scripts": {
     "postinstall": "node bin/postinstall.js",
@@ -26,7 +26,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pyrex41/scud.git"
+    "url": "git+https://github.com/pyrex41/scud.git"
   },
   "bugs": {
     "url": "https://github.com/pyrex41/scud/issues"
