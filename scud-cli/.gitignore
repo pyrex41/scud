@@ -5,3 +5,6 @@
 # npm
 *.tgz
 node_modules/
+
+# SCUD
+.scud/

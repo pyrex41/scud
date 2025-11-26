@@ -1,0 +1,14 @@
+{
+  "name": "find_skills",
+  "description": "Discover available skills in the project and user directories. Skills provide specialized knowledge and workflows for specific tasks.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Optional search term to filter skills by name or description"
+      }
+    }
+  },
+  "command": "find ~/.opencode/skills .opencode/skills ~/.config/opencode/skills .claude/skills -name 'SKILL.md' 2>/dev/null | while read f; do dir=$(dirname \"$f\"); name=$(basename \"$dir\"); echo \"=== $name ===\"; head -20 \"$f\" | grep -E '^(name:|description:|#)' | head -5; echo; done"
+}

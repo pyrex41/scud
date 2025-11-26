@@ -5,6 +5,7 @@ pub mod doctor;
 pub mod helpers;
 pub mod init;
 pub mod list;
+pub mod mermaid;
 pub mod migrate;
 pub mod next;
 pub mod set_status;

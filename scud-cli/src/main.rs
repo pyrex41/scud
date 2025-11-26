@@ -279,6 +279,17 @@ enum Commands {
         #[arg(long)]
         fix: bool,
     },
+
+    /// Generate Mermaid diagram of task graph
+    Mermaid {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Include all phases in the diagram
+        #[arg(long)]
+        all_tags: bool,
+    },
 }
 
 #[tokio::main]
@@ -359,5 +370,8 @@ async fn main() -> Result<()> {
             stale_hours,
             fix,
         } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
+        Commands::Mermaid { tag, all_tags } => {
+            commands::mermaid::run(cli.project, tag.as_deref(), all_tags)
+        }
     }
 }

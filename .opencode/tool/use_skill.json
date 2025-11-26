@@ -1,0 +1,15 @@
+{
+  "name": "use_skill",
+  "description": "Activate a skill by loading its SKILL.md file. This provides specialized knowledge and workflows for the given skill.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "skill_name": {
+        "type": "string",
+        "description": "Name of the skill to activate (e.g., 'scud-tasks')"
+      }
+    },
+    "required": ["skill_name"]
+  },
+  "command": "for dir in ~/.opencode/skills .opencode/skills ~/.config/opencode/skills .claude/skills; do if [ -f \"$dir/$1/SKILL.md\" ]; then echo \"=== Skill: $1 ===\"; cat \"$dir/$1/SKILL.md\"; exit 0; fi; done; echo \"Skill '$1' not found. Run find_skills to see available skills.\""
+}

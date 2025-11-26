@@ -1414,7 +1414,7 @@ dependencies = [
 
 [[package]]
 name = "scud"
-version = "1.7.0"
+version = "1.10.0"
 dependencies = [
  "anyhow",
  "atty",
