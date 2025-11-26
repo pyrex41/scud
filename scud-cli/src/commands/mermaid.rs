@@ -92,7 +92,9 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, all_tags: bool) -> 
     println!("    classDef review fill:#fff3e0,stroke:#ff9800,color:#e65100");
     println!("    classDef expanded fill:#f3e5f5,stroke:#9c27b0,color:#6a1b9a");
     println!("    classDef deferred fill:#eceff1,stroke:#607d8b,color:#455a64");
-    println!("    classDef cancelled fill:#fafafa,stroke:#bdbdbd,color:#9e9e9e,stroke-dasharray: 5 5");
+    println!(
+        "    classDef cancelled fill:#fafafa,stroke:#bdbdbd,color:#9e9e9e,stroke-dasharray: 5 5"
+    );
 
     println!("```");
 
