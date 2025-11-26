@@ -10,11 +10,31 @@ use crate::storage::Storage;
 /// Each agent has a filename, aliases for CLI, and description
 /// Agents are stored in .claude/commands/scud/<filename>.md
 const SCUD_AGENTS: &[(&str, &[&str], &str)] = &[
-    ("pm", &["pm", "scud-pm"], "Product Manager - PRD creation and requirements"),
-    ("sm", &["sm", "scud-sm"], "Scrum Master - Task breakdown and planning"),
-    ("architect", &["architect", "scud-architect"], "Architect - Technical design"),
-    ("dev", &["dev", "scud-dev"], "Developer - Task implementation"),
-    ("retrospective", &["retrospective", "scud-retrospective"], "Retrospective - Post-phase analysis"),
+    (
+        "pm",
+        &["pm", "scud-pm"],
+        "Product Manager - PRD creation and requirements",
+    ),
+    (
+        "sm",
+        &["sm", "scud-sm"],
+        "Scrum Master - Task breakdown and planning",
+    ),
+    (
+        "architect",
+        &["architect", "scud-architect"],
+        "Architect - Technical design",
+    ),
+    (
+        "dev",
+        &["dev", "scud-dev"],
+        "Developer - Task implementation",
+    ),
+    (
+        "retrospective",
+        &["retrospective", "scud-retrospective"],
+        "Retrospective - Post-phase analysis",
+    ),
     ("status", &["status"], "Status - Workflow status reporting"),
 ];
 
@@ -230,8 +250,11 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
         anyhow::bail!("Please specify an agent name or use --all to add all agents");
     }
 
-    let package_dir = get_package_agents_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not find SCUD package agent files. Make sure scud-task is installed."))?;
+    let package_dir = get_package_agents_dir().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Could not find SCUD package agent files. Make sure scud-task is installed."
+        )
+    })?;
 
     let scud_dir = get_scud_commands_dir(project_root);
 
@@ -239,14 +262,18 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
     fs::create_dir_all(&scud_dir)?;
 
     let agents_to_add: Vec<&str> = if all {
-        SCUD_AGENTS.iter().map(|(filename, _, _)| *filename).collect()
+        SCUD_AGENTS
+            .iter()
+            .map(|(filename, _, _)| *filename)
+            .collect()
     } else {
         let agent_name = name.as_ref().unwrap();
-        let normalized = normalize_agent_name(agent_name)
-            .ok_or_else(|| anyhow::anyhow!(
+        let normalized = normalize_agent_name(agent_name).ok_or_else(|| {
+            anyhow::anyhow!(
                 "Unknown agent: '{}'. Valid agents: pm, sm, architect, dev, retrospective, status",
                 agent_name
-            ))?;
+            )
+        })?;
         vec![normalized]
     };
 
@@ -278,7 +305,10 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
         println!("{}", format!("✅ Added {} agent(s)", added).green().bold());
     }
     if already_exists > 0 {
-        println!("{}", format!("{} agent(s) already installed", already_exists).yellow());
+        println!(
+            "{}",
+            format!("{} agent(s) already installed", already_exists).yellow()
+        );
     }
 
     Ok(())
@@ -293,14 +323,18 @@ pub fn agents_remove(project_root: Option<PathBuf>, name: Option<String>, all: b
     let scud_dir = get_scud_commands_dir(project_root);
 
     let agents_to_remove: Vec<&str> = if all {
-        SCUD_AGENTS.iter().map(|(filename, _, _)| *filename).collect()
+        SCUD_AGENTS
+            .iter()
+            .map(|(filename, _, _)| *filename)
+            .collect()
     } else {
         let agent_name = name.as_ref().unwrap();
-        let normalized = normalize_agent_name(agent_name)
-            .ok_or_else(|| anyhow::anyhow!(
+        let normalized = normalize_agent_name(agent_name).ok_or_else(|| {
+            anyhow::anyhow!(
                 "Unknown agent: '{}'. Valid agents: pm, sm, architect, dev, retrospective, status",
                 agent_name
-            ))?;
+            )
+        })?;
         vec![normalized]
     };
 
@@ -323,10 +357,16 @@ pub fn agents_remove(project_root: Option<PathBuf>, name: Option<String>, all: b
 
     println!();
     if removed > 0 {
-        println!("{}", format!("✅ Removed {} agent(s)", removed).green().bold());
+        println!(
+            "{}",
+            format!("✅ Removed {} agent(s)", removed).green().bold()
+        );
     }
     if not_found > 0 {
-        println!("{}", format!("{} agent(s) were not installed", not_found).yellow());
+        println!(
+            "{}",
+            format!("{} agent(s) were not installed", not_found).yellow()
+        );
     }
 
     Ok(())
