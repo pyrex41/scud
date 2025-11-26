@@ -30,7 +30,12 @@ function checkScud() {
     execSync('scud --version', { stdio: 'ignore' });
     return true;
   } catch {
-    return false;
+    try {
+      execSync('scud help', { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
