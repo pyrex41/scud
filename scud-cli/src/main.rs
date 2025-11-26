@@ -342,9 +342,11 @@ async fn main() -> Result<()> {
                 }
             },
         },
-        Commands::ParsePrd { file, tag, num_tasks } => {
-            commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks).await
-        }
+        Commands::ParsePrd {
+            file,
+            tag,
+            num_tasks,
+        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks).await,
         Commands::AnalyzeComplexity { task, tag } => {
             commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())
                 .await

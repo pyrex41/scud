@@ -18,7 +18,12 @@ struct ParsedTask {
     dependencies: Vec<String>,
 }
 
-pub async fn run(project_root: Option<PathBuf>, file_path: &Path, tag: &str, num_tasks: u32) -> Result<()> {
+pub async fn run(
+    project_root: Option<PathBuf>,
+    file_path: &Path,
+    tag: &str,
+    num_tasks: u32,
+) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
     if !storage.is_initialized() {
