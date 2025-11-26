@@ -43,11 +43,6 @@ pub fn run(project_root: Option<PathBuf>, task_id: &str, tag: Option<&str>) -> R
         println!("{}", test_strategy);
     }
 
-    if let Some(analysis) = &task.complexity_analysis {
-        println!("\n{}", "Complexity Analysis:".yellow());
-        println!("{}", analysis);
-    }
-
     if let Some(created) = &task.created_at {
         println!("\n{:<20} {}", "Created:".yellow(), created);
     }

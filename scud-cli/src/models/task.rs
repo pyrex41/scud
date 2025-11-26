@@ -98,9 +98,6 @@ pub struct Task {
     pub test_strategy: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub complexity_analysis: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,7 +137,6 @@ impl Task {
             subtasks: Vec::new(),
             details: None,
             test_strategy: None,
-            complexity_analysis: None,
             created_at: Some(now.clone()),
             updated_at: Some(now),
             assigned_to: None,

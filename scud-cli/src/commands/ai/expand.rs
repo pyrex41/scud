@@ -140,7 +140,8 @@ pub async fn run(
                     spinner.set_message(format!("Task {}: {}", id, title));
                     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-                    let recommended_subtasks = Task::recommended_subtasks_for_complexity(complexity);
+                    let recommended_subtasks =
+                        Task::recommended_subtasks_for_complexity(complexity);
                     let prompt = Prompts::expand_task(
                         &title,
                         &description,

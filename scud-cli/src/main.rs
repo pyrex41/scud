@@ -217,6 +217,21 @@ enum Commands {
         #[arg(short, long)]
         tag: Option<String>,
     },
+
+    /// Convert task storage format between JSON and SCG
+    Convert {
+        /// Source format (json, scg)
+        #[arg(long)]
+        from: String,
+
+        /// Target format (json, scg)
+        #[arg(long)]
+        to: String,
+
+        /// Create backup of source file (default: true)
+        #[arg(long, default_value = "true")]
+        backup: bool,
+    },
 }
 
 #[tokio::main]
@@ -232,9 +247,11 @@ async fn main() -> Result<()> {
         Commands::Show { task_id, tag } => {
             commands::show::run(cli.project, &task_id, tag.as_deref())
         }
-        Commands::SetStatus { task_id, status, tag } => {
-            commands::set_status::run(cli.project, &task_id, &status, tag.as_deref())
-        }
+        Commands::SetStatus {
+            task_id,
+            status,
+            tag,
+        } => commands::set_status::run(cli.project, &task_id, &status, tag.as_deref()),
         Commands::Next { tag } => commands::next::run(cli.project, tag.as_deref()),
         Commands::Stats { tag } => commands::stats::run(cli.project, tag.as_deref()),
         Commands::Migrate { dry_run } => commands::migrate::run(cli.project, dry_run),
@@ -271,9 +288,14 @@ async fn main() -> Result<()> {
         Commands::Claim { task_id, name, tag } => {
             commands::claim::run(cli.project, &task_id, &name, tag.as_deref())
         }
-        Commands::Release { task_id, force, tag } => {
-            commands::release::run(cli.project, &task_id, force, tag.as_deref())
-        }
+        Commands::Release {
+            task_id,
+            force,
+            tag,
+        } => commands::release::run(cli.project, &task_id, force, tag.as_deref()),
         Commands::WhoIs { tag } => commands::whois::run(cli.project, tag.as_deref()),
+        Commands::Convert { from, to, backup } => {
+            commands::convert::run(cli.project, &from, &to, backup)
+        }
     }
 }

@@ -123,7 +123,9 @@ pub fn run(
                     let deps = if task.dependencies.is_empty() {
                         String::new()
                     } else {
-                        format!(" <- {}", task.dependencies.join(", ")).dimmed().to_string()
+                        format!(" <- {}", task.dependencies.join(", "))
+                            .dimmed()
+                            .to_string()
                     };
 
                     let complexity = if task.complexity > 0 {
@@ -162,10 +164,7 @@ pub fn run(
 
     if total_tasks > 0 && total_rounds > 0 {
         let speedup = total_tasks as f64 / total_rounds as f64;
-        println!(
-            "  Speedup:       {}",
-            format!("{:.1}x", speedup).green()
-        );
+        println!("  Speedup:       {}", format!("{:.1}x", speedup).green());
         println!(
             "  {}",
             format!(
@@ -232,10 +231,7 @@ fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
 
         if ready.is_empty() {
             // Circular dependency detected
-            println!(
-                "{}",
-                "Warning: Circular dependency detected!".red().bold()
-            );
+            println!("{}", "Warning: Circular dependency detected!".red().bold());
             println!("The following tasks have unresolved dependencies:");
             for id in remaining.keys() {
                 if let Some(task) = tasks.iter().find(|t| t.id.as_str() == *id) {

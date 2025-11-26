@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod config;
+pub mod convert;
 pub mod helpers;
 pub mod init;
 pub mod list;

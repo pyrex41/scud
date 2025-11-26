@@ -13,10 +13,7 @@ pub fn run(project_root: Option<PathBuf>, dry_run: bool) -> Result<()> {
     // Check if tasks file exists
     let tasks_file = storage.tasks_file();
     if !tasks_file.exists() {
-        println!(
-            "{}",
-            "No tasks file found. Nothing to migrate.".yellow()
-        );
+        println!("{}", "No tasks file found. Nothing to migrate.".yellow());
         return Ok(());
     }
 
@@ -176,7 +173,10 @@ pub fn run(project_root: Option<PathBuf>, dry_run: bool) -> Result<()> {
         println!("{}", "Migration complete!".green().bold());
         println!();
         println!("  {} task IDs namespaced", changes.len());
-        println!("  {} [PARENT] prefixes converted to Expanded status", parent_fixes);
+        println!(
+            "  {} [PARENT] prefixes converted to Expanded status",
+            parent_fixes
+        );
         println!("  {} subtask relationships established", subtask_links);
         println!();
         println!(

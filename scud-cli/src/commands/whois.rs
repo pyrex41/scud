@@ -55,7 +55,11 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    println!("\n{} {}", "Task Assignments".blue().bold(), scope_label.dimmed());
+    println!(
+        "\n{} {}",
+        "Task Assignments".blue().bold(),
+        scope_label.dimmed()
+    );
     println!("{}", "=".repeat(60).blue());
     println!();
 

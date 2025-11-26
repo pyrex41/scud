@@ -3,6 +3,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod formats;
 pub mod llm;
 pub mod models;
 pub mod storage;

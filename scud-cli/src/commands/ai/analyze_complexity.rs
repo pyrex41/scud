@@ -20,7 +20,8 @@ struct TaskAnalysisResult {
     id: String,
     title: String,
     complexity: u32,
-    reasoning: String,
+    #[allow(dead_code)]
+    reasoning: String, // Parsed from LLM response but not stored
 }
 
 /// Number of concurrent LLM requests
@@ -161,7 +162,6 @@ pub async fn run(
             Ok(analysis) => {
                 if let Some(task) = epic.get_task_mut(&analysis.id) {
                     task.complexity = analysis.complexity;
-                    task.complexity_analysis = Some(analysis.reasoning);
                     task.update();
 
                     println!(

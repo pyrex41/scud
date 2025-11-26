@@ -8,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::config::Config;
+use crate::formats::{parse_scg, serialize_scg};
 use crate::models::{Epic, WorkflowState};
 
 pub struct Storage {
@@ -110,7 +111,7 @@ impl Storage {
     }
 
     pub fn tasks_file(&self) -> PathBuf {
-        self.taskmaster_dir().join("tasks").join("tasks.json")
+        self.taskmaster_dir().join("tasks").join("tasks.scg")
     }
 
     pub fn workflow_file(&self) -> PathBuf {
@@ -206,17 +207,53 @@ impl Storage {
         }
 
         let content = self.read_with_lock(&path)?;
-        let tasks: HashMap<String, Epic> = serde_json::from_str(&content)
-            .with_context(|| "Failed to parse tasks.json".to_string())?;
+        self.parse_multi_epic_scg(&content)
+    }
 
-        Ok(tasks)
+    /// Parse multi-epic SCG format (multiple epics separated by ---)
+    fn parse_multi_epic_scg(&self, content: &str) -> Result<HashMap<String, Epic>> {
+        let mut epics = HashMap::new();
+
+        // Empty file returns empty map
+        if content.trim().is_empty() {
+            return Ok(epics);
+        }
+
+        // Split by epic separator (---)
+        let sections: Vec<&str> = content.split("\n---\n").collect();
+
+        for section in sections {
+            let section = section.trim();
+            if section.is_empty() {
+                continue;
+            }
+
+            // Parse the epic section
+            let epic = parse_scg(section).with_context(|| "Failed to parse SCG section")?;
+
+            epics.insert(epic.name.clone(), epic);
+        }
+
+        Ok(epics)
     }
 
     pub fn save_tasks(&self, tasks: &HashMap<String, Epic>) -> Result<()> {
         let path = self.tasks_file();
         self.write_with_lock(&path, || {
-            serde_json::to_string_pretty(tasks)
-                .with_context(|| "Failed to serialize tasks to JSON".to_string())
+            // Sort epics by tag for consistent output
+            let mut sorted_tags: Vec<_> = tasks.keys().collect();
+            sorted_tags.sort();
+
+            let mut output = String::new();
+            for (i, tag) in sorted_tags.iter().enumerate() {
+                if i > 0 {
+                    output.push_str("\n---\n\n");
+                }
+                let epic = tasks.get(*tag).unwrap();
+                output.push_str(&serialize_scg(epic));
+            }
+
+            Ok(output)
         })
     }
 
@@ -286,24 +323,18 @@ impl Storage {
         *self.active_epic_cache.write().unwrap() = None;
     }
 
-    /// Load a single epic by tag without deserializing all epics
-    /// More efficient than load_tasks() when only one epic is needed
+    /// Load a single epic by tag
+    /// Parses the SCG file and extracts the requested epic
     pub fn load_epic(&self, epic_tag: &str) -> Result<Epic> {
         let path = self.tasks_file();
         let content = self.read_with_lock(&path)?;
 
-        // Parse as generic JSON value for targeted extraction
-        let value: serde_json::Value =
-            serde_json::from_str(&content).with_context(|| "Failed to parse tasks.json")?;
+        let epics = self.parse_multi_epic_scg(&content)?;
 
-        // Extract specific epic
-        if let Some(epic_value) = value.get(epic_tag) {
-            let epic: Epic = serde_json::from_value(epic_value.clone())
-                .with_context(|| format!("Failed to deserialize epic '{}'", epic_tag))?;
-            Ok(epic)
-        } else {
-            anyhow::bail!("Epic '{}' not found", epic_tag)
-        }
+        epics
+            .get(epic_tag)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))
     }
 
     /// Load the active epic directly (optimized)
@@ -316,8 +347,8 @@ impl Storage {
         self.load_epic(&active_tag)
     }
 
-    /// Update a single epic without loading/saving all epics
-    /// More efficient than load_tasks() + save_tasks() for single epic updates
+    /// Update a single epic
+    /// Loads all epics, updates the specified one, and saves back
     pub fn update_epic(&self, epic_tag: &str, epic: &Epic) -> Result<()> {
         let path = self.tasks_file();
 
@@ -325,15 +356,25 @@ impl Storage {
         let content = self.read_with_lock(&path)?;
 
         self.write_with_lock(&path, || {
-            let mut value: serde_json::Value = serde_json::from_str(&content)?;
+            let mut epics = self.parse_multi_epic_scg(&content)?;
 
             // Update specific epic
-            if let Some(obj) = value.as_object_mut() {
-                obj.insert(epic_tag.to_string(), serde_json::to_value(epic)?);
+            epics.insert(epic_tag.to_string(), epic.clone());
+
+            // Serialize all epics back to SCG format
+            let mut sorted_tags: Vec<_> = epics.keys().collect();
+            sorted_tags.sort();
+
+            let mut output = String::new();
+            for (i, tag) in sorted_tags.iter().enumerate() {
+                if i > 0 {
+                    output.push_str("\n---\n\n");
+                }
+                let epic = epics.get(*tag).unwrap();
+                output.push_str(&serialize_scg(epic));
             }
 
-            serde_json::to_string_pretty(&value)
-                .with_context(|| "Failed to serialize tasks to JSON")
+            Ok(output)
         })
     }
 
@@ -539,9 +580,10 @@ mod tests {
         // Write empty file
         fs::write(&tasks_file, "").unwrap();
 
-        // Should return error
+        // Empty SCG file is valid and returns empty HashMap
         let result = storage.load_tasks();
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
     }
 
     #[test]
