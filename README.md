@@ -164,7 +164,7 @@ Each phase has a dedicated AI agent that guides you through best practices:
 ## Key Features
 
 ### Fast Rust CLI
-- ⚡ **50x faster** than external task-master
+- ⚡ **50x faster** than JavaScript alternatives
 - 🎯 **42x fewer tokens** (500 vs 21k)
 - 📦 **Single binary** - no dependencies
 
@@ -248,7 +248,7 @@ scud init
 
 # 4. Parse into tasks
 scud parse-prd docs/epics/epic-1-auth.md --tag epic-1-auth
-# Creates tasks in .taskmaster/tasks/tasks.json
+# Creates tasks in .scud/tasks/tasks.json
 
 # 5. Analyze & refine
 scud analyze-complexity
@@ -311,7 +311,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ## File Structure
 
 ```
-.taskmaster/
+.scud/
 ├── tasks/tasks.json          # All tasks by epic
 ├── workflow-state.json       # Current phase & epic
 └── epic-groups.json          # Epic groups (parallel features)

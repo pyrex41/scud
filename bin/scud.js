@@ -112,7 +112,7 @@ function install() {
 }
 
 function status() {
-  const validator = path.join(__dirname, '..', 'src', 'validators', 'taskmaster-validator.js');
+  const validator = path.join(__dirname, '..', 'src', 'validators', 'scud-validator.js');
   const result = spawnSync('node', [validator, 'get-command-availability'], { encoding: 'utf8' });
 
   if (result.status !== 0) {
@@ -139,7 +139,7 @@ function status() {
 }
 
 function validate() {
-  const validator = path.join(__dirname, '..', 'src', 'validators', 'taskmaster-validator.js');
+  const validator = path.join(__dirname, '..', 'src', 'validators', 'scud-validator.js');
   const result = spawnSync('node', [validator, 'validate-cli'], { stdio: 'inherit' });
 
   if (result.status === 0) {

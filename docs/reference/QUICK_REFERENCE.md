@@ -195,7 +195,7 @@ scud next
 
 ```
 project/
-├── .taskmaster/
+├── .scud/
 │   ├── tasks/
 │   │   └── tasks.json              # All tasks, organized by epic
 │   └── workflow-state.json         # Current phase, active epic
@@ -380,7 +380,7 @@ scud parse-prd docs/epics/bugs.md --tag bugs
 ### With Other Tools
 - Export tasks to GitHub Issues / Jira
 - Use SCUD for planning, external tools for tracking
-- Keep `.taskmaster/` in sync
+- Keep `.scud/` in sync
 
 ---
 

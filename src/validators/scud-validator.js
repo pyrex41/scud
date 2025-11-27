@@ -3,14 +3,14 @@
 /**
  * SCUD Validator
  *
- * Validates Task Master state and enforces workflow rules.
+ * Validates SCUD state and enforces workflow rules.
  * Used by slash commands to ensure correct workflow usage.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-class TaskMasterValidator {
+class ScudValidator {
   constructor(projectRoot = process.cwd()) {
     this.projectRoot = projectRoot;
     this.scudDir = path.join(projectRoot, '.scud');
@@ -42,7 +42,7 @@ class TaskMasterValidator {
   }
 
   /**
-   * Load Task Master tasks from disk
+   * Load SCUD tasks from disk
    */
   loadTasks() {
     if (!fs.existsSync(this.tasksPath)) {
@@ -59,17 +59,17 @@ class TaskMasterValidator {
   }
 
   /**
-   * Validate that Task Master CLI is available
+   * Validate that SCUD CLI is available
    */
-  validateTaskMasterCLI() {
+  validateScudCLI() {
     const { execSync } = require('child_process');
     try {
-      execSync('task-master --version', { stdio: 'ignore' });
+      execSync('scud --version', { stdio: 'ignore' });
       return { valid: true };
     } catch (error) {
       return {
         valid: false,
-        error: 'Task Master CLI not found. Install: npm install -g task-master'
+        error: 'SCUD CLI not found. Install: npm install -g scud-task'
       };
     }
   }
@@ -94,7 +94,7 @@ class TaskMasterValidator {
   }
 
   /**
-   * Validate that active epic exists in Task Master
+   * Validate that active epic exists in SCUD
    */
   validateActiveEpic() {
     const state = this.loadWorkflowState();
@@ -110,7 +110,7 @@ class TaskMasterValidator {
     if (!tasks[state.active_epic]) {
       return {
         valid: false,
-        error: `Active epic '${state.active_epic}' not found in Task Master.`
+        error: `Active epic '${state.active_epic}' not found in SCUD.`
       };
     }
 
@@ -131,7 +131,7 @@ class TaskMasterValidator {
     if (!epic) {
       return {
         valid: false,
-        error: `Epic '${epicTag}' not found in Task Master.`
+        error: `Epic '${epicTag}' not found in SCUD.`
       };
     }
 
@@ -189,7 +189,7 @@ class TaskMasterValidator {
     if (!epic) {
       return {
         valid: false,
-        error: `Epic '${epicTag}' not found in Task Master.`
+        error: `Epic '${epicTag}' not found in SCUD.`
       };
     }
 
@@ -223,7 +223,7 @@ class TaskMasterValidator {
     if (!epic) {
       return {
         valid: false,
-        error: `Epic '${epicTag}' not found in Task Master.`
+        error: `Epic '${epicTag}' not found in SCUD.`
       };
     }
 
@@ -321,7 +321,7 @@ class TaskMasterValidator {
     if (!epic) {
       return {
         valid: false,
-        error: `Epic '${epicTag}' not found in Task Master.`
+        error: `Epic '${epicTag}' not found in SCUD.`
       };
     }
 
@@ -358,7 +358,7 @@ class TaskMasterValidator {
   }
 
   /**
-   * List all epic tags in Task Master
+   * List all epic tags in SCUD
    */
   listEpicTags() {
     const tasks = this.loadTasks();
@@ -393,7 +393,7 @@ class TaskMasterValidator {
     if (!tasks[epicTag]) {
       return {
         valid: false,
-        error: `Epic '${epicTag}' not found in Task Master.`
+        error: `Epic '${epicTag}' not found in SCUD.`
       };
     }
 
@@ -469,7 +469,7 @@ class TaskMasterValidator {
 
 // CLI Interface
 if (require.main === module) {
-  const validator = new TaskMasterValidator();
+  const validator = new ScudValidator();
   const command = process.argv[2];
 
   try {
@@ -477,7 +477,7 @@ if (require.main === module) {
 
     switch (command) {
       case 'validate-cli':
-        result = validator.validateTaskMasterCLI();
+        result = validator.validateScudCLI();
         break;
 
       case 'validate-phase':
@@ -539,10 +539,10 @@ if (require.main === module) {
       default:
         console.error(`Unknown command: ${command}`);
         console.log(`
-Usage: taskmaster-validator.js <command> [args]
+Usage: scud-validator.js <command> [args]
 
 Commands:
-  validate-cli                                  Check if Task Master CLI is available
+  validate-cli                                  Check if SCUD CLI is available
   validate-phase <agent> <phase1> [phase2...]   Validate current phase for agent
   validate-epic                                  Check if active epic exists
   validate-dependencies <epic> <task-id>         Check if task dependencies are met
@@ -552,7 +552,7 @@ Commands:
   get-command-availability                       Get which commands are available
   update-phase <new-phase> [json-updates]       Update workflow phase
   add-history <json-entry>                       Add entry to workflow history
-  list-epic-tags                                 List all epic tags in Task Master
+  list-epic-tags                                 List all epic tags in SCUD
   get-active-epic-tag                            Get currently active epic tag
   set-active-epic-tag <epic-tag>                 Set active epic tag in workflow state
         `);
@@ -570,4 +570,4 @@ Commands:
   }
 }
 
-module.exports = TaskMasterValidator;
+module.exports = ScudValidator;

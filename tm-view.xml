@@ -1,0 +1,1356 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: .taskmaster/, .cursor/, .windsurf/, **/*.xml, public/, *.md
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.zed/
+  settings.json
+bin/
+  tm-view.js
+docs/
+  architecture.mermaid
+  sequence-diagram.mmd
+src/
+  server.js
+.env.example
+.gitignore
+.mcp.json
+.npmignore
+.npmrc
+.rules
+example-diagram.mmd
+LICENSE
+opencode.json
+package.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".zed/settings.json">
+{
+	"context_servers": {
+		"task-master-ai": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"task-master-ai"
+			],
+			"env": {
+				"ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE",
+				"PERPLEXITY_API_KEY": "YOUR_PERPLEXITY_API_KEY_HERE",
+				"OPENAI_API_KEY": "YOUR_OPENAI_KEY_HERE",
+				"GOOGLE_API_KEY": "YOUR_GOOGLE_KEY_HERE",
+				"XAI_API_KEY": "YOUR_XAI_KEY_HERE",
+				"OPENROUTER_API_KEY": "YOUR_OPENROUTER_KEY_HERE",
+				"MISTRAL_API_KEY": "YOUR_MISTRAL_KEY_HERE",
+				"AZURE_OPENAI_API_KEY": "YOUR_AZURE_KEY_HERE",
+				"OLLAMA_API_KEY": "YOUR_OLLAMA_API_KEY_HERE"
+			},
+			"source": "custom"
+		}
+	}
+}
+</file>
+
+<file path="bin/tm-view.js">
+#!/usr/bin/env node
+
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import chalk from 'chalk';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Check if .taskmaster directory exists in current directory
+const taskmasterDir = join(process.cwd(), '.taskmaster');
+
+if (!fs.existsSync(taskmasterDir)) {
+  console.log(chalk.red('❌ Error: No .taskmaster directory found in current directory'));
+  console.log(chalk.yellow('\nPlease run this command from a directory containing a Task Master project.'));
+  console.log(chalk.gray('\nLooking for: ') + taskmasterDir);
+  process.exit(1);
+}
+
+console.log(chalk.green('✓ Found Task Master project'));
+console.log(chalk.gray('Starting viewer...'));
+
+// Start the server
+const serverPath = join(__dirname, '..', 'src', 'server.js');
+const server = spawn('node', [serverPath], {
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    TM_PROJECT_DIR: process.cwd()
+  }
+});
+
+server.on('error', (err) => {
+  console.error(chalk.red('Failed to start server:'), err);
+  process.exit(1);
+});
+
+server.on('exit', (code) => {
+  if (code !== 0) {
+    console.error(chalk.red(`Server exited with code ${code}`));
+  }
+  process.exit(code);
+});
+
+// Handle cleanup on exit
+process.on('SIGINT', () => {
+  console.log(chalk.yellow('\n\nShutting down...'));
+  server.kill('SIGINT');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  server.kill('SIGTERM');
+  process.exit(0);
+});
+</file>
+
+<file path="docs/architecture.mermaid">
+graph LR
+    subgraph Frontend
+        A[HTML/CSS/JS]
+        B[Mermaid.js]
+        C[Marked.js]
+    end
+    
+    subgraph Backend
+        D[Express Server]
+        E[File System API]
+        F[SSE Events]
+    end
+    
+    subgraph Data
+        G[.taskmaster/tasks]
+        H[.taskmaster/docs]
+        I[Mermaid Files]
+    end
+    
+    A --> D
+    B --> A
+    C --> A
+    D --> E
+    D --> F
+    E --> G
+    E --> H
+    E --> I
+    F --> A
+    
+    style A fill:#3b82f6,stroke:#60a5fa,color:#fff
+    style D fill:#1e3a8a,stroke:#3b82f6,color:#e4e4e7
+    style G fill:#14532d,stroke:#4ade80,color:#e4e4e7
+    style H fill:#14532d,stroke:#4ade80,color:#e4e4e7
+    style I fill:#14532d,stroke:#4ade80,color:#e4e4e7
+</file>
+
+<file path="docs/sequence-diagram.mmd">
+sequenceDiagram
+    participant User
+    participant Browser
+    participant Server
+    participant TaskMaster
+
+    User->>Browser: Open tm-view
+    Browser->>Server: GET /api/project
+    Server->>TaskMaster: Read .taskmaster/
+    TaskMaster-->>Server: Project data
+    Server-->>Browser: JSON response
+    
+    Browser->>Server: GET /api/mermaid
+    Server->>TaskMaster: Find all .mmd files
+    TaskMaster-->>Server: File list
+    Server-->>Browser: Mermaid files
+    
+    Browser->>User: Display Mermaid tab
+    User->>Browser: Click diagram
+    Browser->>Server: GET /api/mermaid/:path
+    Server-->>Browser: Diagram content
+    Browser->>Browser: Render with Mermaid.js
+    Browser->>User: Show rendered diagram
+</file>
+
+<file path=".env.example">
+# API Keys (Required to enable respective provider)
+ANTHROPIC_API_KEY="your_anthropic_api_key_here"       # Required: Format: sk-ant-api03-...
+PERPLEXITY_API_KEY="your_perplexity_api_key_here"     # Optional: Format: pplx-...
+OPENAI_API_KEY="your_openai_api_key_here"             # Optional, for OpenAI models. Format: sk-proj-...
+GOOGLE_API_KEY="your_google_api_key_here"             # Optional, for Google Gemini models.
+MISTRAL_API_KEY="your_mistral_key_here"               # Optional, for Mistral AI models.
+XAI_API_KEY="YOUR_XAI_KEY_HERE"                       # Optional, for xAI AI models.
+GROQ_API_KEY="YOUR_GROQ_KEY_HERE"                     # Optional, for Groq models.
+OPENROUTER_API_KEY="YOUR_OPENROUTER_KEY_HERE"         # Optional, for OpenRouter models.
+AZURE_OPENAI_API_KEY="your_azure_key_here"            # Optional, for Azure OpenAI models (requires endpoint in .taskmaster/config.json).
+OLLAMA_API_KEY="your_ollama_api_key_here"             # Optional: For remote Ollama servers that require authentication.
+GITHUB_API_KEY="your_github_api_key_here"             # Optional: For GitHub import/export features. Format: ghp_... or github_pat_...
+</file>
+
+<file path=".gitignore">
+node_modules/
+dist/
+frontend/dist/
+*.log
+.DS_Store
+.env
+.vscode/
+</file>
+
+<file path=".mcp.json">
+{
+	"mcpServers": {
+		"task-master-ai": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"task-master-ai"
+			],
+			"env": {
+				"ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE",
+				"PERPLEXITY_API_KEY": "YOUR_PERPLEXITY_API_KEY_HERE",
+				"OPENAI_API_KEY": "YOUR_OPENAI_KEY_HERE",
+				"GOOGLE_API_KEY": "YOUR_GOOGLE_KEY_HERE",
+				"XAI_API_KEY": "YOUR_XAI_KEY_HERE",
+				"OPENROUTER_API_KEY": "YOUR_OPENROUTER_KEY_HERE",
+				"MISTRAL_API_KEY": "YOUR_MISTRAL_KEY_HERE",
+				"AZURE_OPENAI_API_KEY": "YOUR_AZURE_KEY_HERE",
+				"OLLAMA_API_KEY": "YOUR_OLLAMA_API_KEY_HERE"
+			}
+		}
+	}
+}
+</file>
+
+<file path=".npmrc">
+# npm configuration
+package-lock=false
+</file>
+
+<file path=".rules">
+# Task Master AI - Agent Integration Guide
+
+## Essential Commands
+
+### Core Workflow Commands
+
+```bash
+# Project Setup
+task-master init                                    # Initialize Task Master in current project
+task-master parse-prd .taskmaster/docs/prd.txt      # Generate tasks from PRD document
+task-master models --setup                        # Configure AI models interactively
+
+# Daily Development Workflow
+task-master list                                   # Show all tasks with status
+task-master next                                   # Get next available task to work on
+task-master show <id>                             # View detailed task information (e.g., task-master show 1.2)
+task-master set-status --id=<id> --status=done    # Mark task complete
+
+# Task Management
+task-master add-task --prompt="description" --research        # Add new task with AI assistance
+task-master expand --id=<id> --research --force              # Break task into subtasks
+task-master update-task --id=<id> --prompt="changes"         # Update specific task
+task-master update --from=<id> --prompt="changes"            # Update multiple tasks from ID onwards
+task-master update-subtask --id=<id> --prompt="notes"        # Add implementation notes to subtask
+
+# Analysis & Planning
+task-master analyze-complexity --research          # Analyze task complexity
+task-master complexity-report                      # View complexity analysis
+task-master expand --all --research               # Expand all eligible tasks
+
+# Dependencies & Organization
+task-master add-dependency --id=<id> --depends-on=<id>       # Add task dependency
+task-master move --from=<id> --to=<id>                       # Reorganize task hierarchy
+task-master validate-dependencies                            # Check for dependency issues
+task-master generate                                         # Update task markdown files (usually auto-called)
+```
+
+## Key Files & Project Structure
+
+### Core Files
+
+- `.taskmaster/tasks/tasks.json` - Main task data file (auto-managed)
+- `.taskmaster/config.json` - AI model configuration (use `task-master models` to modify)
+- `.taskmaster/docs/prd.txt` - Product Requirements Document for parsing
+- `.taskmaster/tasks/*.txt` - Individual task files (auto-generated from tasks.json)
+- `.env` - API keys for CLI usage
+
+### Claude Code Integration Files
+
+- `CLAUDE.md` - Auto-loaded context for Claude Code (this file)
+- `.claude/settings.json` - Claude Code tool allowlist and preferences
+- `.claude/commands/` - Custom slash commands for repeated workflows
+- `.mcp.json` - MCP server configuration (project-specific)
+
+### Directory Structure
+
+```
+project/
+├── .taskmaster/
+│   ├── tasks/              # Task files directory
+│   │   ├── tasks.json      # Main task database
+│   │   ├── task-1.md      # Individual task files
+│   │   └── task-2.md
+│   ├── docs/              # Documentation directory
+│   │   ├── prd.txt        # Product requirements
+│   ├── reports/           # Analysis reports directory
+│   │   └── task-complexity-report.json
+│   ├── templates/         # Template files
+│   │   └── example_prd.txt  # Example PRD template
+│   └── config.json        # AI models & settings
+├── .claude/
+│   ├── settings.json      # Claude Code configuration
+│   └── commands/         # Custom slash commands
+├── .env                  # API keys
+├── .mcp.json            # MCP configuration
+└── CLAUDE.md            # This file - auto-loaded by Claude Code
+```
+
+## MCP Integration
+
+Task Master provides an MCP server that Claude Code can connect to. Configure in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "task-master-ai": {
+      "command": "npx",
+      "args": ["-y", "task-master-ai"],
+      "env": {
+        "ANTHROPIC_API_KEY": "your_key_here",
+        "PERPLEXITY_API_KEY": "your_key_here",
+        "OPENAI_API_KEY": "OPENAI_API_KEY_HERE",
+        "GOOGLE_API_KEY": "GOOGLE_API_KEY_HERE",
+        "XAI_API_KEY": "XAI_API_KEY_HERE",
+        "OPENROUTER_API_KEY": "OPENROUTER_API_KEY_HERE",
+        "MISTRAL_API_KEY": "MISTRAL_API_KEY_HERE",
+        "AZURE_OPENAI_API_KEY": "AZURE_OPENAI_API_KEY_HERE",
+        "OLLAMA_API_KEY": "OLLAMA_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+### Essential MCP Tools
+
+```javascript
+help; // = shows available taskmaster commands
+// Project setup
+initialize_project; // = task-master init
+parse_prd; // = task-master parse-prd
+
+// Daily workflow
+get_tasks; // = task-master list
+next_task; // = task-master next
+get_task; // = task-master show <id>
+set_task_status; // = task-master set-status
+
+// Task management
+add_task; // = task-master add-task
+expand_task; // = task-master expand
+update_task; // = task-master update-task
+update_subtask; // = task-master update-subtask
+update; // = task-master update
+
+// Analysis
+analyze_project_complexity; // = task-master analyze-complexity
+complexity_report; // = task-master complexity-report
+```
+
+## Claude Code Workflow Integration
+
+### Standard Development Workflow
+
+#### 1. Project Initialization
+
+```bash
+# Initialize Task Master
+task-master init
+
+# Create or obtain PRD, then parse it
+task-master parse-prd .taskmaster/docs/prd.txt
+
+# Analyze complexity and expand tasks
+task-master analyze-complexity --research
+task-master expand --all --research
+```
+
+If tasks already exist, another PRD can be parsed (with new information only!) using parse-prd with --append flag. This will add the generated tasks to the existing list of tasks..
+
+#### 2. Daily Development Loop
+
+```bash
+# Start each session
+task-master next                           # Find next available task
+task-master show <id>                     # Review task details
+
+# During implementation, check in code context into the tasks and subtasks
+task-master update-subtask --id=<id> --prompt="implementation notes..."
+
+# Complete tasks
+task-master set-status --id=<id> --status=done
+```
+
+#### 3. Multi-Claude Workflows
+
+For complex projects, use multiple Claude Code sessions:
+
+```bash
+# Terminal 1: Main implementation
+cd project && claude
+
+# Terminal 2: Testing and validation
+cd project-test-worktree && claude
+
+# Terminal 3: Documentation updates
+cd project-docs-worktree && claude
+```
+
+### Custom Slash Commands
+
+Create `.claude/commands/taskmaster-next.md`:
+
+```markdown
+Find the next available Task Master task and show its details.
+
+Steps:
+
+1. Run `task-master next` to get the next task
+2. If a task is available, run `task-master show <id>` for full details
+3. Provide a summary of what needs to be implemented
+4. Suggest the first implementation step
+```
+
+Create `.claude/commands/taskmaster-complete.md`:
+
+```markdown
+Complete a Task Master task: $ARGUMENTS
+
+Steps:
+
+1. Review the current task with `task-master show $ARGUMENTS`
+2. Verify all implementation is complete
+3. Run any tests related to this task
+4. Mark as complete: `task-master set-status --id=$ARGUMENTS --status=done`
+5. Show the next available task with `task-master next`
+```
+
+## Tool Allowlist Recommendations
+
+Add to `.claude/settings.json`:
+
+```json
+{
+  "allowedTools": [
+    "Edit",
+    "Bash(task-master *)",
+    "Bash(git commit:*)",
+    "Bash(git add:*)",
+    "Bash(npm run *)",
+    "mcp__task_master_ai__*"
+  ]
+}
+```
+
+## Configuration & Setup
+
+### API Keys Required
+
+At least **one** of these API keys must be configured:
+
+- `ANTHROPIC_API_KEY` (Claude models) - **Recommended**
+- `PERPLEXITY_API_KEY` (Research features) - **Highly recommended**
+- `OPENAI_API_KEY` (GPT models)
+- `GOOGLE_API_KEY` (Gemini models)
+- `MISTRAL_API_KEY` (Mistral models)
+- `OPENROUTER_API_KEY` (Multiple models)
+- `XAI_API_KEY` (Grok models)
+
+An API key is required for any provider used across any of the 3 roles defined in the `models` command.
+
+### Model Configuration
+
+```bash
+# Interactive setup (recommended)
+task-master models --setup
+
+# Set specific models
+task-master models --set-main claude-3-5-sonnet-20241022
+task-master models --set-research perplexity-llama-3.1-sonar-large-128k-online
+task-master models --set-fallback gpt-4o-mini
+```
+
+## Task Structure & IDs
+
+### Task ID Format
+
+- Main tasks: `1`, `2`, `3`, etc.
+- Subtasks: `1.1`, `1.2`, `2.1`, etc.
+- Sub-subtasks: `1.1.1`, `1.1.2`, etc.
+
+### Task Status Values
+
+- `pending` - Ready to work on
+- `in-progress` - Currently being worked on
+- `done` - Completed and verified
+- `deferred` - Postponed
+- `cancelled` - No longer needed
+- `blocked` - Waiting on external factors
+
+### Task Fields
+
+```json
+{
+  "id": "1.2",
+  "title": "Implement user authentication",
+  "description": "Set up JWT-based auth system",
+  "status": "pending",
+  "priority": "high",
+  "dependencies": ["1.1"],
+  "details": "Use bcrypt for hashing, JWT for tokens...",
+  "testStrategy": "Unit tests for auth functions, integration tests for login flow",
+  "subtasks": []
+}
+```
+
+## Claude Code Best Practices with Task Master
+
+### Context Management
+
+- Use `/clear` between different tasks to maintain focus
+- This CLAUDE.md file is automatically loaded for context
+- Use `task-master show <id>` to pull specific task context when needed
+
+### Iterative Implementation
+
+1. `task-master show <subtask-id>` - Understand requirements
+2. Explore codebase and plan implementation
+3. `task-master update-subtask --id=<id> --prompt="detailed plan"` - Log plan
+4. `task-master set-status --id=<id> --status=in-progress` - Start work
+5. Implement code following logged plan
+6. `task-master update-subtask --id=<id> --prompt="what worked/didn't work"` - Log progress
+7. `task-master set-status --id=<id> --status=done` - Complete task
+
+### Complex Workflows with Checklists
+
+For large migrations or multi-step processes:
+
+1. Create a markdown PRD file describing the new changes: `touch task-migration-checklist.md` (prds can be .txt or .md)
+2. Use Taskmaster to parse the new prd with `task-master parse-prd --append` (also available in MCP)
+3. Use Taskmaster to expand the newly generated tasks into subtasks. Consdier using `analyze-complexity` with the correct --to and --from IDs (the new ids) to identify the ideal subtask amounts for each task. Then expand them.
+4. Work through items systematically, checking them off as completed
+5. Use `task-master update-subtask` to log progress on each task/subtask and/or updating/researching them before/during implementation if getting stuck
+
+### Git Integration
+
+Task Master works well with `gh` CLI:
+
+```bash
+# Create PR for completed task
+gh pr create --title "Complete task 1.2: User authentication" --body "Implements JWT auth system as specified in task 1.2"
+
+# Reference task in commits
+git commit -m "feat: implement JWT auth (task 1.2)"
+```
+
+### Parallel Development with Git Worktrees
+
+```bash
+# Create worktrees for parallel task development
+git worktree add ../project-auth feature/auth-system
+git worktree add ../project-api feature/api-refactor
+
+# Run Claude Code in each worktree
+cd ../project-auth && claude    # Terminal 1: Auth work
+cd ../project-api && claude     # Terminal 2: API work
+```
+
+## Troubleshooting
+
+### AI Commands Failing
+
+```bash
+# Check API keys are configured
+cat .env                           # For CLI usage
+
+# Verify model configuration
+task-master models
+
+# Test with different model
+task-master models --set-fallback gpt-4o-mini
+```
+
+### MCP Connection Issues
+
+- Check `.mcp.json` configuration
+- Verify Node.js installation
+- Use `--mcp-debug` flag when starting Claude Code
+- Use CLI as fallback if MCP unavailable
+
+### Task File Sync Issues
+
+```bash
+# Regenerate task files from tasks.json
+task-master generate
+
+# Fix dependency issues
+task-master fix-dependencies
+```
+
+DO NOT RE-INITIALIZE. That will not do anything beyond re-adding the same Taskmaster core files.
+
+## Important Notes
+
+### AI-Powered Operations
+
+These commands make AI calls and may take up to a minute:
+
+- `parse_prd` / `task-master parse-prd`
+- `analyze_project_complexity` / `task-master analyze-complexity`
+- `expand_task` / `task-master expand`
+- `expand_all` / `task-master expand --all`
+- `add_task` / `task-master add-task`
+- `update` / `task-master update`
+- `update_task` / `task-master update-task`
+- `update_subtask` / `task-master update-subtask`
+
+### File Management
+
+- Never manually edit `tasks.json` - use commands instead
+- Never manually edit `.taskmaster/config.json` - use `task-master models`
+- Task markdown files in `tasks/` are auto-generated
+- Run `task-master generate` after manual changes to tasks.json
+
+### Claude Code Session Management
+
+- Use `/clear` frequently to maintain focused context
+- Create custom slash commands for repeated Task Master workflows
+- Configure tool allowlist to streamline permissions
+- Use headless mode for automation: `claude -p "task-master next"`
+
+### Multi-Task Updates
+
+- Use `update --from=<id>` to update multiple future tasks
+- Use `update-task --id=<id>` for single task updates
+- Use `update-subtask --id=<id>` for implementation logging
+
+### Research Mode
+
+- Add `--research` flag for research-based AI enhancement
+- Requires a research model API key like Perplexity (`PERPLEXITY_API_KEY`) in environment
+- Provides more informed task creation and updates
+- Recommended for complex technical tasks
+
+---
+
+_This guide ensures Claude Code has immediate access to Task Master's essential functionality for agentic development workflows._
+</file>
+
+<file path="example-diagram.mmd">
+graph TD
+    A[Task Master Viewer] --> B[Tasks View]
+    A --> C[PRDs View]
+    A --> D[Mermaid View]
+    
+    B --> B1[Task List]
+    B --> B2[Task Detail]
+    B --> B3[Statistics]
+    
+    C --> C1[PRD List]
+    C --> C2[PRD Content]
+    C --> C3[Markdown Rendering]
+    
+    D --> D1[Diagram List]
+    D --> D2[Diagram Rendering]
+    D --> D3[Path Display]
+    
+    style A fill:#3b82f6,stroke:#60a5fa,stroke-width:2px,color:#fff
+    style B fill:#1e3a8a,stroke:#3b82f6,stroke-width:2px,color:#e4e4e7
+    style C fill:#1e3a8a,stroke:#3b82f6,stroke-width:2px,color:#e4e4e7
+    style D fill:#1e3a8a,stroke:#3b82f6,stroke-width:2px,color:#e4e4e7
+</file>
+
+<file path="LICENSE">
+MIT License
+
+Copyright (c) 2025 pyrex41
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</file>
+
+<file path="opencode.json">
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "task-master-ai": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "task-master-ai"
+      ],
+      "enabled": true,
+      "environment": {
+        "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE",
+        "PERPLEXITY_API_KEY": "YOUR_PERPLEXITY_API_KEY_HERE",
+        "OPENAI_API_KEY": "YOUR_OPENAI_KEY_HERE",
+        "GOOGLE_API_KEY": "YOUR_GOOGLE_KEY_HERE",
+        "XAI_API_KEY": "YOUR_XAI_KEY_HERE",
+        "OPENROUTER_API_KEY": "YOUR_OPENROUTER_KEY_HERE",
+        "MISTRAL_API_KEY": "YOUR_MISTRAL_KEY_HERE",
+        "AZURE_OPENAI_API_KEY": "YOUR_AZURE_KEY_HERE",
+        "OLLAMA_API_KEY": "YOUR_OLLAMA_API_KEY_HERE"
+      }
+    }
+  }
+}
+</file>
+
+<file path=".npmignore">
+# Development files
+.git/
+.gitignore
+.DS_Store
+.npmrc
+
+# IDE and tool configs
+.cursor/
+.windsurf/
+.zed/
+.vscode/
+.taskmaster/
+
+# Development docs
+SCROLLING_FIX.md
+PUBLISHING.md
+PUBLISH_CHECKLIST.md
+CLAUDE.md
+AGENTS.md
+.rules
+
+# Config files
+.env.example
+.mcp.json
+opencode.json
+
+# Large development files
+task-master-repo.xml
+*.xml
+
+# Test files
+test/
+*.test.js
+/tmp
+
+# Build artifacts
+node_modules/
+</file>
+
+<file path="src/server.js">
+import express from 'express';
+import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
+import open from 'open';
+import chalk from 'chalk';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const BASE_PORT = process.env.PORT || 3737;
+const PROJECT_DIR = process.env.TM_PROJECT_DIR || process.cwd();
+const TASKMASTER_DIR = path.join(PROJECT_DIR, '.taskmaster');
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Serve static frontend files from public/
+const publicDir = path.join(__dirname, '..', 'public');
+app.use(express.static(publicDir));
+
+// API Routes
+
+// Helper: Get git information
+function getGitInfo() {
+  try {
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+      cwd: PROJECT_DIR,
+      encoding: 'utf8'
+    }).trim();
+
+    const shortHash = execSync('git rev-parse --short HEAD', {
+      cwd: PROJECT_DIR,
+      encoding: 'utf8'
+    }).trim();
+
+    const isDirty = execSync('git status --porcelain', {
+      cwd: PROJECT_DIR,
+      encoding: 'utf8'
+    }).trim().length > 0;
+
+    return {
+      branch,
+      shortHash,
+      isDirty,
+      status: isDirty ? 'dirty' : 'clean'
+    };
+  } catch (error) {
+    // Not a git repository or git not available
+    return null;
+  }
+}
+
+// Get project info
+app.get('/api/project', (req, res) => {
+  try {
+    const projectName = path.basename(PROJECT_DIR);
+    const configPath = path.join(TASKMASTER_DIR, 'config.json');
+    const statePath = path.join(TASKMASTER_DIR, 'state.json');
+
+    let config = {};
+    let state = {};
+
+    if (fs.existsSync(configPath)) {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+
+    if (fs.existsSync(statePath)) {
+      state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    }
+
+    const gitInfo = getGitInfo();
+
+    res.json({
+      projectName,
+      projectPath: PROJECT_DIR,
+      currentTag: state.currentTag || 'master',
+      port: app.get('port'), // Include the port the server is running on
+      git: gitInfo,
+      config,
+      state
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all tasks
+app.get('/api/tasks', (req, res) => {
+  try {
+    const tasksPath = path.join(TASKMASTER_DIR, 'tasks', 'tasks.json');
+
+    if (!fs.existsSync(tasksPath)) {
+      return res.json({ tasks: [], format: 'none' });
+    }
+
+    const tasksData = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+
+    // Detect format: tagged or legacy
+    if (tasksData.tasks && Array.isArray(tasksData.tasks)) {
+      // Legacy format
+      return res.json({
+        tasks: tasksData.tasks,
+        format: 'legacy',
+        tags: ['master']
+      });
+    } else {
+      // Tagged format
+      const tags = Object.keys(tasksData);
+      return res.json({
+        tasks: tasksData,
+        format: 'tagged',
+        tags
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get tasks for a specific tag
+app.get('/api/tasks/:tag', (req, res) => {
+  try {
+    const { tag } = req.params;
+    const tasksPath = path.join(TASKMASTER_DIR, 'tasks', 'tasks.json');
+
+    if (!fs.existsSync(tasksPath)) {
+      return res.json({ tasks: [] });
+    }
+
+    const tasksData = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+
+    // Handle both formats
+    if (tasksData.tasks && Array.isArray(tasksData.tasks)) {
+      // Legacy format - only 'master' tag
+      return res.json({ tasks: tag === 'master' ? tasksData.tasks : [] });
+    } else if (tasksData[tag]) {
+      // Tagged format
+      return res.json({ tasks: tasksData[tag].tasks || [] });
+    } else {
+      return res.json({ tasks: [] });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all PRD documents
+app.get('/api/prds', (req, res) => {
+  try {
+    const docsPath = path.join(TASKMASTER_DIR, 'docs');
+
+    if (!fs.existsSync(docsPath)) {
+      return res.json({ prds: [] });
+    }
+
+    const files = fs.readdirSync(docsPath);
+    const prds = files
+      .filter(file => file.endsWith('.txt') || file.endsWith('.md'))
+      .filter(file => !file.startsWith('.'))
+      .map(file => ({
+        name: file,
+        path: file,
+        size: fs.statSync(path.join(docsPath, file)).size,
+        modified: fs.statSync(path.join(docsPath, file)).mtime
+      }));
+
+    res.json({ prds });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get specific PRD content
+app.get('/api/prds/:filename', (req, res) => {
+  try {
+    const { filename } = req.params;
+    const prdPath = path.join(TASKMASTER_DIR, 'docs', filename);
+
+    if (!fs.existsSync(prdPath)) {
+      return res.status(404).json({ error: 'PRD not found' });
+    }
+
+    const content = fs.readFileSync(prdPath, 'utf8');
+    res.json({ filename, content });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper: Recursively find Mermaid files
+function findMermaidFiles(dir, baseDir = dir) {
+  let results = [];
+  
+  try {
+    const files = fs.readdirSync(dir);
+    
+    for (const file of files) {
+      const filePath = path.join(dir, file);
+      const stat = fs.statSync(filePath);
+      
+      // Skip node_modules, .git, and other common directories
+      if (stat.isDirectory()) {
+        if (!file.startsWith('.') && file !== 'node_modules' && file !== 'dist' && file !== 'build') {
+          results = results.concat(findMermaidFiles(filePath, baseDir));
+        }
+      } else if (stat.isFile()) {
+        // Check for .mmd or .mermaid extensions
+        if (file.endsWith('.mmd') || file.endsWith('.mermaid')) {
+          const relativePath = path.relative(baseDir, filePath);
+          results.push({
+            name: file,
+            path: relativePath,
+            fullPath: filePath,
+            size: stat.size,
+            modified: stat.mtime
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Error reading directory ${dir}:`, error.message);
+  }
+  
+  return results;
+}
+
+// Get all Mermaid files
+app.get('/api/mermaid', (req, res) => {
+  try {
+    const mermaidFiles = findMermaidFiles(PROJECT_DIR);
+    res.json({ mermaid: mermaidFiles });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get specific Mermaid file content
+app.get('/api/mermaid/*', (req, res) => {
+  try {
+    // Get the path after /api/mermaid/
+    const requestedPath = req.params[0];
+    const mermaidPath = path.join(PROJECT_DIR, requestedPath);
+    
+    // Security check: ensure the path is within PROJECT_DIR
+    const resolvedPath = path.resolve(mermaidPath);
+    const resolvedProjectDir = path.resolve(PROJECT_DIR);
+    if (!resolvedPath.startsWith(resolvedProjectDir)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!fs.existsSync(mermaidPath)) {
+      return res.status(404).json({ error: 'Mermaid file not found' });
+    }
+
+    const content = fs.readFileSync(mermaidPath, 'utf8');
+    res.json({ filename: requestedPath, content });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update task status
+app.put('/api/tasks/:tag/:taskId/status', (req, res) => {
+  try {
+    const { tag, taskId } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['pending', 'done', 'in-progress', 'review', 'deferred', 'cancelled'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be one of: pending, done, in-progress, review, deferred, cancelled' });
+    }
+
+    const tasksPath = path.join(TASKMASTER_DIR, 'tasks', 'tasks.json');
+
+    if (!fs.existsSync(tasksPath)) {
+      return res.status(404).json({ error: 'Tasks file not found' });
+    }
+
+    const tasksData = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+
+    // Handle both formats
+    let tasks;
+    if (tasksData.tasks && Array.isArray(tasksData.tasks)) {
+      // Legacy format - only 'master' tag
+      if (tag !== 'master') {
+        return res.status(404).json({ error: 'Tag not found in legacy format' });
+      }
+      tasks = tasksData.tasks;
+    } else if (tasksData[tag]) {
+      // Tagged format
+      tasks = tasksData[tag].tasks || [];
+    } else {
+      return res.status(404).json({ error: 'Tag not found' });
+    }
+
+    // Find and update the task (handles both tasks and subtasks)
+    function updateTaskInArray(taskArray, targetId) {
+      for (let i = 0; i < taskArray.length; i++) {
+        const task = taskArray[i];
+        if (task.id.toString() === targetId) {
+          task.status = status;
+          return true;
+        }
+        // Check subtasks recursively
+        if (task.subtasks && task.subtasks.length > 0) {
+          if (updateTaskInArray(task.subtasks, targetId)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    const updated = updateTaskInArray(tasks, taskId);
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    // Write back to file
+    if (tasksData.tasks && Array.isArray(tasksData.tasks)) {
+      // Legacy format
+      tasksData.tasks = tasks;
+    } else {
+      // Tagged format
+      tasksData[tag].tasks = tasks;
+    }
+
+    fs.writeFileSync(tasksPath, JSON.stringify(tasksData, null, 2), 'utf8');
+
+    res.json({ success: true, message: `Task ${taskId} status updated to ${status}` });
+  } catch (error) {
+    console.error('Error updating task status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get task statistics
+app.get('/api/stats', (req, res) => {
+  try {
+    const tasksPath = path.join(TASKMASTER_DIR, 'tasks', 'tasks.json');
+
+    if (!fs.existsSync(tasksPath)) {
+      return res.json({ total: 0, byStatus: {}, byPriority: {}, byTag: {} });
+    }
+
+    const tasksData = JSON.parse(fs.readFileSync(tasksPath, 'utf8'));
+    let allTasks = [];
+    let byTag = {};
+
+    // Handle both formats
+    if (tasksData.tasks && Array.isArray(tasksData.tasks)) {
+      allTasks = tasksData.tasks;
+      byTag.master = tasksData.tasks.length;
+    } else {
+      Object.keys(tasksData).forEach(tag => {
+        const tagTasks = tasksData[tag].tasks || [];
+        allTasks = allTasks.concat(tagTasks);
+        byTag[tag] = tagTasks.length;
+      });
+    }
+
+    const byStatus = {};
+    const byPriority = {};
+
+    allTasks.forEach(task => {
+      byStatus[task.status] = (byStatus[task.status] || 0) + 1;
+      byPriority[task.priority] = (byPriority[task.priority] || 0) + 1;
+    });
+
+    res.json({
+      total: allTasks.length,
+      byStatus,
+      byPriority,
+      byTag
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// SSE endpoint for hot-reloading
+const clients = new Set();
+
+app.get('/api/events', (req, res) => {
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // Send initial connection message
+  res.write('data: {"type":"connected"}\n\n');
+
+  // Add client to set
+  clients.add(res);
+
+  // Remove client on disconnect
+  req.on('close', () => {
+    clients.delete(res);
+  });
+});
+
+// Broadcast to all connected clients
+function broadcast(data) {
+  const message = `data: ${JSON.stringify(data)}\n\n`;
+  clients.forEach(client => {
+    try {
+      client.write(message);
+    } catch (error) {
+      clients.delete(client);
+    }
+  });
+}
+
+// Watch for file changes
+const tasksDir = path.join(TASKMASTER_DIR, 'tasks');
+const docsDir = path.join(TASKMASTER_DIR, 'docs');
+
+// Debounce function to avoid multiple rapid updates
+let debounceTimer = null;
+function debounce(callback, delay = 300) {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(callback, delay);
+}
+
+// Watch tasks directory
+if (fs.existsSync(tasksDir)) {
+  fs.watch(tasksDir, { recursive: false }, (eventType, filename) => {
+    if (filename === 'tasks.json') {
+      debounce(() => {
+        console.log(chalk.cyan('📝 Tasks updated, notifying clients...'));
+        broadcast({ type: 'tasks-updated' });
+      });
+    }
+  });
+}
+
+// Watch docs directory
+if (fs.existsSync(docsDir)) {
+  fs.watch(docsDir, { recursive: false }, (eventType, filename) => {
+    if (filename && (filename.endsWith('.txt') || filename.endsWith('.md'))) {
+      debounce(() => {
+        console.log(chalk.cyan('📄 PRDs updated, notifying clients...'));
+        broadcast({ type: 'prds-updated' });
+      });
+    }
+  });
+}
+
+// Fallback to serve index.html for client-side routing
+app.get('*', (req, res) => {
+  const indexPath = path.join(publicDir, 'index.html');
+  res.sendFile(indexPath);
+});
+
+// Smart port finder - tries up to 10 ports
+async function findAvailablePort(startPort, maxAttempts = 10) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = startPort + i;
+    try {
+      await new Promise((resolve, reject) => {
+        const server = app.listen(port, () => {
+          server.close();
+          resolve(port);
+        }).on('error', reject);
+      });
+      return port;
+    } catch (err) {
+      if (i === maxAttempts - 1) {
+        throw new Error(`No available ports found between ${startPort} and ${startPort + maxAttempts - 1}`);
+      }
+      // Port busy, try next one
+    }
+  }
+}
+
+// Start server with smart port handling
+findAvailablePort(BASE_PORT).then(port => {
+  app.set('port', port); // Store port in app for API access
+  app.listen(port, () => {
+    console.log(chalk.green(`\n✓ Task Master Viewer running!`));
+    console.log(chalk.cyan(`\n  ➜ Local:   http://localhost:${port}`));
+    if (port !== BASE_PORT) {
+      console.log(chalk.yellow(`  (Port ${BASE_PORT} was busy, using ${port})`));
+    }
+    console.log(chalk.gray(`\n  Project: ${PROJECT_DIR}`));
+    console.log(chalk.gray(`  Press Ctrl+C to stop\n`));
+
+    // Auto-open browser
+    open(`http://localhost:${port}`);
+  });
+}).catch(err => {
+  console.error(chalk.red(`\n❌ Failed to start server: ${err.message}`));
+  process.exit(1);
+});
+</file>
+
+<file path="package.json">
+{
+  "name": "tm-view",
+  "version": "1.0.8",
+  "description": "Browser-based viewer for Task Master AI projects",
+  "main": "src/server.js",
+  "type": "module",
+  "bin": {
+    "tm-view": "./bin/tm-view.js"
+  },
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pyrex41/tm-view.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pyrex41/tm-view/issues"
+  },
+  "homepage": "https://github.com/pyrex41/tm-view#readme",
+  "keywords": [
+    "task-master",
+    "taskmaster",
+    "viewer",
+    "project-management",
+    "ai",
+    "task-viewer",
+    "prd-viewer",
+    "vanilla-js"
+  ],
+  "author": "pyrex41",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "open": "^10.0.3",
+    "chalk": "^5.3.0",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
+</file>
+
+</files>

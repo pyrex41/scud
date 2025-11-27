@@ -1,8 +1,8 @@
 {
   "name": "scud-task",
-  "version": "1.15.0",
-  "description": "Sprint Cycle Unified Development - Lightweight workflow orchestration for building software with Task Master and AI agents",
-  "main": "src/validators/taskmaster-validator.js",
+  "version": "1.16.0",
+  "description": "Sprint Cycle Unified Development - Lightweight workflow orchestration for building software with AI agents",
+  "main": "src/validators/scud-validator.js",
   "bin": {
     "scud": "bin/scud.js"
   },
@@ -13,7 +13,6 @@
   "keywords": [
     "scud",
     "sprint-cycle",
-    "task-master",
     "workflow",
     "orchestration",
     "ai-agents",
@@ -48,7 +47,7 @@
     ".claude/settings.local.json",
     ".opencode/command/",
     ".opencode/skills/",
-    ".opencode/taskmaster-commands.md",
+    ".opencode/scud-commands.md",
     ".opencode/package.json",
     "README.md",
     "QUICKSTART.md",

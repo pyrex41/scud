@@ -184,7 +184,7 @@ cd my-project
 scud init
 
 # This creates:
-# .taskmaster/
+# .scud/
 #   ├── tasks/tasks.json
 #   └── workflow-state.json
 # docs/
@@ -293,7 +293,7 @@ Or use `/tm-sm` in Claude Code
 2. Extracts discrete tasks
 3. Assigns initial complexity scores
 4. Identifies dependencies
-5. Creates tasks in `.taskmaster/tasks/tasks.json`
+5. Creates tasks in `.scud/tasks/tasks.json`
 
 **Review and Refine:**
 ```bash
@@ -648,7 +648,7 @@ scud init
 ```
 
 Creates:
-- `.taskmaster/` directory structure
+- `.scud/` directory structure
 - `docs/` directories
 - `workflow-state.json`
 - `.gitignore` entry
@@ -1559,7 +1559,7 @@ Action: Add to next epic
 
 ### "Task file not found"
 
-**Problem:** `.taskmaster/tasks/tasks.json` doesn't exist
+**Problem:** `.scud/tasks/tasks.json` doesn't exist
 
 **Solution:**
 ```bash

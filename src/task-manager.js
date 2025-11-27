@@ -6,7 +6,7 @@
  *
  * Provides core task operations without external dependencies.
  * For AI-powered features (expand, analyze-complexity, parse-prd),
- * use the external task-master CLI.
+ * use the scud CLI.
  */
 
 const fs = require('fs');
@@ -414,11 +414,11 @@ Core Commands (fast, no dependencies):
   next                     Find next available task
   stats                    Show task statistics
 
-AI-Powered Commands (use task-master CLI):
-  task-master parse-prd <file> --tag=<tag>    Parse PRD into tasks
-  task-master analyze-complexity              Analyze task complexity
-  task-master expand --id=<id>                Expand task into subtasks
-  task-master research "<query>"              AI research
+AI-Powered Commands (use scud CLI):
+  scud parse-prd <file> --tag=<tag>    Parse PRD into tasks
+  scud analyze-complexity              Analyze task complexity
+  scud expand --id=<id>                Expand task into subtasks
+  scud research "<query>"              AI research
 
 Examples:
   scud tags                      # List all epics
