@@ -448,12 +448,8 @@ This helps maintain continuity across sessions and provides context for future w
             }
         } else {
             // Create new CLAUDE.md
-            let content = format!(
-                "# Project Instructions\n{}",
-                scud_instructions
-            );
-            fs::write(&claude_md_path, content)
-                .with_context(|| "Failed to create CLAUDE.md")?;
+            let content = format!("# Project Instructions\n{}", scud_instructions);
+            fs::write(&claude_md_path, content).with_context(|| "Failed to create CLAUDE.md")?;
         }
 
         Ok(())

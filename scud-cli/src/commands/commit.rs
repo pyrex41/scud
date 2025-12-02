@@ -5,11 +5,7 @@ use std::process::Command;
 
 use crate::storage::Storage;
 
-pub fn run(
-    project_root: Option<PathBuf>,
-    message: Option<&str>,
-    all: bool,
-) -> Result<()> {
+pub fn run(project_root: Option<PathBuf>, message: Option<&str>, all: bool) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
     // Get current task ID from environment or .scud/current-task
@@ -55,7 +51,8 @@ pub fn run(
 
     if staged.success() {
         println!("\n{}", "No staged changes to commit.".yellow());
-        println!("Use {} to stage changes, or {} to stage all.",
+        println!(
+            "Use {} to stage changes, or {} to stage all.",
             "git add <files>".cyan(),
             "scud commit --all".cyan()
         );

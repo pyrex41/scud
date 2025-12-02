@@ -128,10 +128,17 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
                     task.complexity
                 );
                 println!("  Run: {}", "scud next --claim --name <your-name>".green());
-            } else if phase.tasks.iter().all(|t| t.status == crate::models::TaskStatus::Done) {
+            } else if phase
+                .tasks
+                .iter()
+                .all(|t| t.status == crate::models::TaskStatus::Done)
+            {
                 println!("  {}", "All tasks complete!".green());
             } else {
-                println!("  {}", "(no tasks available - check dependencies or locks)".yellow());
+                println!(
+                    "  {}",
+                    "(no tasks available - check dependencies or locks)".yellow()
+                );
             }
         }
     } else {

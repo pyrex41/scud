@@ -5,11 +5,7 @@ use crate::commands::helpers::resolve_group_tag;
 use crate::models::task::TaskStatus;
 use crate::storage::Storage;
 
-pub fn run(
-    project_root: Option<PathBuf>,
-    tag: Option<&str>,
-    limit: usize,
-) -> Result<()> {
+pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, limit: usize) -> Result<()> {
     let storage = Storage::new(project_root);
     let phase_tag = resolve_group_tag(&storage, tag, true)?;
 
