@@ -1,6 +1,6 @@
 {
   "name": "scud-task",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Sprint Cycle Unified Development - Lightweight workflow orchestration for building software with AI agents",
   "main": "src/validators/scud-validator.js",
   "bin": {
