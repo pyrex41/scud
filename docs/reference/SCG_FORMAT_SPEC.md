@@ -1,6 +1,6 @@
 # SCG (SCUD Graph) Format Specification v1
 
-A token-efficient, human-readable format for representing task dependency graphs.
+A token-efficient, human-readable format for representing task dependency graphs. Inspired in part by Nikolai Mushegian's [JAMS spec](https://nikolai.fyi/jams/) ([GitHub](https://github.com/nmushegian/jams)).
 
 ## Overview
 
