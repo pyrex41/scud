@@ -142,6 +142,8 @@ Phases are separated by `---`:
 
 ## Graph Concepts
 
-- **Waves**: Groups of tasks executable in parallel (same depth in DAG)
-- **Blocked**: Task whose dependencies aren't all `Done`
-- **Ready**: `Pending` task with all dependencies `Done`
+- **Ready**: A `Pending` task whose dependencies are all `Done` (or has no dependencies)
+- **Blocked**: A task with at least one dependency not yet `Done`
+- **Wave**: The current set of all ready tasks—executable in parallel right now
+
+Waves are computed dynamically based on completion state, not static DAG depth. As tasks complete, new tasks become unblocked and form the next wave. A single wave may span multiple DAG depths if branches complete at different rates.
