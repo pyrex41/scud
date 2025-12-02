@@ -1,5 +1,5 @@
 [package]
-name = "scud"
+name = "scud-cli"
 version = "1.19.0"
 edition = "2021"
 authors = ["SCUD Team"]
