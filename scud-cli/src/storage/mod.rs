@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::config::Config;
 use crate::formats::{parse_scg, serialize_scg};
-use crate::models::{Phase, WorkflowState};
+use crate::models::Phase;
 
 pub struct Storage {
     project_root: PathBuf,
@@ -121,12 +121,8 @@ impl Storage {
         self.scud_dir().join("tasks").join("tasks.scg")
     }
 
-    fn tasks_json_file(&self) -> PathBuf {
-        self.scud_dir().join("tasks").join("tasks.json")
-    }
-
-    pub fn workflow_file(&self) -> PathBuf {
-        self.scud_dir().join("workflow-state.json")
+    fn active_tag_file(&self) -> PathBuf {
+        self.scud_dir().join("active-tag")
     }
 
     pub fn config_file(&self) -> PathBuf {
@@ -138,7 +134,7 @@ impl Storage {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.scud_dir().exists() && self.tasks_file().exists() && self.workflow_file().exists()
+        self.scud_dir().exists() && self.tasks_file().exists()
     }
 
     pub fn initialize(&self) -> Result<()> {
@@ -158,28 +154,11 @@ impl Storage {
             config.save(&config_file)?;
         }
 
-        // Initialize tasks.scg with empty content (and JSON mirror for legacy tooling)
+        // Initialize tasks.scg with empty content
         let tasks_file = self.tasks_file();
         if !tasks_file.exists() {
             let empty_tasks: HashMap<String, Phase> = HashMap::new();
             self.save_tasks(&empty_tasks)?;
-        } else {
-            let json_path = self.tasks_json_file();
-            if !json_path.exists() {
-                let empty: HashMap<String, Phase> = HashMap::new();
-                // Best effort: if parsing existing SCG fails, fall back to empty JSON
-                match self.load_tasks() {
-                    Ok(tasks) => self.write_tasks_json(&tasks)?,
-                    Err(_) => self.write_tasks_json(&empty)?,
-                }
-            }
-        }
-
-        // Initialize workflow-state.json
-        let workflow_file = self.workflow_file();
-        if !workflow_file.exists() {
-            let workflow_state = WorkflowState::new();
-            self.save_workflow_state(&workflow_state)?;
         }
 
         // Create docs directories
@@ -189,8 +168,8 @@ impl Storage {
         fs::create_dir_all(docs.join("architecture"))?;
         fs::create_dir_all(docs.join("retrospectives"))?;
 
-        // Update .gitignore
-        self.update_gitignore()?;
+        // Create CLAUDE.md with agent instructions
+        self.create_agent_instructions()?;
 
         Ok(())
     }
@@ -201,22 +180,6 @@ impl Storage {
             return Ok(Config::default());
         }
         Config::load(&config_file)
-    }
-
-    fn update_gitignore(&self) -> Result<()> {
-        let gitignore_path = self.project_root.join(".gitignore");
-        let entry = "\n# SCUD\n.scud/\n";
-
-        if gitignore_path.exists() {
-            let content = fs::read_to_string(&gitignore_path)?;
-            if !content.contains(".scud/") {
-                fs::write(&gitignore_path, format!("{}{}", content, entry))?;
-            }
-        } else {
-            fs::write(&gitignore_path, entry)?;
-        }
-
-        Ok(())
     }
 
     pub fn load_tasks(&self) -> Result<HashMap<String, Phase>> {
@@ -273,43 +236,6 @@ impl Storage {
             }
 
             Ok(output)
-        })?;
-
-        // Keep JSON mirror for Node-based tooling (validator, MCP resources)
-        self.write_tasks_json(tasks)?;
-
-        Ok(())
-    }
-
-    pub fn load_workflow_state(&self) -> Result<WorkflowState> {
-        let path = self.workflow_file();
-        if !path.exists() {
-            anyhow::bail!(
-                "Workflow state not found: {}\nRun: scud init",
-                path.display()
-            );
-        }
-
-        let content = self.read_with_lock(&path)?;
-        let state: WorkflowState = serde_json::from_str(&content)
-            .with_context(|| "Failed to parse workflow-state.json".to_string())?;
-
-        Ok(state)
-    }
-
-    pub fn save_workflow_state(&self, state: &WorkflowState) -> Result<()> {
-        let path = self.workflow_file();
-        self.write_with_lock(&path, || {
-            serde_json::to_string_pretty(state)
-                .with_context(|| "Failed to serialize workflow state to JSON".to_string())
-        })
-    }
-
-    fn write_tasks_json(&self, tasks: &HashMap<String, Phase>) -> Result<()> {
-        let json_path = self.tasks_json_file();
-        self.write_with_lock(&json_path, || {
-            serde_json::to_string_pretty(tasks)
-                .with_context(|| "Failed to serialize tasks to JSON".to_string())
         })
     }
 
@@ -322,9 +248,20 @@ impl Storage {
             }
         }
 
-        // Load from file and cache (write lock)
-        let state = self.load_workflow_state()?;
-        let active = state.active_group.clone();
+        // Load from active-tag file
+        let active_tag_path = self.active_tag_file();
+        let active = if active_tag_path.exists() {
+            let content = fs::read_to_string(&active_tag_path)
+                .with_context(|| format!("Failed to read {}", active_tag_path.display()))?;
+            let tag = content.trim();
+            if tag.is_empty() {
+                None
+            } else {
+                Some(tag.to_string())
+            }
+        } else {
+            None
+        };
 
         // Store in cache
         *self.active_group_cache.write().unwrap() = Some(active.clone());
@@ -338,10 +275,10 @@ impl Storage {
             anyhow::bail!("Task group '{}' not found", group_tag);
         }
 
-        let mut state = self.load_workflow_state()?;
-        state.active_group = Some(group_tag.to_string());
-        state.update();
-        self.save_workflow_state(&state)?;
+        // Write to active-tag file
+        let active_tag_path = self.active_tag_file();
+        fs::write(&active_tag_path, group_tag)
+            .with_context(|| format!("Failed to write {}", active_tag_path.display()))?;
 
         // Update cache
         *self.active_group_cache.write().unwrap() = Some(Some(group_tag.to_string()));
@@ -441,6 +378,86 @@ impl Storage {
     pub fn read_file(&self, path: &Path) -> Result<String> {
         fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
     }
+
+    /// Create or update CLAUDE.md with SCUD agent instructions
+    fn create_agent_instructions(&self) -> Result<()> {
+        let claude_md_path = self.project_root.join("CLAUDE.md");
+
+        let scud_instructions = r#"
+## SCUD Task Management
+
+This project uses SCUD (Sprint Cycle Unified Development) for task management.
+
+### Session Workflow
+
+1. **Start of session**: Run `scud warmup` to orient yourself
+   - Shows current working directory and recent git history
+   - Displays active tag, task counts, and any stale locks
+   - Identifies the next available task
+
+2. **Claim a task**: Use `/scud:task-next` or `scud next --claim --name "Claude"`
+   - Always claim before starting work to prevent conflicts
+   - Task context is stored in `.scud/current-task`
+
+3. **Work on the task**: Implement the requirements
+   - Reference task details with `/scud:task-show <id>`
+   - Dependencies are automatically tracked by the DAG
+
+4. **Commit with context**: Use `scud commit -m "message"` or `scud commit -a -m "message"`
+   - Automatically prefixes commits with `[TASK-ID]`
+   - Uses task title as default commit message if none provided
+
+5. **Complete the task**: Mark done with `/scud:task-status <id> done`
+   - The stop hook will prompt for task completion
+
+### Progress Journaling
+
+Keep a brief progress log during complex tasks:
+
+```
+## Progress Log
+
+### Session: 2025-01-15
+- Investigated auth module, found issue in token refresh
+- Updated refresh logic to handle edge case
+- Tests passing, ready for review
+```
+
+This helps maintain continuity across sessions and provides context for future work.
+
+### Key Commands
+
+- `scud warmup` - Session orientation
+- `scud next` - Find next available task
+- `scud show <id>` - View task details
+- `scud set-status <id> <status>` - Update task status
+- `scud commit` - Task-aware git commit
+- `scud stats` - View completion statistics
+"#;
+
+        if claude_md_path.exists() {
+            // Append to existing CLAUDE.md if SCUD section doesn't exist
+            let content = fs::read_to_string(&claude_md_path)
+                .with_context(|| "Failed to read existing CLAUDE.md")?;
+
+            if !content.contains("## SCUD Task Management") {
+                let mut new_content = content;
+                new_content.push_str(scud_instructions);
+                fs::write(&claude_md_path, new_content)
+                    .with_context(|| "Failed to update CLAUDE.md")?;
+            }
+        } else {
+            // Create new CLAUDE.md
+            let content = format!(
+                "# Project Instructions\n{}",
+                scud_instructions
+            );
+            fs::write(&claude_md_path, content)
+                .with_context(|| "Failed to create CLAUDE.md")?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -510,22 +527,6 @@ mod tests {
         assert_eq!(tasks.len(), loaded_tasks.len());
         assert!(loaded_tasks.contains_key("TEST-1"));
         assert_eq!(loaded_tasks.get("TEST-1").unwrap().name, "TEST-1");
-    }
-
-    #[test]
-    fn test_save_and_load_workflow_state_with_locking() {
-        let (storage, _temp_dir) = create_test_storage();
-
-        let mut state = crate::models::WorkflowState::new();
-        state.active_group = Some("TEST-1".to_string());
-
-        // Save state
-        storage.save_workflow_state(&state).unwrap();
-
-        // Load state
-        let loaded_state = storage.load_workflow_state().unwrap();
-
-        assert_eq!(loaded_state.active_group, Some("TEST-1".to_string()));
     }
 
     #[test]
@@ -620,19 +621,6 @@ mod tests {
     }
 
     #[test]
-    fn test_load_workflow_state_with_malformed_json() {
-        let (storage, _temp_dir) = create_test_storage();
-        let workflow_file = storage.workflow_file();
-
-        // Write malformed JSON
-        fs::write(&workflow_file, r#"not valid json at all"#).unwrap();
-
-        // Should return error
-        let result = storage.load_workflow_state();
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_load_tasks_with_empty_file() {
         let (storage, _temp_dir) = create_test_storage();
         let tasks_file = storage.tasks_file();
@@ -654,17 +642,6 @@ mod tests {
         // Should return empty HashMap (default)
         let tasks = storage.load_tasks().unwrap();
         assert_eq!(tasks.len(), 0);
-    }
-
-    #[test]
-    fn test_load_workflow_state_missing_file_creates_default() {
-        let (storage, _temp_dir) = create_test_storage();
-        // Don't create workflow state file
-
-        // Should return default WorkflowState
-        let state = storage.load_workflow_state().unwrap();
-        assert_eq!(state.current_phase, "ideation");
-        assert_eq!(state.active_group, None);
     }
 
     #[test]
@@ -712,19 +689,6 @@ mod tests {
 
         // Should return error
         let result = storage.load_tasks();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_workflow_state_with_missing_fields() {
-        let (storage, _temp_dir) = create_test_storage();
-        let workflow_file = storage.workflow_file();
-
-        // Write JSON with missing required fields
-        fs::write(&workflow_file, r#"{"version": "1.0.0"}"#).unwrap();
-
-        // Should return error (missing current_phase, etc.)
-        let result = storage.load_workflow_state();
         assert!(result.is_err());
     }
 
@@ -858,10 +822,8 @@ mod tests {
         assert_eq!(active1, Some("TEST-1".to_string()));
 
         // Modify file directly (bypass storage methods)
-        let workflow_file = storage.workflow_file();
-        let mut state = storage.load_workflow_state().unwrap();
-        state.active_group = Some("DIFFERENT".to_string());
-        fs::write(&workflow_file, serde_json::to_string(&state).unwrap()).unwrap();
+        let active_tag_file = storage.active_tag_file();
+        fs::write(&active_tag_file, "DIFFERENT").unwrap();
 
         // Second call - should return cached value (not file value)
         let active2 = storage.get_active_group().unwrap();

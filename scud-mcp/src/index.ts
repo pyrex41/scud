@@ -24,7 +24,6 @@ import { AI_TOOLS, handleAITool } from './tools/ai.js';
 import { PARALLEL_TOOLS, handleParallelTool } from './tools/parallel.js';
 
 // Import all resource handlers
-import { WORKFLOW_RESOURCES, handleWorkflowResource } from './resources/workflow.js';
 import { TASK_RESOURCES, handleTaskResource } from './resources/tasks.js';
 import { STATS_RESOURCES, handleStatsResource } from './resources/stats.js';
 
@@ -41,7 +40,6 @@ const ALL_TOOLS = [
 
 // Combine all resources
 const ALL_RESOURCES = [
-  ...WORKFLOW_RESOURCES,
   ...TASK_RESOURCES,
   ...STATS_RESOURCES,
 ];
@@ -114,10 +112,6 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const uri = request.params.uri;
 
   // Route to appropriate handler based on URI
-  if (uri.startsWith('scud://workflow/')) {
-    return handleWorkflowResource(request);
-  }
-
   if (uri.startsWith('scud://tasks/')) {
     return handleTaskResource(request);
   }

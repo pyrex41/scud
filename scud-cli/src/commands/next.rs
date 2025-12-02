@@ -61,6 +61,7 @@ pub fn run(
     claim: bool,
     name: Option<&str>,
     release: bool,
+    spawn: bool,
 ) -> Result<()> {
     let storage = Storage::new(project_root);
     let phase_tag = resolve_group_tag(&storage, tag, true)?;
@@ -83,6 +84,25 @@ pub fn run(
     let phase = tasks
         .get(&phase_tag)
         .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
+
+    // Handle --spawn mode (machine-readable JSON output)
+    if spawn {
+        match find_next_available(phase, true) {
+            NextTaskResult::Available(task) => {
+                let output = serde_json::json!({
+                    "task_id": task.id,
+                    "title": task.title,
+                    "tag": phase_tag,
+                    "complexity": task.complexity,
+                });
+                println!("{}", serde_json::to_string(&output)?);
+            }
+            _ => {
+                println!("null");
+            }
+        }
+        return Ok(());
+    }
 
     match find_next_available(phase, false) {
         NextTaskResult::Available(task) => {

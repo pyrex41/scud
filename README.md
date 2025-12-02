@@ -1,10 +1,10 @@
 # SCUD
 
-**Sprint Cycle Unified Development** - Fast, AI-powered workflow for building software 🚀
+**Sprint Cycle Unified Development** - Fast, AI-powered task management for building software
 
 > **Status: Beta (1.0.0-beta.1)** - Core functionality is stable and 50x faster than previous version. Tests and CI/CD are coming in follow-up releases. See [log_docs/FOLLOWUP_PLAN.md](log_docs/FOLLOWUP_PLAN.md) for roadmap.
 
-A lightweight task management system that guides you through structured development phases with AI assistance.
+A lightweight DAG-driven task management system with automatic completion enforcement via Claude Code hooks.
 
 ---
 
@@ -17,6 +17,7 @@ A lightweight task management system that guides you through structured developm
 npm install -g scud-task
 cd your-project
 scud init
+scud hooks install  # Enable automatic task completion
 ```
 
 **Using Bun:**
@@ -30,17 +31,21 @@ cd ~/.bun/install/global/node_modules/scud-task
 node bin/postinstall.js
 ```
 
-### Use with Claude Code
+### Basic Usage
 ```bash
-/status                    # Check workflow state
-/scud-pm                     # Create PRD
-/scud-sm                     # Plan tasks
-/scud-architect              # Design solution
-/scud-dev                    # Implement
-/scud-retrospective          # Learn & improve
+# Create tasks manually or parse from a PRD
+scud parse-prd docs/epic.md --tag my-feature
+
+# Find and work on next ready task
+scud next --tag my-feature
+scud set-status 1 in-progress
+
+# When done, mark complete (or let hooks do it automatically)
+scud set-status 1 done
 ```
 
 **Full guide:** [docs/guides/COMPLETE_GUIDE.md](docs/guides/COMPLETE_GUIDE.md)
+**Orchestrator pattern:** [docs/orchestrator.md](docs/orchestrator.md)
 
 ---
 
@@ -48,38 +53,34 @@ node bin/postinstall.js
 
 SCUD offers two ways to work with AI assistants, each with different trade-offs:
 
-### Mode 1: Direct CLI + Skills/Commands (Recommended)
+### Mode 1: Direct CLI (Recommended)
 
 **How it works:**
-- AI assistant uses SCUD CLI directly via bash
-- Slash commands (Claude Code) or skills (OpenCode) provide structured prompts
-- Assistant reads/writes files and executes `scud` commands
+- Use SCUD CLI directly via bash for manual task management
+- Hooks enforce automatic task completion when Claude Code sessions end
+- DAG execution ensures tasks become ready when dependencies complete
 
 **Setup:**
 ```bash
 npm install -g scud-task
 cd your-project
 scud init
-
-# In Claude Code, use:
-/scud-pm        # Product manager agent
-/scud-sm        # Scrum master agent
-/scud-dev       # Developer agent
+scud hooks install  # Critical: enables automatic completion
 ```
 
 **Pros:**
 - ✅ Full file system access (can edit tasks JSON directly if needed)
-- ✅ Can see all project files for context
+- ✅ Automatic task completion via hooks (prevents forgotten updates)
 - ✅ More flexible - can use any tool/command
 - ✅ Better error messages (sees full CLI output)
 - ✅ Can combine SCUD with other tools seamlessly
+- ✅ DAG-driven execution (tasks ready when deps complete)
 
 **Cons:**
 - ❌ Requires bash/shell access
-- ❌ AI must learn CLI commands
-- ❌ More verbose (multi-step operations)
+- ❌ Must learn CLI commands
 
-**Best for:** Power users, complex workflows, file-heavy operations
+**Best for:** Individual developers, orchestrator patterns, automated workflows
 
 ---
 
@@ -129,11 +130,12 @@ npm install -g scud scud-mcp
 
 ### Which Mode Should You Use?
 
-**Use Direct CLI + Skills if:**
+**Use Direct CLI if:**
 - You want maximum flexibility (any bash command)
-- You prefer ad-hoc operations over predefined tools
-- You're already comfortable with CLI workflows
+- You need DAG-driven execution with hooks
+- You're building orchestrator patterns (parallel execution)
 - You want zero external dependencies (just the CLI)
+- You want automatic task completion enforcement
 
 **Use MCP Server if:**
 - You use multiple AI clients (Claude Desktop, Cursor, etc.)
@@ -141,23 +143,30 @@ npm install -g scud scud-mcp
 - You prefer protocol-based integration
 - You want extensible architecture (can add custom tools/resources)
 
-**Can you use both?** Yes! The MCP server wraps the CLI, so they're fully compatible. Use MCP for structured operations and CLI for ad-hoc tasks. Both modes work in Claude Code, Cursor, and Claude Desktop.
+**Can you use both?** Yes! The MCP server wraps the CLI, so they're fully compatible. Both modes work in Claude Code, Cursor, and Claude Desktop.
 
 ---
 
-## The 5-Phase Workflow
+## Core Concepts
+
+### DAG-Driven Execution
+Tasks become ready when their dependencies complete. No manual phase management required.
 
 ```
-Ideation → Planning → Architecture → Implementation → Retrospective
-  (PRD)     (Tasks)    (Design)       (Code)          (Learn)
+Task 1 ──┐
+         ├──> Task 3 ──> Task 5
+Task 2 ──┘      │
+                └──> Task 4
 ```
 
-Each phase has a dedicated AI agent that guides you through best practices:
-- ✅ **Product Manager** - Define requirements
-- ✅ **Scrum Master** - Break into tasks
-- ✅ **Architect** - Design solution
-- ✅ **Developer** - Implement with tests
-- ✅ **Facilitator** - Capture learnings
+### Tags
+Group related tasks together (e.g., `auth-system`, `payment-flow`). Each tag has its own task graph.
+
+### Automatic Completion
+Claude Code hooks enforce task completion when sessions end. Set `SCUD_TASK_ID` env var and the hook marks it done automatically.
+
+### Parallel Execution
+Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each working on a ready task.
 
 ---
 
@@ -168,31 +177,36 @@ Each phase has a dedicated AI agent that guides you through best practices:
 - 🎯 **42x fewer tokens** (500 vs 21k)
 - 📦 **Single binary** - no dependencies
 
-### Parallel Development (Experimental)
-- 🔀 **Epic Groups** - Coordinate backend/frontend
-- 👥 **Task Assignment** - Team collaboration
-- 🔒 **Task Locking** - Prevent conflicts
+### Hook-Enforced Completion
+- 🔒 **Automatic task completion** via Claude Code hooks
+- ✅ **Prevents forgotten updates** (solves 15% failure case)
+- 🎯 **Session-based** - marks done when Claude session ends
 
-### Smart Task Management
-- 📋 Automatic complexity analysis
-- 🔗 Dependency tracking
-- 🧪 Test requirements
-- 📊 Progress metrics
+### DAG-Driven Execution
+- 📊 **Dependency graphs** - tasks ready when deps complete
+- 🔀 **Parallel waves** - visualize concurrent work
+- 🎯 **Smart scheduling** - next command finds ready tasks
+
+### Orchestrator Support
+- 👥 **Parallel agents** - spawn multiple Claude instances
+- 🔒 **Task locking** - prevent conflicts
+- 📊 **Session monitoring** - track active work
 
 ---
 
 ## Documentation
 
-**Guides:**
+**Getting Started:**
 - [Complete Guide](docs/guides/COMPLETE_GUIDE.md) - Comprehensive reference (25,000 words)
+- [Orchestrator Pattern](docs/orchestrator.md) - Parallel execution guide
 - [Migration Guide](docs/guides/MIGRATION.md) - Upgrading from BMAD-TM Lite
-- [MCP Server Guide](scud-mcp/README.md) - Model Context Protocol integration
 
-**Reference:**
+**Integration:**
+- [MCP Server Guide](scud-mcp/README.md) - Model Context Protocol integration
 - [Quick Reference](docs/reference/QUICK_REFERENCE.md) - Command cheat sheet
 
-**Features:**
-- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Epic groups & task assignment
+**Advanced:**
+- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task locking & orchestration
 
 **Development:**
 - [Development Logs](log_docs/) - Implementation details & history
@@ -201,33 +215,36 @@ Each phase has a dedicated AI agent that guides you through best practices:
 
 ## Commands
 
-### Core Commands (Instant)
+### Setup
 ```bash
 scud init                          # Initialize SCUD
-scud tags                          # List all epics
-scud list                          # List tasks
-scud next                          # Find next task
+scud hooks install                 # Enable automatic completion
+scud hooks status                  # Check hook status
+```
+
+### Core Commands (Instant)
+```bash
+scud tags                          # List all tags
+scud list [--tag <tag>]           # List tasks
+scud next [--tag <tag>]           # Find next ready task
 scud set-status <id> <status>      # Update task
-scud stats                         # Show statistics
+scud stats [--tag <tag>]          # Show statistics
+scud waves [--tag <tag>]          # Show parallel waves
 ```
 
 ### AI Commands (Requires ANTHROPIC_API_KEY)
 ```bash
-scud parse-prd <file> --tag <tag>  # Parse epic into tasks
+scud parse-prd <file> --tag <tag>  # Parse PRD into tasks
 scud analyze-complexity             # Analyze all tasks
 scud expand --all                   # Break down complex tasks
-scud research "<query>"             # AI research
 ```
 
-### Parallel Development (Experimental)
+### Orchestrator Commands
 ```bash
-# Epic Groups
-scud create-group "Name" --epics tag1,tag2
-scud group-status <group-id>
-
-# Task Assignment
-scud claim <task-id> --name <you>
-scud whois                          # See assignments
+scud claim <id> --name <name>      # Claim task (lock)
+scud release <id>                  # Release task lock
+scud whois [--tag <tag>]          # See who's working on what
+scud doctor [--tag <tag>]         # Check for stale locks
 ```
 
 ---
@@ -237,50 +254,50 @@ scud whois                          # See assignments
 ```bash
 # 1. Initialize
 scud init
+scud hooks install
 
-# 2. Define product (with Claude Code)
-/scud-pm
-# Creates: docs/prd/my-app-prd.md
+# 2. Create tasks from PRD
+scud parse-prd docs/feature.md --tag auth-system
+# Creates tasks with dependencies
 
-# 3. Create epics
-/scud-pm
-# Creates: docs/epics/epic-1-auth.md
+# 3. View execution plan
+scud waves --tag auth-system
+# Shows which tasks can run in parallel
 
-# 4. Parse into tasks
-scud parse-prd docs/epics/epic-1-auth.md --tag epic-1-auth
-# Creates tasks in .scud/tasks/tasks.json
+# 4. Work on next ready task
+scud next --tag auth-system
+# Returns: Task 1 is ready
 
-# 5. Analyze & refine
-scud analyze-complexity
-scud expand --all  # Split complex tasks
+# 5. Implement (manual or via orchestrator)
+# Manual: Work on task, then mark done
+scud set-status 1 done
 
-# 6. Design solution
-/scud-architect
-# Adds technical details to all tasks
+# Or with orchestrator: Start Claude session with task ID
+SCUD_TASK_ID=1 claude "Implement task 1"
+# Hook auto-marks complete when session ends
 
-# 7. Implement
-/scud-dev
-# Agent uses: scud next → implement → scud set-status X done
-
-# 8. Retrospective
-/scud-retrospective
-# Captures learnings in docs/retrospectives/
+# 6. Repeat until done
+scud stats --tag auth-system
+# Shows progress: 8/10 complete
 ```
+
+See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns.
 
 ---
 
 ## Why SCUD?
 
-**Structured but Flexible:**
-- Enforces best practices (dependencies, testing, phase gates)
-- But adapts to your workflow
-- No heavy XML or complex configuration
+**DAG-Driven:**
+- Tasks become ready when dependencies complete
+- No manual phase management
+- Visualize parallel execution waves
+- Smart scheduling finds ready work
 
-**AI-Powered:**
-- Parse PRDs automatically
-- Analyze task complexity
-- Break down large tasks
-- Research technical topics
+**Hook-Enforced:**
+- Automatic task completion
+- Prevents forgotten status updates
+- Session-based tracking
+- Solves 15% agent failure case
 
 **Fast & Simple:**
 - Rust CLI is instant
@@ -288,11 +305,11 @@ scud expand --all  # Split complex tasks
 - Works offline (core commands)
 - No vendor lock-in
 
-**Team-Ready:**
-- Epic groups for parallel work
-- Task assignment for collaboration
-- Git worktree support
-- Progress tracking
+**Orchestrator-Ready:**
+- Spawn parallel Claude agents
+- Task locking prevents conflicts
+- Monitor active sessions
+- Doctor command finds stale work
 
 ---
 
@@ -312,17 +329,16 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ```
 .scud/
-├── tasks/tasks.json          # All tasks by epic
-├── workflow-state.json       # Current phase & epic
-└── epic-groups.json          # Epic groups (parallel features)
+├── tasks/tasks.json          # All tasks by tag
+├── workflow-state.json       # Active tag
+└── current-task              # Active task ID (for hooks)
+
+.claude/
+└── settings.local.json       # Claude Code hooks config
 
 docs/
 ├── prd/                      # Product requirements
-├── epics/                    # Epic descriptions
-├── architecture/             # Technical designs
-└── retrospectives/           # Learnings
-
-.claude/commands/             # AI agents (slash commands)
+└── epics/                    # Feature descriptions
 ```
 
 ---
@@ -355,8 +371,9 @@ MIT
 ## Learn More
 
 - **Complete Guide:** [docs/guides/COMPLETE_GUIDE.md](docs/guides/COMPLETE_GUIDE.md)
+- **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
 - **Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
 - **Parallel Features:** [docs/features/PARALLEL_FEATURES.md](docs/features/PARALLEL_FEATURES.md)
 - **Implementation Logs:** [log_docs/](log_docs/)
 
-**Happy building! 🚀**
+**Happy building!**

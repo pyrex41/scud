@@ -104,7 +104,7 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     println!("\n{}", "Next steps:".blue());
     println!("  1. Set your API key environment variable");
     println!("  2. Run: scud tags");
-    println!("  3. Start with: /scud:pm (or use Claude Code slash command)\n");
+    println!("  3. Create or import tasks, then use: /scud:task-next\n");
 
     Ok(())
 }

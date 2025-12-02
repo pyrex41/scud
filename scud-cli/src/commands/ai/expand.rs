@@ -305,7 +305,7 @@ pub async fn run(
     println!();
     println!("{}", "Next steps:".blue());
     println!("  1. Review tasks: scud list");
-    println!("  2. Continue with /scud:architect");
+    println!("  2. Start working: scud next");
     println!();
 
     Ok(())

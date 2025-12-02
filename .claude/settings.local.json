@@ -1,9 +1,22 @@
 {
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "scud _hook-complete",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(find:*)"
     ],
-    "deny": [],
-    "ask": []
+    "ask": [],
+    "deny": []
   }
 }

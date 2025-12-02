@@ -18,8 +18,14 @@ scud release $ARGUMENTS
 
 After claiming:
 1. Confirm the lock is set
-2. Remind to release when done: `scud release <id>`
+2. Remind about automatic release: if hooks are installed, the lock will be auto-released when the task is marked complete
+3. Manual release command: `scud release <id>`
 
 After releasing:
 1. Confirm the lock is cleared
 2. Show how long the task was locked
+
+**Hook Integration:**
+- When hooks are installed (`scud hooks install`), task locks are automatically released when the task is marked complete
+- This happens when the Claude session ends with `SCUD_TASK_ID` set
+- Manual release is only needed if a session crashes or is interrupted

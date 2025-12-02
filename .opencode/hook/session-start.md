@@ -43,12 +43,10 @@ These slash commands are available for task management:
 - `/task-tags` - List or set active tag
 - `/task-doctor` - Diagnose task issues
 
-## SCUD Workflow Agents
+## SCUD Quick Start
 
-For full workflow management, SCUD provides phase-based agents:
-- `/scud:pm` - Product Manager (PRD creation)
-- `/scud:sm` - Scrum Master (task breakdown)
-- `/scud:architect` - Architect (technical design)
-- `/scud:dev` - Developer (implementation)
-- `/scud:retrospective` - Retrospective (post-phase analysis)
-- `/scud:status` - Workflow status
+To get started with SCUD:
+1. Create or import tasks with `scud parse-prd` or manually
+2. Use `/scud:task-next` to find available work
+3. Claim tasks with `/scud:task-claim` to prevent conflicts
+4. Update status with `/scud:task-status` as you progress

@@ -40,26 +40,6 @@ export interface ScudPhase {
   tasks: ScudTask[];
 }
 
-export interface WorkflowState {
-  active_phase?: string;
-  current_stage: string;
-  stages: Record<string, StageInfo>;
-  completed_phases: CompletedPhase[];
-}
-
-export interface StageInfo {
-  status: string;
-  started_at?: string;
-  completed_at?: string;
-}
-
-export interface CompletedPhase {
-  tag: string;
-  completed_at: string;
-  total_tasks: number;
-  total_complexity: number;
-}
-
 export interface PhaseStats {
   total_tasks: number;
   by_status: Record<TaskStatus, number>;

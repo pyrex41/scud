@@ -129,6 +129,10 @@ enum Commands {
         /// [EXPERIMENTAL] Release the currently claimed task for this agent
         #[arg(long, conflicts_with = "claim", requires = "name")]
         release: bool,
+
+        /// Output machine-readable JSON for orchestrators
+        #[arg(long)]
+        spawn: bool,
     },
 
     /// Show phase statistics
@@ -254,6 +258,24 @@ enum Commands {
         tag: Option<String>,
     },
 
+    /// Get multiple ready tasks at once (for orchestrators)
+    NextBatch {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Maximum number of tasks to return
+        #[arg(short, long, default_value = "5")]
+        limit: usize,
+    },
+
+    /// Show active task sessions (claimed/locked tasks)
+    Sessions {
+        /// Phase tag (checks all phases if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+    },
+
     /// Convert task storage format between JSON and SCG
     Convert {
         /// Source format (json, scg)
@@ -294,6 +316,30 @@ enum Commands {
         #[arg(long)]
         all_tags: bool,
     },
+
+    /// Manage Claude Code hooks for automatic task completion
+    Hooks {
+        /// Action: install, uninstall, or status
+        action: Option<String>,
+    },
+
+    /// Internal: Called by Claude Code Stop hook
+    #[command(hide = true)]
+    HookComplete,
+
+    /// Quick orientation for new session (show recent commits, active sessions, next task)
+    Warmup,
+
+    /// Create a git commit with task context
+    Commit {
+        /// Commit message (uses task title if not provided)
+        #[arg(short, long)]
+        message: Option<String>,
+
+        /// Stage all changes before committing
+        #[arg(short, long)]
+        all: bool,
+    },
 }
 
 #[tokio::main]
@@ -319,7 +365,15 @@ async fn main() -> Result<()> {
             claim,
             name,
             release,
-        } => commands::next::run(cli.project, tag.as_deref(), claim, name.as_deref(), release),
+            spawn,
+        } => commands::next::run(
+            cli.project,
+            tag.as_deref(),
+            claim,
+            name.as_deref(),
+            release,
+            spawn,
+        ),
         Commands::Stats { tag } => commands::stats::run(cli.project, tag.as_deref()),
         Commands::Migrate { dry_run } => commands::migrate::run(cli.project, dry_run),
         Commands::Waves {
@@ -368,6 +422,10 @@ async fn main() -> Result<()> {
             tag,
         } => commands::release::run(cli.project, &task_id, force, tag.as_deref()),
         Commands::WhoIs { tag } => commands::whois::run(cli.project, tag.as_deref()),
+        Commands::NextBatch { tag, limit } => {
+            commands::next_batch::run(cli.project, tag.as_deref(), limit)
+        }
+        Commands::Sessions { tag } => commands::sessions::run(cli.project, tag.as_deref()),
         Commands::Convert { from, to, backup } => {
             commands::convert::run(cli.project, &from, &to, backup)
         }
@@ -378,6 +436,14 @@ async fn main() -> Result<()> {
         } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
         Commands::Mermaid { tag, all_tags } => {
             commands::mermaid::run(cli.project, tag.as_deref(), all_tags)
+        }
+        Commands::Hooks { action } => {
+            commands::hooks::run(cli.project, action.as_deref().unwrap_or("status"))
+        }
+        Commands::HookComplete => commands::hook_complete::run(cli.project),
+        Commands::Warmup => commands::warmup::run(cli.project),
+        Commands::Commit { message, all } => {
+            commands::commit::run(cli.project, message.as_deref(), all)
         }
     }
 }

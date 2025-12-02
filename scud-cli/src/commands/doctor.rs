@@ -104,21 +104,12 @@ pub fn run(
 
     // Check if storage files exist and are readable
     let tasks_result = storage.load_tasks();
-    let workflow_result = storage.load_workflow_state();
 
     let mut results = DiagnosticResults::default();
 
     // Check for corrupt/missing files
     if let Err(ref e) = tasks_result {
         results.corrupt_files.push(format!("tasks file: {}", e));
-    }
-
-    if let Err(ref e) = workflow_result {
-        if !e.to_string().contains("not found") {
-            results
-                .corrupt_files
-                .push(format!("workflow-state.json: {}", e));
-        }
     }
 
     // Check active epic
@@ -498,7 +489,7 @@ fn print_recovery_instructions() {
     println!();
     println!("5. For manual recovery, task files are located at:");
     println!("   {}", ".scud/tasks/tasks.scg (or tasks.json)".dimmed());
-    println!("   {}", ".scud/workflow-state.json".dimmed());
+    println!("   {}", ".scud/active-tag".dimmed());
     println!();
     println!(
         "{}",

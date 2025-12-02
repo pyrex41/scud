@@ -282,58 +282,8 @@ max_tokens = 4096
     log('✓ config.toml already exists', 'green');
   }
 
-  // Create workflow state
-  log('\nStep 4: Creating workflow state...', 'blue');
-  const workflowFile = path.join(scudDir, 'workflow-state.json');
-  if (!fs.existsSync(workflowFile)) {
-    const workflowState = {
-      version: '1.0.0',
-      current_phase: 'ideation',
-      active_group: null,
-      phases: {
-        ideation: {
-          status: 'active',
-          completed_at: null,
-          agent: 'scud-pm',
-          description: 'Product definition and PRD creation'
-        },
-        planning: {
-          status: 'pending',
-          completed_at: null,
-          agent: 'scud-sm',
-          description: 'PRD parsing and task breakdown'
-        },
-        architecture: {
-          status: 'pending',
-          completed_at: null,
-          agent: 'scud-architect',
-          description: 'Technical design and architecture planning'
-        },
-        implementation: {
-          status: 'pending',
-          completed_at: null,
-          agent: 'scud-dev',
-          description: 'Task execution and development'
-        },
-        retrospective: {
-          status: 'pending',
-          completed_at: null,
-          agent: 'scud-retrospective',
-          description: 'Post-phase analysis and learning capture'
-        }
-      },
-      history: [],
-      completed_groups: [],
-      last_updated: null
-    };
-    fs.writeFileSync(workflowFile, JSON.stringify(workflowState, null, 2));
-    log('✓ Created workflow-state.json', 'green');
-  } else {
-    log('✓ workflow-state.json already exists', 'green');
-  }
-
   // Create docs subdirectories inside .scud/docs/
-  log('\nStep 5: Creating documentation directories...', 'blue');
+  log('\nStep 4: Creating documentation directories...', 'blue');
   const docSubDirs = ['prd', 'phases', 'architecture', 'retrospectives'];
   docSubDirs.forEach(subdir => {
     const fullPath = path.join(docsDir, subdir);
@@ -343,8 +293,8 @@ max_tokens = 4096
   });
   log('✓ Documentation directories created in .scud/docs/', 'green');
 
-  // Step 6: Agent installation (interactive or flag-based)
-  log('\nStep 6: SCUD Workflow Agents...', 'blue');
+  // Step 5: Agent installation (interactive or flag-based)
+  log('\nStep 5: SCUD Workflow Agents...', 'blue');
 
   let installAgents = false;
 
@@ -405,12 +355,11 @@ max_tokens = 4096
       if (installedOpenCode) {
         log('  OpenCode:    .opencode/command/scud/', 'blue');
       }
-      log('  • /scud:status', 'blue');
-      log('  • /scud:pm', 'blue');
-      log('  • /scud:sm', 'blue');
-      log('  • /scud:architect', 'blue');
-      log('  • /scud:dev', 'blue');
-      log('  • /scud:retrospective', 'blue');
+      log('  • /scud:task-list', 'blue');
+      log('  • /scud:task-next', 'blue');
+      log('  • /scud:task-show', 'blue');
+      log('  • /scud:task-status', 'blue');
+      log('  • /scud:task-claim', 'blue');
     } else {
       log('⚠ Could not find source commands', 'yellow');
     }
@@ -419,22 +368,72 @@ max_tokens = 4096
     log('  You can add them later with: scud config agents add --all', 'reset');
   }
 
-  // Create .gitignore entry
-  log('\nStep 7: Updating .gitignore...', 'blue');
-  const gitignorePath = path.join(cwd, '.gitignore');
-  const gitignoreEntry = '\n# SCUD\n.scud/\n';
+  // Create or update CLAUDE.md with agent instructions
+  log('\nStep 6: Adding agent instructions to CLAUDE.md...', 'blue');
+  const claudeMdPath = path.join(cwd, 'CLAUDE.md');
+  const scudInstructions = `
+## SCUD Task Management
 
-  if (fs.existsSync(gitignorePath)) {
-    const content = fs.readFileSync(gitignorePath, 'utf8');
-    if (!content.includes('.scud/')) {
-      fs.appendFileSync(gitignorePath, gitignoreEntry);
-      log('✓ Updated .gitignore', 'green');
+This project uses SCUD (Sprint Cycle Unified Development) for task management.
+
+### Session Workflow
+
+1. **Start of session**: Run \`scud warmup\` to orient yourself
+   - Shows current working directory and recent git history
+   - Displays active tag, task counts, and any stale locks
+   - Identifies the next available task
+
+2. **Claim a task**: Use \`/scud:task-next\` or \`scud next --claim --name "Claude"\`
+   - Always claim before starting work to prevent conflicts
+   - Task context is stored in \`.scud/current-task\`
+
+3. **Work on the task**: Implement the requirements
+   - Reference task details with \`/scud:task-show <id>\`
+   - Dependencies are automatically tracked by the DAG
+
+4. **Commit with context**: Use \`scud commit -m "message"\` or \`scud commit -a -m "message"\`
+   - Automatically prefixes commits with \`[TASK-ID]\`
+   - Uses task title as default commit message if none provided
+
+5. **Complete the task**: Mark done with \`/scud:task-status <id> done\`
+   - The stop hook will prompt for task completion
+
+### Progress Journaling
+
+Keep a brief progress log during complex tasks:
+
+\`\`\`
+## Progress Log
+
+### Session: 2025-01-15
+- Investigated auth module, found issue in token refresh
+- Updated refresh logic to handle edge case
+- Tests passing, ready for review
+\`\`\`
+
+This helps maintain continuity across sessions and provides context for future work.
+
+### Key Commands
+
+- \`scud warmup\` - Session orientation
+- \`scud next\` - Find next available task
+- \`scud show <id>\` - View task details
+- \`scud set-status <id> <status>\` - Update task status
+- \`scud commit\` - Task-aware git commit
+- \`scud stats\` - View completion statistics
+`;
+
+  if (fs.existsSync(claudeMdPath)) {
+    const content = fs.readFileSync(claudeMdPath, 'utf8');
+    if (!content.includes('## SCUD Task Management')) {
+      fs.appendFileSync(claudeMdPath, scudInstructions);
+      log('✓ Updated CLAUDE.md with SCUD instructions', 'green');
     } else {
-      log('✓ .gitignore already configured', 'green');
+      log('✓ CLAUDE.md already has SCUD instructions', 'green');
     }
   } else {
-    fs.writeFileSync(gitignorePath, gitignoreEntry);
-    log('✓ Created .gitignore', 'green');
+    fs.writeFileSync(claudeMdPath, `# Project Instructions\n${scudInstructions}`);
+    log('✓ Created CLAUDE.md with SCUD instructions', 'green');
   }
 
   // Success message
@@ -448,13 +447,8 @@ max_tokens = 4096
   log('');
   log('Next steps:', 'blue');
   log(`  1. Set your API key: export ${selectedProvider.env}=your-key`);
-  log('  2. Run: scud status');
-  if (installAgents) {
-    log('  3. Start with: /scud:pm (slash command)\n');
-  } else {
-    log('  3. Add agents: scud config agents add --all');
-    log('  4. Start with: /scud:pm (slash command)\n');
-  }
+  log('  2. Run: scud tags');
+  log('  3. Start working: /scud:task-next (slash command)\n');
 }
 
 // Handle commands
