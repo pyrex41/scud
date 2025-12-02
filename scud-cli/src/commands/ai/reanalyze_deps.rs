@@ -38,14 +38,14 @@ pub async fn run(
     }
 
     // Determine which phases to analyze
-    let phases_to_analyze: Vec<String> = if all_tags || tag.is_none() {
-        all_phases.keys().cloned().collect()
-    } else {
-        let t = tag.unwrap();
-        if !all_phases.contains_key(t) {
-            anyhow::bail!("Tag '{}' not found", t);
+    let phases_to_analyze: Vec<String> = match tag {
+        Some(t) if !all_tags => {
+            if !all_phases.contains_key(t) {
+                anyhow::bail!("Tag '{}' not found", t);
+            }
+            vec![t.to_string()]
         }
-        vec![t.to_string()]
+        _ => all_phases.keys().cloned().collect(),
     };
 
     if phases_to_analyze.len() == 1 && all_phases.len() == 1 {
