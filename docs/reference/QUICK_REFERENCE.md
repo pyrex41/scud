@@ -197,8 +197,8 @@ scud next
 project/
 ├── .scud/
 │   ├── tasks/
-│   │   └── tasks.json              # All tasks, organized by epic
-│   └── workflow-state.json         # Current phase, active epic
+│   │   └── tasks.scg               # All tasks in SCG format
+│   └── config.toml                 # Active tag and settings
 │
 ├── docs/
 │   ├── prd/
@@ -222,24 +222,26 @@ project/
 
 ---
 
-## Task JSON Structure
+## Task SCG Structure
 
-```json
-{
-  "id": "1",
-  "title": "Create User model",
-  "description": "Implement User model with validation",
-  "status": "pending",
-  "complexity": 3,
-  "priority": "high",
-  "dependencies": [],
-  "details": "Technical implementation details (added by Architect)",
-  "test_strategy": "How to test this (added by Architect)",
-  "complexity_analysis": "Why this complexity score (from AI)",
-  "created_at": "2025-01-15T10:00:00Z",
-  "updated_at": "2025-01-15T10:00:00Z"
-}
+Tasks are stored in SCG (SCUD Graph) format. See [SCG_FORMAT_SPEC.md](SCG_FORMAT_SPEC.md) for full details.
+
 ```
+@nodes
+1 | Create User model | P | 3 | H
+
+@edges
+2 -> 1
+
+@details
+1 | description |
+  Implement User model with validation
+1 | test_strategy |
+  Unit tests for model validation
+```
+
+**Status codes:** P=Pending, I=InProgress, D=Done, R=Review, B=Blocked, F=Deferred, C=Cancelled, X=Expanded
+**Priority codes:** H=High, M=Medium, L=Low
 
 ---
 
@@ -340,7 +342,7 @@ scud expand --all
 ```bash
 # Create "bug-fixes" epic
 scud parse-prd docs/epics/bugs.md --tag bugs
-# Or manually add tasks to tasks.json
+# Or manually add tasks to tasks.scg
 /tm-architect  # Add fix details
 /tm-dev        # Fix bugs
 ```

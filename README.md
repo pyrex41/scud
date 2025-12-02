@@ -69,7 +69,7 @@ scud hooks install  # Critical: enables automatic completion
 ```
 
 **Pros:**
-- ✅ Full file system access (can edit tasks JSON directly if needed)
+- ✅ Full file system access (can edit tasks.scg directly if needed)
 - ✅ Automatic task completion via hooks (prevents forgotten updates)
 - ✅ More flexible - can use any tool/command
 - ✅ Better error messages (sees full CLI output)
@@ -148,6 +148,21 @@ npm install -g scud scud-mcp
 ---
 
 ## Core Concepts
+
+### SCG Format
+
+Tasks are stored in **SCG (SCUD Graph)** format—a token-efficient, human-readable text format that achieves ~75% token reduction compared to JSON. SCG explicitly represents the task dependency graph with sections for nodes, edges, and metadata.
+
+```
+@nodes
+auth:1 | Design auth system | X | 13 | H
+auth:1.1 | Implement JWT | D | 5 | H
+
+@edges
+auth:1.1 -> auth:1
+```
+
+**Full spec:** [docs/reference/SCG_FORMAT_SPEC.md](docs/reference/SCG_FORMAT_SPEC.md)
 
 ### DAG-Driven Execution
 Tasks become ready when their dependencies complete. No manual phase management required.
@@ -301,7 +316,7 @@ See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns
 
 **Fast & Simple:**
 - Rust CLI is instant
-- JSON storage is transparent
+- SCG format is human-readable and git-friendly
 - Works offline (core commands)
 - No vendor lock-in
 
@@ -329,8 +344,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ```
 .scud/
-├── tasks/tasks.json          # All tasks by tag
-├── workflow-state.json       # Active tag
+├── tasks/tasks.scg           # All tasks in SCG format (see spec)
+├── config.toml               # Active tag and settings
 └── current-task              # Active task ID (for hooks)
 
 .claude/
