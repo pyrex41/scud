@@ -60,6 +60,7 @@ impl TaskStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
+    Critical,
     High,
     #[default]
     Medium,

@@ -33,7 +33,7 @@ export type TaskStatus =
   | 'deferred'
   | 'cancelled';
 
-export type Priority = 'high' | 'medium' | 'low';
+export type Priority = 'critical' | 'high' | 'medium' | 'low';
 
 export interface ScudPhase {
   tag: string;

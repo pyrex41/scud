@@ -40,6 +40,7 @@ fn code_to_status(code: char) -> Option<TaskStatus> {
 
 fn priority_to_code(priority: &Priority) -> char {
     match priority {
+        Priority::Critical => 'C',
         Priority::High => 'H',
         Priority::Medium => 'M',
         Priority::Low => 'L',
@@ -48,6 +49,7 @@ fn priority_to_code(priority: &Priority) -> char {
 
 fn code_to_priority(code: char) -> Option<Priority> {
     match code {
+        'C' => Some(Priority::Critical),
         'H' => Some(Priority::High),
         'M' => Some(Priority::Medium),
         'L' => Some(Priority::Low),
@@ -522,12 +524,16 @@ mod tests {
 
     #[test]
     fn test_priority_codes() {
+        assert_eq!(priority_to_code(&Priority::Critical), 'C');
         assert_eq!(priority_to_code(&Priority::High), 'H');
         assert_eq!(priority_to_code(&Priority::Medium), 'M');
         assert_eq!(priority_to_code(&Priority::Low), 'L');
 
+        assert_eq!(code_to_priority('C'), Some(Priority::Critical));
         assert_eq!(code_to_priority('H'), Some(Priority::High));
-        assert_eq!(code_to_priority('X'), None);
+        assert_eq!(code_to_priority('M'), Some(Priority::Medium));
+        assert_eq!(code_to_priority('L'), Some(Priority::Low));
+        assert_eq!(code_to_priority('Z'), None);
     }
 
     #[test]
@@ -743,9 +749,10 @@ mod tests {
         let mut epic = Phase::new("test".to_string());
 
         let priorities = [
-            ("1", Priority::High),
-            ("2", Priority::Medium),
-            ("3", Priority::Low),
+            ("1", Priority::Critical),
+            ("2", Priority::High),
+            ("3", Priority::Medium),
+            ("4", Priority::Low),
         ];
 
         for (id, priority) in &priorities {
