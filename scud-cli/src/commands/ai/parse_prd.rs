@@ -88,11 +88,7 @@ pub async fn run(
     let mut all_tasks = storage.load_tasks()?;
 
     // Check if other phases exist for cross-tag dependency hint
-    let other_phases: Vec<_> = all_tasks
-        .keys()
-        .filter(|k| *k != tag)
-        .cloned()
-        .collect();
+    let other_phases: Vec<_> = all_tasks.keys().filter(|k| *k != tag).cloned().collect();
 
     if all_tasks.contains_key(tag) {
         println!(

@@ -437,14 +437,8 @@ async fn main() -> Result<()> {
             apply,
             dry_run,
         } => {
-            commands::ai::reanalyze_deps::run(
-                cli.project,
-                tag.as_deref(),
-                all_tags,
-                apply,
-                dry_run,
-            )
-            .await
+            commands::ai::reanalyze_deps::run(cli.project, tag.as_deref(), all_tags, apply, dry_run)
+                .await
         }
         Commands::Assign {
             task_id,

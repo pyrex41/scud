@@ -188,7 +188,8 @@ Return empty array [] if no changes are needed.
 
 Phases to analyze: {phases:?}
 "#,
-            task_context = task_context, phases = phases
+            task_context = task_context,
+            phases = phases
         )
     }
 }

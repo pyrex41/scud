@@ -33,7 +33,10 @@ pub async fn run(
     let mut all_phases = storage.load_tasks()?;
 
     if all_phases.is_empty() {
-        println!("{}", "No tasks found. Create tasks first with: scud parse-prd".yellow());
+        println!(
+            "{}",
+            "No tasks found. Create tasks first with: scud parse-prd".yellow()
+        );
         return Ok(());
     }
 
@@ -90,10 +93,7 @@ pub async fn run(
         .collect();
 
     if meaningful_suggestions.is_empty() {
-        println!(
-            "{} No dependency changes suggested.",
-            "✓".green()
-        );
+        println!("{} No dependency changes suggested.", "✓".green());
         return Ok(());
     }
 
@@ -221,16 +221,26 @@ fn apply_suggestions(
         let (phase_tag, local_id) = parse_task_id(&suggestion.task_id);
 
         // Find the phase
-        let phase = all_phases
-            .get_mut(&phase_tag)
-            .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found for task '{}'", phase_tag, suggestion.task_id))?;
+        let phase = all_phases.get_mut(&phase_tag).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Phase '{}' not found for task '{}'",
+                phase_tag,
+                suggestion.task_id
+            )
+        })?;
 
         // Find the task - try both local ID and full ID
         let task = phase
             .tasks
             .iter_mut()
             .find(|t| t.id == local_id || t.id == suggestion.task_id)
-            .ok_or_else(|| anyhow::anyhow!("Task '{}' not found in phase '{}'", suggestion.task_id, phase_tag))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Task '{}' not found in phase '{}'",
+                    suggestion.task_id,
+                    phase_tag
+                )
+            })?;
 
         // Add new dependencies
         for dep in &suggestion.add_dependencies {
@@ -290,12 +300,20 @@ mod tests {
         let mut phases = HashMap::new();
 
         let mut auth_phase = Phase::new("auth".to_string());
-        let mut task1 = Task::new("auth:1".to_string(), "Create user model".to_string(), "".to_string());
+        let mut task1 = Task::new(
+            "auth:1".to_string(),
+            "Create user model".to_string(),
+            "".to_string(),
+        );
         task1.status = TaskStatus::Done;
         auth_phase.add_task(task1);
 
         let mut api_phase = Phase::new("api".to_string());
-        let mut task2 = Task::new("api:1".to_string(), "Create endpoints".to_string(), "".to_string());
+        let mut task2 = Task::new(
+            "api:1".to_string(),
+            "Create endpoints".to_string(),
+            "".to_string(),
+        );
         task2.dependencies = vec!["auth:1".to_string()];
         api_phase.add_task(task2);
 
