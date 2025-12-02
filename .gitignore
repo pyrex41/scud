@@ -29,3 +29,6 @@ docs/retrospectives/
 
 # Coverage reports
 coverage/
+
+# SCUD
+.scud/
