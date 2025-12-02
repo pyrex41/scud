@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 use std::process::Command;
 
+use crate::commands::helpers::flatten_all_tasks;
 use crate::storage::Storage;
 
 pub fn run(project_root: Option<PathBuf>) -> Result<()> {
@@ -106,16 +107,17 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
         println!("  {}", "(no active sessions)".dimmed());
     }
 
-    // 5. Show next available task
+    // 5. Show next available task (with cross-tag dependency checking)
     println!("\n{}", "Next available task:".bold());
+    let all_tasks_flat = flatten_all_tasks(&tasks);
     if let Some(tag) = storage.get_active_group()? {
-        if let Ok(phase) = storage.load_group(&tag) {
+        if let Some(phase) = tasks.get(&tag) {
             let available: Vec<_> = phase
                 .tasks
                 .iter()
                 .filter(|t| {
                     t.status == crate::models::TaskStatus::Pending
-                        && t.has_dependencies_met(&phase.tasks)
+                        && t.has_dependencies_met_refs(&all_tasks_flat)
                         && !t.is_locked()
                 })
                 .collect();

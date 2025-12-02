@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::commands::helpers::resolve_group_tag;
+use crate::commands::helpers::{flatten_all_tasks, resolve_group_tag};
 use crate::models::task::TaskStatus;
 use crate::storage::Storage;
 
@@ -9,13 +9,20 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, limit: usize) -> Re
     let storage = Storage::new(project_root);
     let phase_tag = resolve_group_tag(&storage, tag, true)?;
 
-    let phase = storage.load_group(&phase_tag)?;
+    // Load all phases for cross-tag dependency checking
+    let all_phases = storage.load_tasks()?;
+    let all_tasks_flat = flatten_all_tasks(&all_phases);
 
+    let phase = all_phases
+        .get(&phase_tag)
+        .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
+
+    // Filter tasks with cross-tag aware dependency checking
     let ready_tasks: Vec<_> = phase
         .tasks
         .iter()
         .filter(|t| t.status == TaskStatus::Pending)
-        .filter(|t| t.has_dependencies_met(&phase.tasks))
+        .filter(|t| t.has_dependencies_met_refs(&all_tasks_flat))
         .filter(|t| !t.is_locked())
         .take(limit)
         .collect();

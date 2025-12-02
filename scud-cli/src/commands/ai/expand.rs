@@ -283,6 +283,9 @@ pub async fn run(
 
     storage.save_tasks(&all_tasks)?;
 
+    // Check if there are multiple phases for cross-tag hint
+    let has_multiple_phases = all_tasks.len() > 1;
+
     // Summary
     println!("\n{}", "✅ Task expansion complete!".green().bold());
     println!();
@@ -302,10 +305,29 @@ pub async fn run(
         "Total subtasks created:".yellow(),
         total_subtasks
     );
+
+    // Hint about dependency analysis if we expanded tasks and have multiple phases
+    if success_count > 0 && has_multiple_phases {
+        println!();
+        println!(
+            "{} New subtasks may have cross-phase dependencies.",
+            "Tip:".cyan()
+        );
+        println!(
+            "     Run '{}' to check.",
+            format!("scud reanalyze-deps --tag {}", epic_tag).green()
+        );
+    }
+
     println!();
     println!("{}", "Next steps:".blue());
     println!("  1. Review tasks: scud list");
-    println!("  2. Start working: scud next");
+    if success_count > 0 && has_multiple_phases {
+        println!("  2. Check dependencies: scud reanalyze-deps");
+        println!("  3. Start working: scud next");
+    } else {
+        println!("  2. Start working: scud next");
+    }
     println!();
 
     Ok(())

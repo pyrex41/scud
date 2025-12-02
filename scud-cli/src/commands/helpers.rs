@@ -1,8 +1,19 @@
 use anyhow::Result;
 use colored::Colorize;
 use dialoguer::Select;
+use std::collections::HashMap;
 
+use crate::models::phase::Phase;
+use crate::models::task::Task;
 use crate::storage::Storage;
+
+/// Flatten all tasks from all phases into a single Vec for cross-tag dependency checking
+pub fn flatten_all_tasks(all_phases: &HashMap<String, Phase>) -> Vec<&Task> {
+    all_phases
+        .values()
+        .flat_map(|phase| phase.tasks.iter())
+        .collect()
+}
 
 /// Check if we're running in an interactive terminal
 pub fn is_interactive() -> bool {

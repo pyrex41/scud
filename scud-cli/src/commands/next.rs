@@ -2,8 +2,8 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
-use crate::commands::helpers::resolve_group_tag;
-use crate::models::task::TaskStatus;
+use crate::commands::helpers::{flatten_all_tasks, resolve_group_tag};
+use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
 /// Result of finding the next task
@@ -19,8 +19,10 @@ pub enum NextTaskResult<'a> {
 }
 
 /// Find the next available task, considering locks
+/// all_tasks should contain tasks from all phases for cross-tag dependency resolution
 pub fn find_next_available<'a>(
     phase: &'a crate::models::phase::Phase,
+    all_tasks: &[&Task],
     exclude_locked: bool,
 ) -> NextTaskResult<'a> {
     let pending_tasks: Vec<_> = phase
@@ -33,10 +35,10 @@ pub fn find_next_available<'a>(
         return NextTaskResult::NoPendingTasks;
     }
 
-    // Find tasks with dependencies met
+    // Find tasks with dependencies met (checking across all phases)
     let deps_met: Vec<_> = pending_tasks
         .iter()
-        .filter(|t| t.has_dependencies_met(&phase.tasks))
+        .filter(|t| t.has_dependencies_met_refs(all_tasks))
         .collect();
 
     if deps_met.is_empty() {
@@ -81,13 +83,14 @@ pub fn run(
 
     // Standard next task behavior (read-only)
     let tasks = storage.load_tasks()?;
+    let all_tasks_flat = flatten_all_tasks(&tasks);
     let phase = tasks
         .get(&phase_tag)
         .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
 
     // Handle --spawn mode (machine-readable JSON output)
     if spawn {
-        match find_next_available(phase, true) {
+        match find_next_available(phase, &all_tasks_flat, true) {
             NextTaskResult::Available(task) => {
                 let output = serde_json::json!({
                     "task_id": task.id,
@@ -104,7 +107,7 @@ pub fn run(
         return Ok(());
     }
 
-    match find_next_available(phase, false) {
+    match find_next_available(phase, &all_tasks_flat, false) {
         NextTaskResult::Available(task) => {
             print_task_details(task);
             print_standard_instructions(&task.id);
@@ -139,6 +142,10 @@ fn handle_claim(storage: &Storage, phase_tag: &str, agent_name: &str) -> Result<
     );
     println!();
 
+    // Load all phases for cross-tag dependency checking
+    let all_phases = storage.load_tasks()?;
+    let all_tasks_flat = flatten_all_tasks(&all_phases);
+
     // Use atomic update_group to hold lock across read-modify-write cycle
     // This prevents race conditions when multiple agents claim simultaneously
     let mut phase = storage.load_group(phase_tag)?;
@@ -164,17 +171,17 @@ fn handle_claim(storage: &Storage, phase_tag: &str, agent_name: &str) -> Result<
             return Ok(());
         }
 
-        // Find first task with dependencies met that isn't locked
+        // Find first task with dependencies met that isn't locked (cross-tag aware)
         let available: Vec<_> = pending_tasks
             .iter()
-            .filter(|t| t.has_dependencies_met(&phase.tasks) && !t.is_locked())
+            .filter(|t| t.has_dependencies_met_refs(&all_tasks_flat) && !t.is_locked())
             .collect();
 
         if available.is_empty() {
             // Check if blocked by deps or by locks
             let deps_met: Vec<_> = pending_tasks
                 .iter()
-                .filter(|t| t.has_dependencies_met(&phase.tasks))
+                .filter(|t| t.has_dependencies_met_refs(&all_tasks_flat))
                 .collect();
 
             if deps_met.is_empty() {
@@ -420,11 +427,17 @@ mod tests {
         phase
     }
 
+    /// Helper to get task refs from phase for testing
+    fn get_task_refs(phase: &Phase) -> Vec<&Task> {
+        phase.tasks.iter().collect()
+    }
+
     #[test]
     fn test_find_next_available_basic() {
         let phase = create_test_phase();
+        let all_tasks = get_task_refs(&phase);
 
-        match find_next_available(&phase, false) {
+        match find_next_available(&phase, &all_tasks, false) {
             NextTaskResult::Available(task) => {
                 assert_eq!(task.id, "2");
             }
@@ -439,8 +452,10 @@ mod tests {
         // Lock task 2
         phase.get_task_mut("2").unwrap().claim("alice").unwrap();
 
+        let all_tasks = get_task_refs(&phase);
+
         // Without exclude_locked, should still find task 2
-        match find_next_available(&phase, false) {
+        match find_next_available(&phase, &all_tasks, false) {
             NextTaskResult::Available(task) => {
                 assert_eq!(task.id, "2");
             }
@@ -448,7 +463,7 @@ mod tests {
         }
 
         // With exclude_locked, should return AllLocked
-        match find_next_available(&phase, true) {
+        match find_next_available(&phase, &all_tasks, true) {
             NextTaskResult::AllLocked => {}
             _ => panic!("Expected AllLocked result"),
         }
@@ -461,7 +476,9 @@ mod tests {
         task.set_status(TaskStatus::Done);
         phase.add_task(task);
 
-        match find_next_available(&phase, false) {
+        let all_tasks = get_task_refs(&phase);
+
+        match find_next_available(&phase, &all_tasks, false) {
             NextTaskResult::NoPendingTasks => {}
             _ => panic!("Expected NoPendingTasks result"),
         }
@@ -482,8 +499,10 @@ mod tests {
         phase.add_task(task2);
         phase.add_task(task1);
 
+        let all_tasks = get_task_refs(&phase);
+
         // task1 should be found since it has no deps
-        match find_next_available(&phase, false) {
+        match find_next_available(&phase, &all_tasks, false) {
             NextTaskResult::Available(task) => {
                 assert_eq!(task.id, "1");
             }
@@ -501,9 +520,72 @@ mod tests {
 
         phase.add_task(task1);
 
-        match find_next_available(&phase, false) {
+        let all_tasks = get_task_refs(&phase);
+
+        match find_next_available(&phase, &all_tasks, false) {
             NextTaskResult::BlockedByDependencies => {}
             _ => panic!("Expected BlockedByDependencies result"),
+        }
+    }
+
+    #[test]
+    fn test_find_next_cross_tag_dependency() {
+        // Create a phase with a task that depends on a task from another "phase"
+        let mut phase = Phase::new("api".to_string());
+        let mut api_task = Task::new(
+            "api:1".to_string(),
+            "API Task".to_string(),
+            "Desc".to_string(),
+        );
+        api_task.dependencies = vec!["auth:1".to_string()]; // Depends on auth phase
+        phase.add_task(api_task);
+
+        // Create "auth" task (simulating another phase)
+        let mut auth_task = Task::new(
+            "auth:1".to_string(),
+            "Auth Task".to_string(),
+            "Desc".to_string(),
+        );
+        auth_task.set_status(TaskStatus::Done);
+
+        // Combine all tasks (simulating flattened all_phases)
+        let all_tasks: Vec<&Task> = vec![&phase.tasks[0], &auth_task];
+
+        // With cross-tag tasks included, dependency should be met
+        match find_next_available(&phase, &all_tasks, false) {
+            NextTaskResult::Available(task) => {
+                assert_eq!(task.id, "api:1");
+            }
+            _ => panic!("Expected Available result with cross-tag dependency met"),
+        }
+    }
+
+    #[test]
+    fn test_find_next_cross_tag_dependency_not_met() {
+        // Create a phase with a task that depends on a task from another "phase"
+        let mut phase = Phase::new("api".to_string());
+        let mut api_task = Task::new(
+            "api:1".to_string(),
+            "API Task".to_string(),
+            "Desc".to_string(),
+        );
+        api_task.dependencies = vec!["auth:1".to_string()]; // Depends on auth phase
+        phase.add_task(api_task);
+
+        // Create "auth" task (NOT done)
+        let auth_task = Task::new(
+            "auth:1".to_string(),
+            "Auth Task".to_string(),
+            "Desc".to_string(),
+        );
+
+        // Combine all tasks (simulating flattened all_phases)
+        let all_tasks: Vec<&Task> = vec![&phase.tasks[0], &auth_task];
+
+        // With cross-tag dep NOT met, should be blocked
+        match find_next_available(&phase, &all_tasks, false) {
+            NextTaskResult::BlockedByDependencies => {}
+            _ => panic!("Expected BlockedByDependencies with cross-tag dep not met"),
         }
     }
 }

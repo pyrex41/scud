@@ -87,6 +87,13 @@ pub async fn run(
     // Load existing tasks (propagate errors - don't silently swallow them)
     let mut all_tasks = storage.load_tasks()?;
 
+    // Check if other phases exist for cross-tag dependency hint
+    let other_phases: Vec<_> = all_tasks
+        .keys()
+        .filter(|k| *k != tag)
+        .cloned()
+        .collect();
+
     if all_tasks.contains_key(tag) {
         println!(
             "{}",
@@ -107,11 +114,31 @@ pub async fn run(
     println!();
     println!("{:<20} {}", "Tag:".yellow(), tag.cyan());
     println!("{:<20} {}", "Tasks created:".yellow(), parsed_tasks.len());
+
+    // Hint about cross-tag dependencies if other phases exist
+    if !other_phases.is_empty() {
+        println!();
+        println!(
+            "{} Other phases detected: {}",
+            "Note:".cyan(),
+            other_phases.join(", ").yellow()
+        );
+        println!(
+            "      Consider running '{}' to identify cross-phase dependencies.",
+            "scud reanalyze-deps".green()
+        );
+    }
+
     println!();
     println!("{}", "Next steps:".blue());
     println!("  1. Review tasks: scud list");
     println!("  2. Expand complex tasks: scud expand --all");
-    println!("  3. Start working: scud next");
+    if !other_phases.is_empty() {
+        println!("  3. Check cross-phase deps: scud reanalyze-deps");
+        println!("  4. Start working: scud next");
+    } else {
+        println!("  3. Start working: scud next");
+    }
     println!();
 
     Ok(())

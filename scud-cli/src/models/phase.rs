@@ -101,10 +101,21 @@ impl Phase {
             .collect()
     }
 
+    /// Find next task using only local phase tasks for dependency checking.
+    /// For cross-tag dependency support, use find_next_task_cross_tag instead.
     pub fn find_next_task(&self) -> Option<&Task> {
         self.tasks.iter().find(|task| {
             task.status == super::task::TaskStatus::Pending
                 && task.has_dependencies_met(&self.tasks)
+        })
+    }
+
+    /// Find next task with cross-tag dependency support.
+    /// Pass flattened tasks from all phases for proper dependency resolution.
+    pub fn find_next_task_cross_tag<'a>(&'a self, all_tasks: &[&Task]) -> Option<&'a Task> {
+        self.tasks.iter().find(|task| {
+            task.status == super::task::TaskStatus::Pending
+                && task.has_dependencies_met_refs(all_tasks)
         })
     }
 

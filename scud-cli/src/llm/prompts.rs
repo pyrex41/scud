@@ -143,4 +143,52 @@ Return ONLY the JSON array, no additional explanation."#,
             recommended_subtasks
         )
     }
+
+    pub fn reanalyze_dependencies(task_context: &str, phases: &[String]) -> String {
+        format!(
+            r#"You are analyzing a software project's task dependencies across multiple phases.
+
+## Current Task State
+
+{task_context}
+
+## Your Task
+
+Review the tasks above and suggest dependency changes that would improve execution order. Consider:
+
+1. **Logical ordering**: Tasks that produce artifacts another task needs
+2. **Current completion state**: Don't add deps on PENDING tasks for DONE tasks
+3. **Cross-phase dependencies**: Tasks in one phase that should wait for tasks in another
+4. **Remove redundant deps**: If A depends on B, and B depends on C, A doesn't also need C
+5. **Missing dependencies**: If a task clearly requires output from another task, add the dependency
+
+## Rules
+
+- Use full task IDs with phase prefix (e.g., "auth:1", "api:3")
+- Only suggest changes for tasks that are PENDING or IN PROGRESS
+- Don't modify DONE, EXPANDED, or SKIPPED tasks
+- Consider that some tasks may intentionally have no dependencies
+- Be conservative - only suggest changes that are clearly needed
+
+## Response Format
+
+Return a JSON array of suggestions:
+```json
+[
+  {{
+    "task_id": "api:3",
+    "add_dependencies": ["auth:1", "core:2"],
+    "remove_dependencies": [],
+    "reasoning": "API endpoints need authentication service and core models"
+  }}
+]
+```
+
+Return empty array [] if no changes are needed.
+
+Phases to analyze: {phases:?}
+"#,
+            task_context = task_context, phases = phases
+        )
+    }
 }

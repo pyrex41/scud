@@ -301,6 +301,18 @@ impl Task {
         })
     }
 
+    /// Check if all dependencies are met, searching across provided task references
+    /// Supports cross-tag dependencies when passed tasks from all phases
+    pub fn has_dependencies_met_refs(&self, all_tasks: &[&Task]) -> bool {
+        self.dependencies.iter().all(|dep_id| {
+            all_tasks
+                .iter()
+                .find(|t| &t.id == dep_id)
+                .map(|t| t.status == TaskStatus::Done)
+                .unwrap_or(false)
+        })
+    }
+
     /// Returns whether this task should be expanded into subtasks
     /// All tasks with complexity >= 3 can benefit from expansion
     /// Subtasks and already-expanded tasks don't need expansion
@@ -994,5 +1006,74 @@ mod tests {
         assert!(errors.iter().any(|e| e.contains("title")));
         assert!(errors.iter().any(|e| e.contains("description")));
         assert!(errors.iter().any(|e| e.contains("Complexity")));
+    }
+
+    // Cross-tag dependency tests
+    #[test]
+    fn test_cross_tag_dependency_met() {
+        let mut task_a = Task::new(
+            "auth:1".to_string(),
+            "Auth task".to_string(),
+            "Desc".to_string(),
+        );
+        task_a.set_status(TaskStatus::Done);
+
+        let mut task_b = Task::new(
+            "api:1".to_string(),
+            "API task".to_string(),
+            "Desc".to_string(),
+        );
+        task_b.dependencies = vec!["auth:1".to_string()];
+
+        let all_tasks = vec![&task_a, &task_b];
+        assert!(task_b.has_dependencies_met_refs(&all_tasks));
+    }
+
+    #[test]
+    fn test_cross_tag_dependency_not_met() {
+        let task_a = Task::new(
+            "auth:1".to_string(),
+            "Auth task".to_string(),
+            "Desc".to_string(),
+        );
+        // task_a still pending
+
+        let mut task_b = Task::new(
+            "api:1".to_string(),
+            "API task".to_string(),
+            "Desc".to_string(),
+        );
+        task_b.dependencies = vec!["auth:1".to_string()];
+
+        let all_tasks = vec![&task_a, &task_b];
+        assert!(!task_b.has_dependencies_met_refs(&all_tasks));
+    }
+
+    #[test]
+    fn test_local_dependency_still_works_with_refs() {
+        let mut task_a = Task::new("1".to_string(), "First".to_string(), "Desc".to_string());
+        task_a.set_status(TaskStatus::Done);
+
+        let mut task_b = Task::new("2".to_string(), "Second".to_string(), "Desc".to_string());
+        task_b.dependencies = vec!["1".to_string()];
+
+        let all_tasks = vec![&task_a, &task_b];
+        assert!(task_b.has_dependencies_met_refs(&all_tasks));
+    }
+
+    #[test]
+    fn test_has_dependencies_met_refs_missing_dependency() {
+        let mut task = Task::new("api:1".to_string(), "Test".to_string(), "Desc".to_string());
+        task.dependencies = vec!["auth:1".to_string(), "auth:MISSING".to_string()];
+
+        let mut dep1 = Task::new(
+            "auth:1".to_string(),
+            "Dep 1".to_string(),
+            "Desc".to_string(),
+        );
+        dep1.set_status(TaskStatus::Done);
+
+        let all_tasks = vec![&dep1];
+        assert!(!task.has_dependencies_met_refs(&all_tasks));
     }
 }

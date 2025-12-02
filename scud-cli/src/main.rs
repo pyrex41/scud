@@ -213,6 +213,25 @@ enum Commands {
         tag: Option<String>,
     },
 
+    /// Re-analyze and suggest cross-tag dependencies (AI-powered)
+    ReanalyzeDeps {
+        /// Tag to analyze (default: all tags)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Analyze all tags (default if no tag specified)
+        #[arg(long)]
+        all_tags: bool,
+
+        /// Automatically apply suggestions without prompting
+        #[arg(long)]
+        apply: bool,
+
+        /// Show suggestions without applying
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     // Task Assignment commands
     /// Assign task to a developer
     Assign {
@@ -411,6 +430,21 @@ async fn main() -> Result<()> {
         }
         Commands::Expand { task_id, all, tag } => {
             commands::ai::expand::run(cli.project, task_id.as_deref(), all, tag.as_deref()).await
+        }
+        Commands::ReanalyzeDeps {
+            tag,
+            all_tags,
+            apply,
+            dry_run,
+        } => {
+            commands::ai::reanalyze_deps::run(
+                cli.project,
+                tag.as_deref(),
+                all_tags,
+                apply,
+                dry_run,
+            )
+            .await
         }
         Commands::Assign {
             task_id,
