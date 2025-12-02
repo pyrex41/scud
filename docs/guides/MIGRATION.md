@@ -7,18 +7,18 @@ This guide helps existing Task Master users migrate to SCUD (Sprint Cycle Unifie
 SCUD is a complete rewrite of the Task Master tool with:
 - **50x faster** startup (Rust vs. Node.js with MCP)
 - **42x fewer tokens** (direct API calls vs. MCP overhead)
-- **Same workflow** - commands and JSON format are backward compatible
-- **New features** - parallel development with epic groups and task assignment
+- **Same workflow** - commands and task format are backward compatible
+- **New features** - parallel development with tag groups and task assignment
 
 ## Breaking Changes
 
-### ⚠️ None!
+### ⚠️ Storage Format Changed!
 
-SCUD is designed to be **100% backward compatible** with existing Task Master projects:
-- All task JSON files remain unchanged
-- Same `.taskmaster/` directory structure
-- All slash commands work identically (`/tm-pm`, `/tm-dev`, etc.)
-- Workflow phases are the same
+SCUD now uses **SCG (SCUD Graph)** format instead of JSON:
+- Tasks stored in `.scud/tasks/tasks.scg` (was `.taskmaster/tasks/tasks.json`)
+- Config in `.scud/config.toml` (was `.taskmaster/workflow-state.json`)
+
+However, the CLI will automatically migrate your existing JSON tasks if found.
 
 ## What Changed
 
@@ -45,12 +45,28 @@ npm install -g @eyaltoledano/claude-task-master
 
 **New:**
 ```bash
-npm install -g scud
-# Or clone and run:
-./install-claude-code.sh
+pnpm add -g scud-task   # recommended
+# Or:
+npm install -g scud-task
 ```
 
-### 3. Performance
+### 3. Directory Structure
+
+**Old:**
+```
+.taskmaster/
+├── tasks/tasks.json
+└── workflow-state.json
+```
+
+**New:**
+```
+.scud/
+├── tasks/tasks.scg      # SCG format (75% fewer tokens)
+└── config.toml          # Active tag and settings
+```
+
+### 4. Performance
 
 **Old behavior:**
 - Startup time: ~2-3 seconds
@@ -62,26 +78,24 @@ npm install -g scud
 - Parse PRD: ~8-12 seconds (3-4x faster)
 - Direct API calls, no MCP
 
-### 4. New Features (Optional)
+### 5. New Features (Optional)
 
 SCUD adds **experimental parallel development features** that are completely optional:
 
-#### Epic Groups
-Coordinate related epics (e.g., backend + frontend):
+#### Tag Groups
+Coordinate related tags (e.g., backend + frontend):
 ```bash
-scud create-group fullstack --description "Backend + Frontend"
-scud add-to-group backend fullstack
-scud add-to-group frontend fullstack
+scud create-group fullstack --tags backend,frontend --description "Backend + Frontend"
 scud group-status fullstack
 ```
 
 #### Task Assignment & Locking
-Multiple developers can work on the same epic:
+Multiple developers can work on the same tag:
 ```bash
-scud assign TASK-123 alice
-scud claim TASK-123 alice  # Locks the task
-scud whois                  # See all assignments
-scud release TASK-123       # Unlock when done
+scud assign 123 alice
+scud claim 123 --name alice    # Locks the task
+scud whois                      # See all assignments
+scud release 123                # Unlock when done
 ```
 
 ## Migration Steps
@@ -89,28 +103,32 @@ scud release TASK-123       # Unlock when done
 ### Step 1: Install SCUD
 
 ```bash
-npm install -g scud
+pnpm add -g scud-task   # recommended
+# Or:
+npm install -g scud-task
 ```
 
-Or for local development:
-```bash
-git clone https://github.com/yourusername/scud.git
-cd scud
-./install-claude-code.sh
-```
-
-### Step 2: Verify Existing Project
-
-Your existing `.taskmaster/` directory will work as-is:
+### Step 2: Initialize New Project
 
 ```bash
-cd your-existing-project
-scud tags    # Should list your existing epics
-scud list    # Should list your tasks
-scud stats   # Should show your statistics
+cd your-project
+scud init
+scud hooks install   # Enable automatic task completion
 ```
 
-### Step 3: Update Slash Commands (Optional)
+### Step 3: Migrate Existing Tasks (If Any)
+
+If you have an existing `.taskmaster/` directory:
+
+```bash
+# SCUD will auto-detect and offer to migrate
+scud tags
+
+# Or manually re-parse your PRDs:
+scud parse-prd docs/features/my-feature.md --tag my-feature
+```
+
+### Step 4: Update Slash Commands (Optional)
 
 If you use Claude Code or OpenCode, the slash commands are already updated:
 - `/tm-pm` - Product Manager agent
@@ -121,7 +139,7 @@ If you use Claude Code or OpenCode, the slash commands are already updated:
 
 These work identically to before.
 
-### Step 4: Update Any Scripts
+### Step 5: Update Any Scripts
 
 If you have scripts calling `task-master`, update them to use `scud`:
 
@@ -130,7 +148,7 @@ If you have scripts calling `task-master`, update them to use `scud`:
 task-master parse-prd docs/prd/feature.md --tag feature
 
 # New
-scud parse-prd docs/prd/feature.md --tag feature
+scud parse-prd docs/features/feature.md --tag feature
 ```
 
 Or create an alias:
@@ -144,38 +162,42 @@ If you encounter issues, you can rollback:
 
 ```bash
 # Uninstall SCUD
-npm uninstall -g scud
+npm uninstall -g scud-task
 
 # Reinstall old task-master
 npm install -g @eyaltoledano/claude-task-master
 ```
 
-Your `.taskmaster/` data is unchanged and will work with either tool.
+Note: You may need to re-create tasks from your PRDs since the storage format changed.
 
 ## FAQ
 
 ### Q: Will my existing tasks be affected?
 
-**A:** No. SCUD uses the exact same JSON schema as Task Master. All your existing tasks, epics, and workflow state are preserved.
+**A:** The storage format changed from JSON to SCG. SCUD can migrate existing JSON tasks, or you can re-parse your PRDs.
 
-### Q: Do I need to update my PRDs or epic documents?
+### Q: Do I need to update my PRDs or feature documents?
 
 **A:** No. SCUD parses markdown the same way as Task Master.
 
 ### Q: What if I don't want the new parallel features?
 
-**A:** Simply don't use them! The epic groups and task assignment features are completely optional. SCUD works exactly like Task Master if you ignore the new commands.
+**A:** Simply don't use them! The tag groups and task assignment features are completely optional. SCUD works exactly like Task Master if you ignore the new commands.
 
 ### Q: Can I use both tools?
 
-**A:** Yes, but not simultaneously. Both read/write the same `.taskmaster/` directory, so use one or the other per project.
+**A:** Not recommended - they use different storage formats (`.taskmaster/` vs `.scud/`).
 
-### Q: What about my ANTHROPIC_API_KEY?
+### Q: What about my API key?
 
-**A:** Same as before - set it in your environment:
+**A:** Default provider changed to xAI:
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+export XAI_API_KEY="xai-..."
 ```
+
+Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`), OpenRouter (`OPENROUTER_API_KEY`).
+
+Configure with `scud config --provider <provider> --model <model>`.
 
 ### Q: Where did DETAILED_WALKTHROUGH.md go?
 
@@ -206,14 +228,14 @@ Token usage (MCP vs direct API):
 - **Complete Reference**: See `COMPLETE_GUIDE.md`
 - **Command Cheat Sheet**: See `QUICK_REFERENCE.md`
 - **Parallel Features**: See `PARALLEL_FEATURES.md`
-- **Issues**: https://github.com/yourusername/scud/issues
+- **Issues**: https://github.com/pyrex41/scud/issues
 
 ## Summary
 
-✅ **Zero breaking changes** - existing projects work as-is
 ✅ **Same commands** - muscle memory preserved
 ✅ **Same workflow** - no retraining needed
 ✅ **50x faster** - dramatic performance improvement
 ✅ **New features** - optional parallel development tools
+✅ **New storage format** - SCG for 75% token reduction
 
 SCUD is a drop-in replacement that makes your existing workflow faster and more powerful.

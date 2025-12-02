@@ -88,6 +88,10 @@ enum Commands {
         /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
+
+        /// Output as JSON instead of SCG format
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show detailed task information
@@ -349,8 +353,8 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Init { provider } => commands::init::run(cli.project, provider),
         Commands::Tags { tag } => commands::tags::run(cli.project, tag.as_deref()),
-        Commands::List { status, tag } => {
-            commands::list::run(cli.project, status.as_deref(), tag.as_deref())
+        Commands::List { status, tag, json } => {
+            commands::list::run(cli.project, status.as_deref(), tag.as_deref(), json)
         }
         Commands::Show { task_id, tag } => {
             commands::show::run(cli.project, &task_id, tag.as_deref())

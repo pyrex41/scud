@@ -17,13 +17,13 @@ This is a high-performance Rust rewrite of the SCUD task management system. It r
 scud (Rust Binary)
 ├── Core Commands (No AI - Instant)
 │   ├── init               # Initialize .taskmaster/
-│   ├── tags               # List epic tags
-│   ├── use-tag            # Switch active epic
+│   ├── tags               # List tags
+│   ├── use-tag            # Switch active tag
 │   ├── list               # List tasks with filters
 │   ├── show               # Show task details
 │   ├── set-status         # Update task status
 │   ├── next               # Find next available task (--claim for dynamic-wave)
-│   ├── stats              # Show epic statistics
+│   ├── stats              # Show statistics
 │   └── doctor             # [EXPERIMENTAL] Diagnose stuck states
 │
 ├── AI Commands (Direct Anthropic API)
@@ -32,9 +32,8 @@ scud (Rust Binary)
 │   ├── expand             # Break down complex tasks
 │   └── research           # AI-powered research
 │
-└── Storage (JSON)
-    ├── .taskmaster/tasks/tasks.json
-    └── .taskmaster/workflow-state.json
+└── Storage (SCG)
+    └── .scud/tasks/tasks.scg
 ```
 
 ## Building
@@ -57,11 +56,11 @@ cargo build --release
 # Initialize SCUD
 scud init
 
-# List epic tags
+# List tags
 scud tags
 
-# Switch to an epic
-scud use-tag epic-1-auth
+# Switch to a tag
+scud use-tag auth
 
 # List tasks
 scud list
@@ -99,11 +98,11 @@ scud next --release --name agent-1
 Diagnose stuck workflow states:
 
 ```bash
-# Check for issues in all epics
+# Check for issues in all tags
 scud doctor
 
-# Check specific epic with custom stale threshold
-scud doctor --tag epic-1 --stale-hours 12
+# Check specific tag with custom stale threshold
+scud doctor --tag auth --stale-hours 12
 
 # Auto-fix recoverable issues (stale locks, orphan tasks)
 scud doctor --fix
@@ -113,7 +112,7 @@ The doctor command detects:
 - Stale locks (tasks locked >24h by default)
 - Tasks blocked by cancelled/missing dependencies
 - Orphan in-progress tasks (not locked, stale)
-- Missing active epic
+- Missing active tag
 - Corrupt storage files
 
 ### AI Commands
@@ -122,7 +121,7 @@ The doctor command detects:
 
 ```bash
 # Parse PRD into tasks
-scud parse-prd docs/epics/auth.md --tag epic-1-auth
+scud parse-prd docs/features/auth.md --tag auth
 
 # Analyze complexity
 scud analyze-complexity                # All tasks
@@ -206,25 +205,20 @@ struct Task {
 }
 ```
 
-### Epic
+### Phase
 ```rust
-struct Epic {
+struct Phase {
     name: String,
     tasks: Vec<Task>,
 }
 ```
 
-### Workflow State
-```rust
-struct WorkflowState {
-    version: String,
-    current_phase: String,      // ideation, planning, etc.
-    active_epic: Option<String>,
-    phases: HashMap<String, PhaseInfo>,
-    history: Vec<Value>,
-    completed_epics: Vec<CompletedEpic>,
-    last_updated: Option<String>,
-}
+### Config
+```toml
+[llm]
+provider = "xai"
+model = "grok-code-fast-1"
+max_tokens = 4096
 ```
 
 ## LLM Integration
@@ -273,8 +267,7 @@ scud-cli/
 │   │       └── research.rs
 │   ├── models/
 │   │   ├── task.rs
-│   │   ├── epic.rs
-│   │   └── workflow.rs
+│   │   └── phase.rs
 │   ├── storage/
 │   │   └── mod.rs           # JSON I/O
 │   └── llm/

@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server for [SCUD](https://github.com/yourusername/b
 
 **SCUD MCP** wraps the SCUD CLI and exposes it through the Model Context Protocol, allowing any MCP-compatible client to:
 - Parse PRDs into tasks using AI
-- Manage epics and task lifecycles
+- Manage tags and task lifecycles
 - Track workflow state and progress
 - Coordinate parallel development across teams
 - Analyze complexity and expand tasks automatically
@@ -21,13 +21,13 @@ Perfect for teams using Claude Desktop, Cline, or other MCP clients who want AI-
 - `scud_init` - Initialize SCUD in current directory
 - `scud_list` - List tasks (optionally filter by status)
 - `scud_next` - Find next available task
-- `scud_stats` - Show epic statistics
+- `scud_stats` - Show statistics
 - `scud_show` - Show task details
 - `scud_set_status` - Update task status
 
-#### Epic Management
-- `scud_tags` - List all epic tags
-- `scud_use_tag` - Set active epic
+#### Tag Management
+- `scud_tags` - List all tags
+- `scud_use_tag` - Set active tag
 
 #### AI-Powered (Requires ANTHROPIC_API_KEY)
 - `scud_parse_prd` - Parse PRD markdown into tasks
@@ -36,8 +36,8 @@ Perfect for teams using Claude Desktop, Cline, or other MCP clients who want AI-
 - `scud_research` - AI-powered research
 
 #### Parallel Development
-- `scud_create_group` - Create epic group for parallel work
-- `scud_list_groups` - List all epic groups
+- `scud_create_group` - Create tag group for parallel work
+- `scud_list_groups` - List all tag groups
 - `scud_group_status` - Show group progress
 - `scud_assign` - Assign task to developer
 - `scud_claim` - Claim task for yourself
@@ -46,8 +46,8 @@ Perfect for teams using Claude Desktop, Cline, or other MCP clients who want AI-
 
 ### 📊 **3 MCP Resources** (Read-only Data)
 - `scud://workflow/state` - Current workflow state (JSON)
-- `scud://tasks/list` - All tasks in active epic (JSON)
-- `scud://stats/epic` - Epic statistics (text)
+- `scud://tasks/list` - All tasks in active tag (JSON)
+- `scud://stats/current` - Tag statistics (text)
 
 ## Installation
 
@@ -104,16 +104,16 @@ Restart Claude Desktop to load the MCP server. You should see the SCUD tools ava
 ### Example 1: Initialize Project and Parse PRD
 
 **You (in Claude Desktop):**
-> Initialize SCUD and parse my PRD file at docs/epics/epic-1-auth.md with tag epic-1-auth
+> Initialize SCUD and parse my PRD file at docs/features/auth.md with tag auth
 
 **Claude:**
 ```
 [calls scud_init]
 ✓ Initialized SCUD successfully
 
-[calls scud_parse_prd with file="docs/epics/epic-1-auth.md", tag="epic-1-auth"]
+[calls scud_parse_prd with file="docs/features/auth.md", tag="auth"]
 ✓ Parsed PRD into 12 tasks
-✓ Active epic set to: epic-1-auth
+✓ Active tag set to: auth
 ```
 
 ### Example 2: Development Workflow
@@ -192,19 +192,19 @@ TASK-3-5: Add OAuth2 error handling (complexity: 3)
 ### Example 4: Parallel Development
 
 **You:**
-> Create a sprint group with epic-1-auth, epic-2-api, and epic-3-frontend
+> Create a sprint group with auth, api, and frontend tags
 
 **Claude:**
 ```
-[calls scud_create_group with name="sprint-1", epics="epic-1-auth,epic-2-api,epic-3-frontend"]
+[calls scud_create_group with name="sprint-1", tags="auth,api,frontend"]
 ✓ Created group: sprint-1
 
 [calls scud_group_status with group_id="sprint-1"]
 
 Sprint 1 Status:
-  epic-1-auth: 5/12 tasks done (42%)
-  epic-2-api: 2/8 tasks done (25%)
-  epic-3-frontend: 0/15 tasks done (0%)
+  auth: 5/12 tasks done (42%)
+  api: 2/8 tasks done (25%)
+  frontend: 0/15 tasks done (0%)
 
 Overall: 7/35 tasks completed (20%)
 ```
@@ -219,7 +219,7 @@ Overall: 7/35 tasks completed (20%)
 [reads scud://workflow/state resource]
 
 {
-  "active_epic": "epic-1-auth",
+  "active_tag": "auth",
   "current_phase": "development",
   "phases": {
     "planning": { "status": "completed", "completed_at": "2025-11-15T10:00:00Z" },
@@ -238,16 +238,16 @@ Overall: 7/35 tasks completed (20%)
 | `scud_init` | - | Initialize SCUD in current directory |
 | `scud_list` | `status?` | List tasks (filter by status) |
 | `scud_next` | - | Find next available task |
-| `scud_stats` | - | Show epic statistics |
+| `scud_stats` | - | Show statistics |
 | `scud_show` | `task_id` | Show task details |
 | `scud_set_status` | `task_id`, `status` | Update task status |
 
-### Epic Management
+### Tag Management
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `scud_tags` | - | List all epic tags |
-| `scud_use_tag` | `tag` | Set active epic tag |
+| `scud_tags` | - | List all tags |
+| `scud_use_tag` | `tag` | Set active tag |
 
 ### AI Tools (Require ANTHROPIC_API_KEY)
 
@@ -262,8 +262,8 @@ Overall: 7/35 tasks completed (20%)
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `scud_create_group` | `name`, `epics`, `description?` | Create epic group |
-| `scud_list_groups` | - | List all epic groups |
+| `scud_create_group` | `name`, `tags`, `description?` | Create tag group |
+| `scud_list_groups` | - | List all tag groups |
 | `scud_group_status` | `group_id` | Show group status |
 | `scud_assign` | `task_id`, `assignee` | Assign task to developer |
 | `scud_claim` | `task_id`, `name` | Claim task for yourself |
@@ -275,8 +275,8 @@ Overall: 7/35 tasks completed (20%)
 | Resource | Description | Format |
 |----------|-------------|--------|
 | `scud://workflow/state` | Current workflow state | JSON |
-| `scud://tasks/list` | All tasks in active epic | JSON |
-| `scud://stats/epic` | Epic statistics | Text |
+| `scud://tasks/list` | All tasks in active tag | JSON |
+| `scud://stats/current` | Tag statistics | Text |
 
 ## Task Status Values
 
@@ -334,14 +334,14 @@ AI tools require an API key. Add it to your Claude Desktop config:
 }
 ```
 
-### "No active epic set"
+### "No active tag set"
 
-Initialize a project and set an active epic:
+Initialize a project and set an active tag:
 
 ```
 1. Run scud_init
-2. Run scud_parse_prd or manually create an epic
-3. Run scud_use_tag to set the active epic
+2. Run scud_parse_prd to create tasks with a tag
+3. Run scud_use_tag to set the active tag
 ```
 
 ### Tools not showing in Claude Desktop
@@ -372,7 +372,7 @@ scud-mcp/
 │   ├── types.ts           # TypeScript types
 │   ├── tools/             # Tool implementations
 │   │   ├── core.ts        # Core commands
-│   │   ├── epic.ts        # Epic management
+│   │   ├── tags.ts        # Tag management
 │   │   ├── task.ts        # Task operations
 │   │   ├── ai.ts          # AI-powered tools
 │   │   └── parallel.ts    # Parallel development

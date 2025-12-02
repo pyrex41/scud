@@ -9,7 +9,7 @@ Ideation → Planning → Architecture → Implementation → Retrospective
 | Phase | Agent | Command | Output |
 |-------|-------|---------|--------|
 | **Ideation** | Product Manager | `/tm-pm` | PRD document |
-| **Planning** | PM + Scrum Master | `/tm-pm` → `/tm-sm` | Epic files + Tasks |
+| **Planning** | PM + Scrum Master | `/tm-pm` → `/tm-sm` | Feature files + Tasks |
 | **Architecture** | Architect | `/tm-architect` | Architecture doc + Task details |
 | **Implementation** | Developer | `/tm-dev` | Working code + Tests |
 | **Retrospective** | Facilitator | `/tm-retrospective` | Learnings doc |
@@ -26,8 +26,8 @@ scud status              # Check current state
 
 ### Task Management
 ```bash
-scud tags                # List all epics
-scud use-tag <tag>       # Switch epic
+scud tags                # List all tags
+scud use-tag <tag>       # Switch active tag
 scud list                # List tasks
 scud list --status done  # Filter by status
 scud show <id>           # Task details
@@ -56,7 +56,7 @@ scud doctor --fix
 
 ### AI Commands (require XAI_API_KEY)
 ```bash
-scud parse-prd <file> --tag <tag>  # Parse epic into tasks
+scud parse-prd <file> --tag <tag>  # Parse PRD into tasks
 scud analyze-complexity             # Score all tasks
 scud analyze-complexity --task <id> # Score specific task
 scud expand <id>                    # Split complex task
@@ -108,12 +108,12 @@ scud init
 /tm-pm
 # Answer questions, PRD created in docs/prd/
 
-# 3. Create epics
+# 3. Create feature specs
 /tm-pm  # (in planning mode)
-# Creates docs/epics/epic-*.md
+# Creates docs/features/*.md
 
-# 4. Parse first epic
-scud parse-prd docs/epics/epic-1-auth.md --tag epic-1-auth
+# 4. Parse first feature
+scud parse-prd docs/features/auth.md --tag auth
 
 # 5. Review and refine tasks
 scud list
@@ -133,14 +133,14 @@ scud expand --all  # if needed
 # All tasks done, creates learnings doc
 ```
 
-### Continuing Existing Epic
+### Continuing Existing Feature
 
 ```bash
 # Check status
 scud status
 
-# Switch to epic if needed
-scud use-tag epic-1-auth
+# Switch tag if needed
+scud use-tag auth
 
 # Find next task
 scud next
@@ -155,12 +155,12 @@ scud next
 
 ### `/tm-pm` (Product Manager)
 - **When:** Start of project, defining features
-- **Creates:** PRD, epic files
+- **Creates:** PRD, feature files
 - **Phase:** Ideation → Planning
 
 ### `/tm-sm` (Scrum Master)
-- **When:** After epics are created
-- **Does:** Parse epics, refine tasks, break down complex tasks
+- **When:** After features are defined
+- **Does:** Parse PRDs, refine tasks, break down complex tasks
 - **Phase:** Planning
 - **Key:** Ensures all tasks are ≤13 complexity
 
@@ -188,7 +188,7 @@ scud next
 
 ### `/status` (Status Reporter)
 - **When:** Anytime
-- **Does:** Show current phase, active epic, next steps
+- **Does:** Show current phase, active tag, next steps
 - **Phase:** Any
 
 ---
@@ -205,13 +205,13 @@ project/
 ├── docs/
 │   ├── prd/
 │   │   └── product-name-prd.md     # Product requirements
-│   ├── epics/
-│   │   ├── epic-1-feature.md       # Epic descriptions
-│   │   └── epic-2-feature.md
+│   ├── features/
+│   │   ├── auth.md                 # Feature specifications
+│   │   └── payments.md
 │   ├── architecture/
-│   │   └── epic-1-architecture.md  # Technical designs
+│   │   └── auth-architecture.md    # Technical designs
 │   └── retrospectives/
-│       └── epic-1-retrospective.md # Learnings
+│       └── auth-retrospective.md   # Learnings
 │
 └── .claude/commands/               # Slash commands (if using Claude Code)
     ├── tm-pm.md
@@ -268,7 +268,7 @@ export XAI_API_KEY=xai-...
 | Problem | Solution |
 |---------|----------|
 | No tasks file | `scud init` |
-| No active epic | `scud use-tag <tag>` |
+| No active tag | `scud use-tag <tag>` |
 | Wrong phase | Check `/status`, use correct agent |
 | Dependencies not met | `scud next` to find available tasks |
 | Task too complex | `scud expand <id>` or `scud expand --all` |
@@ -302,9 +302,9 @@ export XAI_API_KEY=xai-...
 
 ## Key Metrics
 
-Track these for each epic:
+Track these for each tag:
 
-- **Total tasks:** Number of tasks in epic
+- **Total tasks:** Number of tasks in tag
 - **Total complexity:** Sum of all complexity points
 - **Completion %:** (Done tasks / Total tasks) × 100
 - **Tasks split:** How many needed expansion
@@ -320,8 +320,8 @@ View with: `scud stats`
 ```bash
 scud init
 /tm-pm              # Create mini-PRD
-/tm-pm              # Create single epic
-scud parse-prd docs/epics/feature.md --tag feature
+/tm-pm              # Create feature spec
+scud parse-prd docs/features/feature.md --tag feature
 /tm-architect       # Add details
 /tm-dev             # Implement
 /tm-retrospective   # Learn
@@ -331,23 +331,23 @@ scud parse-prd docs/epics/feature.md --tag feature
 ```bash
 scud init
 /tm-pm              # Comprehensive PRD
-/tm-pm              # Break into 5-7 epics
+/tm-pm              # Break into 5-7 features
 
-# For each epic:
-scud parse-prd docs/epics/epic-1.md --tag epic-1
+# For each feature:
+scud parse-prd docs/features/auth.md --tag auth
 scud analyze-complexity
 scud expand --all
 /tm-architect
 /tm-dev
 /tm-retrospective
 
-# Repeat for each epic
+# Repeat for each feature
 ```
 
 ### Bug Fix Batch
 ```bash
-# Create "bug-fixes" epic
-scud parse-prd docs/epics/bugs.md --tag bugs
+# Create "bug-fixes" tag
+scud parse-prd docs/features/bugs.md --tag bugs
 # Or manually add tasks to tasks.scg
 /tm-architect  # Add fix details
 /tm-dev        # Fix bugs
@@ -382,7 +382,7 @@ scud parse-prd docs/epics/bugs.md --tag bugs
 
 ### With Git
 - Commit after each phase
-- Tag releases by epic
+- Tag releases by feature
 - Track in commit messages
 
 ### With Other Tools

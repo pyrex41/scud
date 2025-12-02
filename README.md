@@ -40,7 +40,7 @@ node bin/postinstall.js
 ### Basic Usage
 ```bash
 # Create tasks manually or parse from a PRD
-scud parse-prd docs/epic.md --tag my-feature
+scud parse-prd docs/feature.md --tag my-feature
 
 # Find and work on next ready task
 scud next --tag my-feature

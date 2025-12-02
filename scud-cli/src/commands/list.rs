@@ -1,15 +1,16 @@
 use anyhow::Result;
-use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::commands::helpers::resolve_group_tag;
-use crate::models::TaskStatus;
+use crate::formats::serialize_scg;
+use crate::models::{Phase, TaskStatus};
 use crate::storage::Storage;
 
 pub fn run(
     project_root: Option<PathBuf>,
     status_filter: Option<&str>,
     tag: Option<&str>,
+    json_output: bool,
 ) -> Result<()> {
     let storage = Storage::new(project_root);
 
@@ -29,44 +30,50 @@ pub fn run(
         })
         .transpose()?;
 
-    // OPTIMIZED: Use iterator instead of clone
-    let task_iter = phase.tasks.iter().filter(|t| {
-        filter_status
-            .as_ref()
-            .map(|fs| t.status == *fs)
-            .unwrap_or(true)
-    });
+    // Create filtered phase for output
+    let filtered_phase = if filter_status.is_some() {
+        let filtered_tasks: Vec<_> = phase
+            .tasks
+            .iter()
+            .filter(|t| {
+                filter_status
+                    .as_ref()
+                    .map(|fs| t.status == *fs)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
 
-    if task_iter.clone().count() == 0 {
-        println!("{}", "No tasks found".yellow());
+        let mut filtered = Phase::new(phase.name.clone());
+        filtered.tasks = filtered_tasks;
+        filtered
+    } else {
+        phase.clone()
+    };
+
+    if filtered_phase.tasks.is_empty() {
+        if json_output {
+            println!("[]");
+        } else {
+            // Output empty SCG
+            println!("# SCUD Graph v1");
+            println!("# Phase: {}", phase_tag);
+            println!();
+            println!("@nodes");
+            println!("# id | title | status | complexity | priority");
+            println!("# (no tasks)");
+        }
         return Ok(());
     }
 
-    println!("{} {}", "Tasks in phase:".blue().bold(), phase.name.green());
-    println!();
-
-    for task in task_iter {
-        let status_color = match task.status {
-            TaskStatus::Done => "done".green(),
-            TaskStatus::InProgress => "in-progress".yellow(),
-            TaskStatus::Blocked => "blocked".red(),
-            TaskStatus::Pending => "pending".white(),
-            _ => task.status.as_str().white(),
-        };
-
-        let complexity_str = if task.complexity > 0 {
-            format!("[{}]", task.complexity)
-        } else {
-            "".to_string()
-        };
-
-        println!(
-            "  {:<4} {:<15} {} {}",
-            task.id.cyan(),
-            status_color,
-            task.title,
-            complexity_str.yellow()
-        );
+    if json_output {
+        // JSON output
+        let json = serde_json::to_string_pretty(&filtered_phase.tasks)?;
+        println!("{}", json);
+    } else {
+        // SCG output (default)
+        let scg = serialize_scg(&filtered_phase);
+        print!("{}", scg);
     }
 
     Ok(())

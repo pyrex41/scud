@@ -4,29 +4,29 @@
 
 ---
 
-## Tag Management (Epic Organization)
+## Tag Management
 
 ```bash
-# List all tags (epics)
+# List all tags
 scud tags
 
-# Create new tag/epic and parse PRD into it
-scud parse-prd --input=docs/epics/epic-1-auth.md --tag=epic-1-auth
+# Create new tag and parse PRD into it
+scud parse-prd docs/features/auth.md --tag auth
 
-# Switch to work on specific tag/epic
-scud use-tag epic-1-auth
+# Switch to work on specific tag
+scud use-tag auth
 
 # Add a new empty tag
-scud add-tag epic-2-todos --d="Todo CRUD operations"
+scud add-tag todos --d="Todo CRUD operations"
 
 # Copy existing tag to new tag
-scud copy-tag epic-1-auth epic-1-auth-v2
+scud copy-tag auth auth-v2
 
 # Rename a tag
 scud rename-tag old-name new-name
 
 # Delete a tag (with confirmation)
-scud delete-tag epic-old
+scud delete-tag old-tag
 ```
 
 **Critical Note:** All task operations apply to the **currently active tag** only. Always verify which tag is active before operations.
@@ -217,12 +217,12 @@ scud research "Implementation details" -d=3
 
 ```bash
 # Parse PRD into tasks (creates or updates tag)
-scud parse-prd --input=docs/epics/epic-1-auth.md --tag=epic-1-auth
+scud parse-prd docs/features/auth.md --tag auth
 
 # Generate with specific number of tasks
-scud parse-prd --input=docs/prd/product.md --num-tasks=15 --tag=main-product
+scud parse-prd docs/prd/product.md --num-tasks=15 --tag main-product
 
-# Generate individual task files from tasks.json
+# Generate individual task files from tasks.scg
 scud generate
 ```
 
@@ -278,10 +278,10 @@ scud models --set-fallback gpt-4
 
 ## Common Workflows
 
-### Starting New Epic
+### Starting New Feature
 ```bash
 # 1. Parse PRD with tag
-scud parse-prd --input=docs/epics/epic-1-auth.md --tag=epic-1-auth
+scud parse-prd docs/features/auth.md --tag auth
 
 # 2. Verify it's active
 scud tags
@@ -311,19 +311,19 @@ scud show 3
 scud set-status --id=3 --status=done
 ```
 
-### Switching Between Epics
+### Switching Between Tags
 ```bash
-# 1. List all epics
+# 1. List all tags
 scud tags
 
-# 2. Switch to different epic
-scud use-tag epic-2-todos
+# 2. Switch to different tag
+scud use-tag todos
 
 # 3. Verify switch worked
 scud list
 
 # 4. Switch back
-scud use-tag epic-1-auth
+scud use-tag auth
 ```
 
 ### Breaking Down Complex Tasks
@@ -351,8 +351,8 @@ scud add-dependency --id=5.2 --depends-on=5.1
 ```
 .scud/
 ├── tasks/
-│   └── tasks.json          # All tasks (organized by tags)
-├── config.json             # AI model configuration
+│   └── tasks.scg           # All tasks in SCG format
+├── config.toml             # AI model configuration and active tag
 └── task-files/             # Individual task files (if using generate)
 ```
 
@@ -362,9 +362,11 @@ scud add-dependency --id=5.2 --depends-on=5.1
 
 Required in `.env`:
 ```bash
+XAI_API_KEY=xai-...           # Default provider
+# Alternative providers:
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
-# Add other provider keys as needed
+OPENROUTER_API_KEY=...
 ```
 
 ---
@@ -396,7 +398,7 @@ OPENAI_API_KEY=sk-...
    scud research "Best approach for..." -i=3
    ```
 
-6. **Validate dependencies** before marking epic complete:
+6. **Validate dependencies** before marking tag complete:
    ```bash
    scud validate-dependencies
    ```
@@ -411,7 +413,7 @@ OPENAI_API_KEY=sk-...
 - Forget which tag is active
 - Create tasks with complexity >13 without breaking down
 
-- Always use tags for epic organization
+- Always use tags for feature organization
 - Validate dependencies regularly
 - Check `scud next` for available tasks
 - Expand complex tasks into subtasks
@@ -419,5 +421,5 @@ OPENAI_API_KEY=sk-...
 
 ---
 
-**Last Updated:** 2025-11-26
-**Version:** SCUD v1.15.0
+**Last Updated:** 2025-12-02
+**Version:** SCUD v1.17.0

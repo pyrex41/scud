@@ -1,6 +1,6 @@
 # SCUD Parallel Features (Experimental)
 
-Enable parallel development with epic groups and task assignment for team collaboration.
+Enable parallel development with tag groups and task assignment for team collaboration.
 
 ---
 
@@ -8,16 +8,16 @@ Enable parallel development with epic groups and task assignment for team collab
 
 SCUD now supports two powerful features for parallel development:
 
-1. **Epic Groups** - Coordinate related epics (e.g., backend/frontend) that share context
-2. **Task Assignment** - Lock mechanism for multiple developers working on the same epic
+1. **Tag Groups** - Coordinate related tags (e.g., backend/frontend) that share context
+2. **Task Assignment** - Lock mechanism for multiple developers working on the same tag
 
 ---
 
-## Epic Groups
+## Tag Groups
 
 ### Concept
 
-Epic groups allow you to work on multiple related epics simultaneously while maintaining coordination. Perfect for:
+Tag groups allow you to work on multiple related tags simultaneously while maintaining coordination. Perfect for:
 
 - **Backend + Frontend** split
 - **Core + UI** feature development
@@ -28,21 +28,21 @@ Epic groups allow you to work on multiple related epics simultaneously while mai
 
 #### Create a Group
 ```bash
-scud create-group "User Authentication" --epics epic-1-auth-backend,epic-1-auth-frontend
+scud create-group "User Authentication" --tags auth-backend,auth-frontend
 
 # With description
 scud create-group "Payment System" \
-  --epics epic-2-pay-backend,epic-2-pay-frontend \
+  --tags pay-backend,pay-frontend \
   --description "Complete payment processing implementation"
 ```
 
 **Output:**
 ```
-✅ Epic group created!
+✅ Tag group created!
 
 Group ID:            user-authentication
 Name:                User Authentication
-Epics:               epic-1-auth-backend, epic-1-auth-frontend
+Tags:                auth-backend, auth-frontend
 
 Usage:
   scud group-status user-authentication
@@ -57,14 +57,14 @@ scud list-groups
 
 **Output:**
 ```
-Epic Groups:
+Tag Groups:
 
 ● User Authentication (user-authentication)
-  Epics: epic-1-auth-backend, epic-1-auth-frontend
+  Tags: auth-backend, auth-frontend
   Complete user auth system with API and UI
 
 ✓ Payment System (payment-system)
-  Epics: epic-2-pay-backend, epic-2-pay-frontend
+  Tags: pay-backend, pay-frontend
 ```
 
 #### Group Status
@@ -80,9 +80,9 @@ Group: User Authentication
 ID:                  user-authentication
 Status:              Active
 
-Epics in Group:
-  epic-1-auth-backend 12 tasks
-  epic-1-auth-frontend 8 tasks
+Tags in Group:
+  auth-backend 12 tasks
+  auth-frontend 8 tasks
 
 Aggregate Statistics:
 Total Tasks:         20
@@ -97,74 +97,66 @@ Completion:          25%
 [============                                      ]
 ```
 
-#### Add Epic to Group
+#### Add Tag to Group
 ```bash
-scud add-to-group user-authentication epic-1-auth-mobile
+scud add-to-group user-authentication auth-mobile
 ```
 
 ---
 
-## Workflow with Epic Groups
+## Workflow with Tag Groups
 
 ### Scenario: Backend/Frontend Split
 
 ```bash
-# 1. Plan both epics together
+# 1. Plan both features together
 /tm-pm  # Create PRD
 
-# 2. Create both epic files
-# docs/epics/auth-backend.md
-# docs/epics/auth-frontend.md
+# 2. Create both feature files
+# docs/features/auth-backend.md
+# docs/features/auth-frontend.md
 
-# 3. Parse both epics
-scud parse-prd docs/epics/auth-backend.md --tag epic-1-auth-backend
-scud parse-prd docs/epics/auth-frontend.md --tag epic-1-auth-frontend
+# 3. Parse both features
+scud parse-prd docs/features/auth-backend.md --tag auth-backend
+scud parse-prd docs/features/auth-frontend.md --tag auth-frontend
 
 # 4. Create group
-scud create-group "User Auth" --epics epic-1-auth-backend,epic-1-auth-frontend
+scud create-group "User Auth" --tags auth-backend,auth-frontend
 
 # 5. Architect both together (coordinate API contracts)
-/tm-architect  # While on backend epic
-scud use-tag epic-1-auth-frontend
-/tm-architect  # While on frontend epic
+/tm-architect  # While on backend tag
+scud use-tag auth-frontend
+/tm-architect  # While on frontend tag
 
 # 6. Implement in parallel
 # Developer A (Backend):
-scud use-tag epic-1-auth-backend
+scud use-tag auth-backend
 /tm-dev  # Work on backend tasks
 
 # Developer B (Frontend):
-scud use-tag epic-1-auth-frontend
+scud use-tag auth-frontend
 /tm-dev  # Work on frontend tasks
 
 # Or use different worktrees:
-git worktree add ../scud-backend epic-1-auth-backend
-git worktree add ../scud-frontend epic-1-auth-frontend
+git worktree add ../scud-backend auth-backend
+git worktree add ../scud-frontend auth-frontend
 
 # 7. Monitor overall progress
 scud group-status user-auth
 ```
 
-### Cross-Epic Coordination
+### Cross-Tag Coordination
 
 **Backend Task** (API Endpoint):
-```json
-{
-  "id": "5",
-  "title": "Build POST /api/auth/login endpoint",
-  "description": "Create login endpoint with JWT response",
-  "details": "Returns: { token: string, user: { id, email } }"
-}
+```
+auth-backend:5 | Build POST /api/auth/login endpoint | P | 5 | H
+  Returns: { token: string, user: { id, email } }
 ```
 
 **Frontend Task** (API Integration):
-```json
-{
-  "id": "3",
-  "title": "Integrate login API",
-  "description": "Call POST /api/auth/login from login form",
-  "details": "Expects: { token: string, user: { id, email } }"
-}
+```
+auth-frontend:3 | Integrate login API | P | 3 | H
+  Expects: { token: string, user: { id, email } }
 ```
 
 **Key:** Both tasks reference the same API contract, ensuring coordination.
@@ -175,7 +167,7 @@ scud group-status user-auth
 
 ### Concept
 
-When multiple developers work on the same epic, task assignment prevents conflicts:
+When multiple developers work on the same tag, task assignment prevents conflicts:
 
 - **Claim tasks** to show you're working on them
 - **Lock tasks** to prevent others from claiming
@@ -250,17 +242,17 @@ Task Assignments
 ============================================================
 
 ● alice
-  epic-1-auth-backend 5 - Build registration endpoint
-  epic-1-auth-backend 8 - Add password hashing
+  auth-backend 5 - Build registration endpoint
+  auth-backend 8 - Add password hashing
 
 ● bob
-  epic-1-auth-backend 7 - Build login endpoint
-  epic-1-auth-frontend 3 - Create login form
+  auth-backend 7 - Build login endpoint
+  auth-frontend 3 - Create login form
 
 ⚠ Stale Locks (>24h)
 ============================================================
 
-  epic-1-auth-backend 12 locked by charlie (26.3h ago)
+  auth-backend 12 locked by charlie (26.3h ago)
 
 Consider releasing stale locks:
   scud release 12 --force
@@ -270,12 +262,12 @@ Consider releasing stale locks:
 
 ## Team Workflow
 
-### Scenario: 3 Developers, 1 Epic
+### Scenario: 3 Developers, 1 Tag
 
 ```bash
 # Alice: Lead developer
 cd project
-scud use-tag epic-1-auth
+scud use-tag auth
 scud next              # Find next available task
 
 Task 5: Build registration endpoint
@@ -287,7 +279,7 @@ scud set-status 5 done  # Auto-releases lock
 
 # Bob: Second developer
 cd project
-scud use-tag epic-1-auth
+scud use-tag auth
 scud next              # Skips task 5 (locked by alice)
 
 Task 7: Build login endpoint
@@ -297,7 +289,7 @@ scud set-status 7 in-progress
 
 # Charlie: Third developer
 cd project
-scud use-tag epic-1-auth
+scud use-tag auth
 scud next
 
 Task 9: Add email verification
@@ -313,7 +305,7 @@ scud whois
 # ● bob - Task 7 (in progress)
 # ● charlie - Task 9 (in progress)
 
-scud stats  # Overall epic progress
+scud stats  # Overall tag progress
 ```
 
 ---
@@ -341,15 +333,15 @@ scud claim 5 --name bob    # ✗ Error: Task is locked by alice
 scud set-status 5 done    # Auto-releases lock when done
 ```
 
-### Epic Groups
+### Tag Groups
 
 **Aggregate Stats:**
-- See total progress across all epics in group
+- See total progress across all tags in group
 - Identify bottlenecks
 - Balance workload
 
 **Coordinated Planning:**
-- Architect can see all epics in group
+- Architect can see all tags in group
 - Ensure API contracts match
 - Share dependencies
 
@@ -358,23 +350,23 @@ scud set-status 5 done    # Auto-releases lock when done
 ## File Structure
 
 ```
-.taskmaster/
+.scud/
 ├── tasks/
-│   └── tasks.json          # Tasks with assigned_to, locked_by
-├── workflow-state.json     # Workflow state
-└── epic-groups.json        # Epic groups (NEW)
+│   └── tasks.scg               # Tasks with assigned_to, locked_by
+├── config.toml                 # Active tag and settings
+└── tag-groups.json             # Tag groups (NEW)
 ```
 
-### epic-groups.json
+### tag-groups.json
 ```json
 {
   "groups": [
     {
       "id": "user-authentication",
       "name": "User Authentication",
-      "epic_tags": [
-        "epic-1-auth-backend",
-        "epic-1-auth-frontend"
+      "tags": [
+        "auth-backend",
+        "auth-frontend"
       ],
       "description": "Complete user auth system",
       "created_at": "2025-01-15T10:00:00Z",
@@ -384,16 +376,15 @@ scud set-status 5 done    # Auto-releases lock when done
 }
 ```
 
-### Task with Assignment (tasks.json)
-```json
-{
-  "id": "5",
-  "title": "Build registration endpoint",
-  "status": "in-progress",
-  "assigned_to": "alice",
-  "locked_by": "alice",
-  "locked_at": "2025-01-15T14:30:00Z"
-}
+### Task with Assignment (in SCG format)
+```
+@nodes
+auth:5 | Build registration endpoint | I | 5 | H
+
+@meta
+auth:5 | assigned_to | alice
+auth:5 | locked_by | alice
+auth:5 | locked_at | 2025-01-15T14:30:00Z
 ```
 
 ---
@@ -405,16 +396,16 @@ scud set-status 5 done    # Auto-releases lock when done
 ```
 Project: E-commerce checkout
 
-Epic Group: "Checkout Flow"
-- epic-3-checkout-backend (Cart API, Payment API)
-- epic-3-checkout-frontend (Cart UI, Payment UI)
+Tag Group: "Checkout Flow"
+- checkout-backend (Cart API, Payment API)
+- checkout-frontend (Cart UI, Payment UI)
 
 Team Backend: 2 devs
 Team Frontend: 2 devs
 
 Workflow:
 1. PM creates single PRD
-2. SM creates 2 epic files (backend, frontend)
+2. SM creates 2 feature files (backend, frontend)
 3. Create group linking both
 4. Architect designs both (API contracts)
 5. Teams work in parallel
@@ -426,14 +417,14 @@ Workflow:
 ```
 Project: User management system
 
-Epic: "User CRUD"
+Tag: "user-crud"
 Developers:
 - Alice (US, timezone UTC-8)
 - Bob (Europe, timezone UTC+1)
 - Charlie (Asia, timezone UTC+9)
 
 Workflow:
-1. All work on same epic
+1. All work on same tag
 2. Each developer claims tasks
 3. Use scud whois to avoid conflicts
 4. Work asynchronously across timezones
@@ -445,23 +436,23 @@ Workflow:
 ```
 Project: Mobile + Web app
 
-Epic Group: "Dashboard Feature"
-- epic-4-dashboard-web
-- epic-4-dashboard-mobile
+Tag Group: "Dashboard Feature"
+- dashboard-web
+- dashboard-mobile
 
 Setup:
-git worktree add ../project-web epic-4-dashboard-web
-git worktree add ../project-mobile epic-4-dashboard-mobile
+git worktree add ../project-web dashboard-web
+git worktree add ../project-mobile dashboard-mobile
 
 Developer workflow:
 # Terminal 1 (Web)
 cd ../project-web
-scud use-tag epic-4-dashboard-web
+scud use-tag dashboard-web
 /tm-dev
 
 # Terminal 2 (Mobile)
 cd ../project-mobile
-scud use-tag epic-4-dashboard-mobile
+scud use-tag dashboard-mobile
 /tm-dev
 
 # Monitor both
@@ -472,19 +463,19 @@ scud group-status dashboard-feature
 
 ## Best Practices
 
-### Epic Groups
+### Tag Groups
 
 ✅ **Do:**
-- Group epics that share context (API contracts, data models)
-- Coordinate architecture phase across all epics in group
+- Group tags that share context (API contracts, data models)
+- Coordinate architecture phase across all tags in group
 - Use group-status for overall progress monitoring
-- Keep groups focused (2-4 epics max)
+- Keep groups focused (2-4 tags max)
 
 ❌ **Don't:**
-- Create groups for unrelated epics
+- Create groups for unrelated tags
 - Skip architecture coordination
 - Ignore API contract mismatches
-- Make huge groups (>5 epics)
+- Make huge groups (>5 tags)
 
 ### Task Assignment
 
@@ -521,13 +512,13 @@ scud group-status dashboard-feature
 
 ## Advanced: Git Worktrees
 
-Perfect companion to epic groups!
+Perfect companion to tag groups!
 
 ### Setup
 ```bash
 # Main repo
 cd my-project
-scud create-group "Feature X" --epics epic-x-backend,epic-x-frontend
+scud create-group "Feature X" --tags feature-x-backend,feature-x-frontend
 
 # Create worktrees
 git worktree add ../my-project-backend
@@ -536,13 +527,13 @@ git worktree add ../my-project-frontend
 # Backend worktree
 cd ../my-project-backend
 git checkout -b feature-x-backend
-scud use-tag epic-x-backend
+scud use-tag feature-x-backend
 /tm-dev  # Work on backend
 
 # Frontend worktree
 cd ../my-project-frontend
 git checkout -b feature-x-frontend
-scud use-tag epic-x-frontend
+scud use-tag feature-x-frontend
 /tm-dev  # Work on frontend
 
 # Monitor from anywhere
@@ -554,7 +545,7 @@ scud group-status feature-x
 - No constant branch switching
 - Parallel builds/tests
 - IDE can run both
-- Each worktree has own epic
+- Each worktree has own tag
 
 ---
 
@@ -565,14 +556,14 @@ scud group-status feature-x
 - **No real-time sync** - Tasks are locked in local files, not server-side
 - **Manual conflict resolution** - If two devs claim same task offline
 - **No notifications** - Won't alert when someone claims your task
-- **Single active epic** - Each worktree can only have one active epic
+- **Single active tag** - Each worktree can only have one active tag
 
 ### Planned Enhancements
 
 - [ ] Lock server for real-time coordination
 - [ ] Task notifications/webhooks
-- [ ] Multi-epic view (work on multiple epics simultaneously)
-- [ ] Cross-epic dependencies (task in epic A depends on task in epic B)
+- [ ] Multi-tag view (work on multiple tags simultaneously)
+- [ ] Cross-tag dependencies (task in tag A depends on task in tag B)
 - [ ] Assignment rotation suggestions
 - [ ] Workload balancing
 - [ ] Time tracking integration
@@ -593,14 +584,14 @@ scud whois
 scud release <task-id> --force
 ```
 
-### "Epic not found in group"
+### "Tag not found in group"
 
 ```bash
 # List all groups
 scud list-groups
 
-# Add epic to group
-scud add-to-group <group-id> <epic-tag>
+# Add tag to group
+scud add-to-group <group-id> <tag>
 ```
 
 ### "Stale locks everywhere"
@@ -620,8 +611,8 @@ scud release <task-id> --force
 
 ## Summary
 
-**Epic Groups:**
-- Coordinate related epics
+**Tag Groups:**
+- Coordinate related tags
 - Aggregate progress
 - Perfect for backend/frontend splits
 - Use with git worktrees
@@ -643,11 +634,11 @@ These features are stable but marked experimental. Feedback welcome!
 **Quick Reference:**
 
 ```bash
-# Epic Groups
-scud create-group "Name" --epics tag1,tag2
+# Tag Groups
+scud create-group "Name" --tags tag1,tag2
 scud list-groups
 scud group-status <group-id>
-scud add-to-group <group-id> <epic-tag>
+scud add-to-group <group-id> <tag>
 
 # Task Assignment
 scud assign <task-id> <assignee>
@@ -656,4 +647,4 @@ scud release <task-id> [--force]
 scud whois
 ```
 
-**Happy parallel development! 🚀**
+**Happy parallel development!**
