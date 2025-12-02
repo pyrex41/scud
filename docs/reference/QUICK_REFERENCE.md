@@ -54,7 +54,7 @@ scud doctor --fix
 
 **Agent Obligation:** After `--claim`, MUST run `scud set-status <id> done` when complete!
 
-### AI Commands (require ANTHROPIC_API_KEY)
+### AI Commands (require XAI_API_KEY)
 ```bash
 scud parse-prd <file> --tag <tag>  # Parse epic into tasks
 scud analyze-complexity             # Score all tasks
@@ -63,6 +63,8 @@ scud expand <id>                    # Split complex task
 scud expand --all                   # Split all tasks >13
 scud research "<query>"             # AI research
 ```
+
+Default model: `grok-code-fast-1`. Configure with `scud config`.
 
 ---
 
@@ -248,11 +250,15 @@ Tasks are stored in SCG (SCUD Graph) format. See [SCG_FORMAT_SPEC.md](SCG_FORMAT
 ## Environment Variables
 
 ```bash
-# Required for AI commands
-export ANTHROPIC_API_KEY=sk-ant-...
+# Required for AI commands (default provider: xAI)
+export XAI_API_KEY=xai-...
 
-# Optional: Change model (defaults to claude-sonnet-4-20250514)
-export SCUD_MODEL=claude-sonnet-4-20250514
+# Alternative providers:
+# export ANTHROPIC_API_KEY=sk-ant-...
+# export OPENAI_API_KEY=sk-...
+
+# Configure provider/model with:
+# scud config --provider xai --model grok-code-fast-1
 ```
 
 ---

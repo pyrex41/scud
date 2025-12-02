@@ -2,7 +2,7 @@
 
 **Sprint Cycle Unified Development** - Fast, AI-powered task management for building software
 
-> **Status: Beta (1.0.0-beta.1)** - Core functionality is stable and 50x faster than previous version. Tests and CI/CD are coming in follow-up releases. See [log_docs/FOLLOWUP_PLAN.md](log_docs/FOLLOWUP_PLAN.md) for roadmap.
+> **Version 1.17.0** - Stable release. Fast Rust CLI with SCG format, DAG-driven execution, and Claude Code hook integration.
 
 A lightweight DAG-driven task management system with automatic completion enforcement via Claude Code hooks.
 
@@ -12,20 +12,26 @@ A lightweight DAG-driven task management system with automatic completion enforc
 
 ### Install
 
-**Using npm (recommended):**
+**Using pnpm (recommended):**
 ```bash
-npm install -g scud-task
+pnpm add -g scud-task
 cd your-project
 scud init
 scud hooks install  # Enable automatic task completion
 ```
 
+**Using npm:**
+```bash
+npm install -g scud-task
+cd your-project
+scud init
+scud hooks install
+```
+
 **Using Bun:**
 ```bash
-# Bun blocks postinstall scripts by default
-npm install -g scud-task
-
-# Or if you prefer Bun, you'll need to manually run the postinstall:
+# Bun blocks postinstall scripts by default, so use npm or pnpm
+# Or manually run the postinstall after bun install:
 bun install -g scud-task
 cd ~/.bun/install/global/node_modules/scud-task
 node bin/postinstall.js
@@ -62,10 +68,10 @@ SCUD offers two ways to work with AI assistants, each with different trade-offs:
 
 **Setup:**
 ```bash
-npm install -g scud-task
+pnpm add -g scud-task   # or: npm install -g scud-task
 cd your-project
 scud init
-scud hooks install  # Critical: enables automatic completion
+scud hooks install      # Critical: enables automatic completion
 ```
 
 **Pros:**
@@ -93,7 +99,7 @@ scud hooks install  # Critical: enables automatic completion
 
 **Setup:**
 ```bash
-npm install -g scud scud-mcp
+pnpm add -g scud-task scud-mcp   # or: npm install -g scud-task scud-mcp
 
 # Configure your MCP client (example for Claude Desktop):
 # ~/Library/Application Support/Claude/claude_desktop_config.json
@@ -247,12 +253,14 @@ scud stats [--tag <tag>]          # Show statistics
 scud waves [--tag <tag>]          # Show parallel waves
 ```
 
-### AI Commands (Requires ANTHROPIC_API_KEY)
+### AI Commands (Requires XAI_API_KEY)
 ```bash
 scud parse-prd <file> --tag <tag>  # Parse PRD into tasks
 scud analyze-complexity             # Analyze all tasks
 scud expand --all                   # Break down complex tasks
 ```
+
+Default: `grok-code-fast-1` via xAI. Configure with `scud config --provider <provider> --model <model>`.
 
 ### Orchestrator Commands
 ```bash
@@ -330,13 +338,14 @@ See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns
 
 ## Requirements
 
-- **Node.js 16+** (for npm package wrapper)
-- **Rust & Cargo** (for building CLI, or use pre-built binary)
-- **Anthropic API key** (for AI features)
+- **Node.js 16+** (for pnpm/npm package wrapper)
+- **xAI API key** (for AI features only; core commands work offline)
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export XAI_API_KEY=xai-...
 ```
+
+Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`), OpenRouter (`OPENROUTER_API_KEY`). Configure with `scud config`.
 
 ---
 

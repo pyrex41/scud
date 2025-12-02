@@ -20,8 +20,8 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             llm: LLMConfig {
-                provider: "anthropic".to_string(),
-                model: "claude-sonnet-4-5-20250929".to_string(),
+                provider: "xai".to_string(),
+                model: "grok-code-fast-1".to_string(),
                 max_tokens: 4096,
             },
         }
@@ -77,12 +77,12 @@ impl Config {
 
     pub fn default_model_for_provider(provider: &str) -> &str {
         match provider {
+            "xai" => "grok-code-fast-1",
             "anthropic" => "claude-sonnet-4-5-20250929",
-            "xai" => "grok-4-1-fast-reasoning",
             "openai" => "o3-mini",
             "openrouter" => "anthropic/claude-sonnet-4.5",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
-            _ => "claude-sonnet-4-5-20250929",
+            _ => "grok-code-fast-1",
         }
     }
 
@@ -90,10 +90,10 @@ impl Config {
     pub fn suggested_models_for_provider(provider: &str) -> Vec<&str> {
         match provider {
             "xai" => vec![
+                "grok-code-fast-1",
                 "grok-4-1-fast-reasoning",
                 "grok-4-1-fast",
                 "grok-3-fast",
-                "grok-code-fast-1",
             ],
             "anthropic" => vec![
                 "claude-sonnet-4-5-20250929",
@@ -129,8 +129,8 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.llm.provider, "anthropic");
-        assert_eq!(config.llm.model, "claude-sonnet-4-5-20250929");
+        assert_eq!(config.llm.provider, "xai");
+        assert_eq!(config.llm.model, "grok-code-fast-1");
         assert_eq!(config.llm.max_tokens, 4096);
     }
 
@@ -196,12 +196,12 @@ mod tests {
     #[test]
     fn test_default_models() {
         assert_eq!(
-            Config::default_model_for_provider("anthropic"),
-            "claude-sonnet-4-5-20250929"
+            Config::default_model_for_provider("xai"),
+            "grok-code-fast-1"
         );
         assert_eq!(
-            Config::default_model_for_provider("xai"),
-            "grok-4-1-fast-reasoning"
+            Config::default_model_for_provider("anthropic"),
+            "claude-sonnet-4-5-20250929"
         );
         assert_eq!(Config::default_model_for_provider("openai"), "o3-mini");
     }
