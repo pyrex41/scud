@@ -16,8 +16,6 @@ const cwd = process.cwd();
 const args = process.argv.slice(2);
 const command = args.find(arg => !arg.startsWith('--')) || 'init';
 const flags = {
-  agents: args.includes('--agents'),
-  noAgents: args.includes('--no-agents'),
   provider: args.find(arg => arg.startsWith('--provider='))?.split('=')[1],
 };
 
@@ -131,24 +129,22 @@ function askYesNo(question, defaultYes = true) {
 }
 
 /**
- * Copy SCUD agent files from source scud/ directory to destination
+ * Copy SCUD slash command files from source scud/ directory to destination
  */
-function copyScudAgents(src, dest) {
+function copyScudCommands(src, dest) {
+  if (!fs.existsSync(src)) {
+    return false;
+  }
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });
   }
 
-  // Only copy the specific SCUD agent files
-  const scudAgents = ['pm.md', 'sm.md', 'architect.md', 'dev.md', 'retrospective.md', 'status.md'];
-
-  for (const agent of scudAgents) {
-    const srcPath = path.join(src, agent);
-    const destPath = path.join(dest, agent);
-
-    if (fs.existsSync(srcPath)) {
-      fs.copyFileSync(srcPath, destPath);
-    }
+  // Copy all .md files from source to destination
+  const files = fs.readdirSync(src).filter(f => f.endsWith('.md'));
+  for (const file of files) {
+    fs.copyFileSync(path.join(src, file), path.join(dest, file));
   }
+  return files.length > 0;
 }
 
 async function initProject() {
@@ -170,9 +166,9 @@ async function initProject() {
     {
       name: 'xAI (Grok)',
       id: 'xai',
-      model: 'grok-4-1-fast-reasoning',
+      model: 'grok-code-fast-1',
       env: 'XAI_API_KEY',
-      models: ['grok-4-1-fast-reasoning', 'grok-4-1-fast', 'grok-3-fast', 'grok-code-fast-1']
+      models: ['grok-code-fast-1', 'grok-4-1-fast-reasoning', 'grok-4-1-fast', 'grok-3-fast']
     },
     {
       name: 'Anthropic (Claude)',
@@ -293,33 +289,8 @@ max_tokens = 4096
   });
   log('✓ Documentation directories created in .scud/docs/', 'green');
 
-  // Step 5: Agent installation (interactive or flag-based)
-  log('\nStep 5: SCUD Workflow Agents...', 'blue');
-
-  let installAgents = false;
-
-  if (flags.agents) {
-    // --agents flag: install without prompting
-    installAgents = true;
-    log('Installing agents (--agents flag)', 'blue');
-  } else if (flags.noAgents) {
-    // --no-agents flag: skip without prompting
-    installAgents = false;
-    log('Skipping agents (--no-agents flag)', 'yellow');
-  } else {
-    // Interactive prompt
-    log('');
-    log('SCUD includes workflow agents for Claude Code:', 'blue');
-    log('  • /scud-pm          - Product Manager (PRD creation)', 'reset');
-    log('  • /scud-sm          - Scrum Master (task breakdown)', 'reset');
-    log('  • /scud-architect   - Technical design', 'reset');
-    log('  • /scud-dev         - Task implementation', 'reset');
-    log('  • /scud-retrospective - Post-phase analysis', 'reset');
-    log('  • /status           - Workflow status', 'reset');
-    log('');
-
-    installAgents = await askYesNo('Install SCUD workflow agents?', true);
-  }
+  // Step 5: Install SCUD slash commands
+  log('\nStep 5: Installing SCUD slash commands...', 'blue');
 
   const packageRoot = path.join(__dirname, '..');
 
@@ -331,41 +302,21 @@ max_tokens = 4096
   const sourceOpenCodeScud = path.join(packageRoot, '.opencode', 'command', 'scud');
   const targetOpenCodeScud = path.join(cwd, '.opencode', 'command', 'scud');
 
-  if (installAgents) {
-    let installedClaude = false;
-    let installedOpenCode = false;
+  const installedClaude = copyScudCommands(sourceClaudeScud, targetClaudeScud);
+  const installedOpenCode = copyScudCommands(sourceOpenCodeScud, targetOpenCodeScud);
 
-    // Install Claude Code commands
-    if (fs.existsSync(sourceClaudeScud)) {
-      copyScudAgents(sourceClaudeScud, targetClaudeScud);
-      installedClaude = true;
+  if (installedClaude || installedOpenCode) {
+    log('✓ Slash commands installed:', 'green');
+    if (installedClaude) {
+      log('  Claude Code: .claude/commands/scud/', 'blue');
     }
-
-    // Install OpenCode commands
-    if (fs.existsSync(sourceOpenCodeScud)) {
-      copyScudAgents(sourceOpenCodeScud, targetOpenCodeScud);
-      installedOpenCode = true;
+    if (installedOpenCode) {
+      log('  OpenCode:    .opencode/command/scud/', 'blue');
     }
-
-    if (installedClaude || installedOpenCode) {
-      log('✓ Slash commands installed:', 'green');
-      if (installedClaude) {
-        log('  Claude Code: .claude/commands/scud/', 'blue');
-      }
-      if (installedOpenCode) {
-        log('  OpenCode:    .opencode/command/scud/', 'blue');
-      }
-      log('  • /scud:task-list', 'blue');
-      log('  • /scud:task-next', 'blue');
-      log('  • /scud:task-show', 'blue');
-      log('  • /scud:task-status', 'blue');
-      log('  • /scud:task-claim', 'blue');
-    } else {
-      log('⚠ Could not find source commands', 'yellow');
-    }
+    log('  • /scud:task-list, /scud:task-next, /scud:task-show', 'reset');
+    log('  • /scud:task-status, /scud:task-claim, /scud:task-stats', 'reset');
   } else {
-    log('⊘ Skipped agent installation', 'yellow');
-    log('  You can add them later with: scud config agents add --all', 'reset');
+    log('⚠ Could not find source commands to install', 'yellow');
   }
 
   // Create or update CLAUDE.md with agent instructions
