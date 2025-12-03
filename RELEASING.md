@@ -51,6 +51,13 @@ scud-cli/Cargo.toml   → version = "X.Y.Z"
 - **Forgetting to bump `Cargo.toml`**: crates.io publish fails, or `scud --version` shows old version
 - **Version mismatch**: Keep both files in sync to avoid confusion
 
+## GitHub Secrets Required
+
+The release workflow requires these secrets in GitHub repository settings:
+
+- `NPM_TOKEN` - npm access token for publishing scud-task
+- `CARGO_TOKEN` - crates.io API token for publishing scud-cli
+
 ## Installing After Release
 
 ```bash
