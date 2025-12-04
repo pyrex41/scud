@@ -161,23 +161,27 @@ if (command === 'view') {
 
 // Check if this is a command handled by Rust CLI
 if (rustCommands.includes(command)) {
-  // Find the Rust binary
-  const rustBinary = path.join(__dirname, '..', 'scud-cli', 'target', 'release', 'scud');
-  const debugBinary = path.join(__dirname, '..', 'scud-cli', 'target', 'debug', 'scud');
+  // Find the Rust binary - prefer system-installed (cargo) over local builds
+  const homedir = require('os').homedir();
+  const cargoBinary = path.join(homedir, '.cargo', 'bin', 'scud');
+  const localRelease = path.join(__dirname, '..', 'scud-cli', 'target', 'release', 'scud');
+  const localDebug = path.join(__dirname, '..', 'scud-cli', 'target', 'debug', 'scud');
 
-  // Use release binary if available, otherwise fall back to debug
-  let scudBinary = fs.existsSync(rustBinary) ? rustBinary : debugBinary;
+  // Priority: cargo-installed > local release > local debug
+  let scudBinary = null;
+  if (fs.existsSync(cargoBinary)) {
+    scudBinary = cargoBinary;
+  } else if (fs.existsSync(localRelease)) {
+    scudBinary = localRelease;
+  } else if (fs.existsSync(localDebug)) {
+    scudBinary = localDebug;
+  }
 
-  if (!fs.existsSync(scudBinary)) {
-    console.error('❌ SCUD Rust CLI not found. Building...');
-    const scudCliDir = path.join(__dirname, '..', 'scud-cli');
-    const buildResult = spawnSync('cargo', ['build', '--release'], { cwd: scudCliDir, stdio: 'inherit' });
-
-    if (buildResult.status !== 0) {
-      console.error('Failed to build Rust CLI. Please run: cd scud-cli && cargo build --release');
-      process.exit(1);
-    }
-    scudBinary = rustBinary;
+  if (!scudBinary) {
+    console.error('❌ SCUD Rust CLI not found.');
+    console.error('   Install with: cargo install scud-cli');
+    console.error('   Or build locally: cd scud-cli && cargo build --release');
+    process.exit(1);
   }
 
   // Use spawnSync with argument array to properly handle spaces and special chars
@@ -228,10 +232,13 @@ async function runView() {
   // Load task data
   const tasksData = JSON.parse(fs.readFileSync(tasksJsonPath, 'utf8'));
 
-  // Find Rust binary
-  const rustBinary = path.join(__dirname, '..', 'scud-cli', 'target', 'release', 'scud');
-  const debugBinary = path.join(__dirname, '..', 'scud-cli', 'target', 'debug', 'scud');
-  const scudBinary = fs.existsSync(rustBinary) ? rustBinary : debugBinary;
+  // Find Rust binary - prefer system-installed (cargo) over local builds
+  const homedir = require('os').homedir();
+  const cargoBinary = path.join(homedir, '.cargo', 'bin', 'scud');
+  const localRelease = path.join(__dirname, '..', 'scud-cli', 'target', 'release', 'scud');
+  const localDebug = path.join(__dirname, '..', 'scud-cli', 'target', 'debug', 'scud');
+  const scudBinary = fs.existsSync(cargoBinary) ? cargoBinary :
+                     fs.existsSync(localRelease) ? localRelease : localDebug;
 
   // Generate mermaid diagram by calling Rust binary directly
   let mermaidDiagram = '';
