@@ -15,7 +15,7 @@ const command = process.argv[2];
 const args = process.argv.slice(3);
 
 // Task management commands (use Rust CLI)
-const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', 'stats', 'mermaid', 'waves', 'doctor', 'convert', 'assign', 'claim', 'release', 'whois', 'migrate'];
+const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', 'stats', 'mermaid', 'waves', 'doctor', 'convert', 'assign', 'claim', 'release', 'whois', 'migrate', 'hooks', 'warmup', 'commit', 'sessions', 'next-batch', 'who-is', 'reanalyze-deps'];
 
 // AI-powered commands (use Rust CLI)
 const aiCommands = ['parse-prd', 'analyze-complexity', 'expand', 'research'];
