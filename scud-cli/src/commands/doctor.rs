@@ -38,10 +38,9 @@ pub struct DiagnosticIssue {
 #[derive(Debug, Default)]
 pub struct DiagnosticResults {
     pub issues: Vec<DiagnosticIssue>,
-    pub stale_locks: Vec<(String, String, String, f64)>, // (epic, task_id, locked_by, hours)
     pub blocked_by_cancelled: Vec<(String, String, String)>, // (epic, task_id, blocked_dep)
-    pub blocked_by_missing: Vec<(String, String, String)>, // (epic, task_id, missing_dep)
-    pub orphan_in_progress: Vec<(String, String)>, // (epic, task_id) - in-progress >24h without lock
+    pub blocked_by_missing: Vec<(String, String, String)>,   // (epic, task_id, missing_dep)
+    pub orphan_in_progress: Vec<(String, String)>, // (epic, task_id) - in-progress >threshold without activity
     pub missing_active_epic: bool,
     pub corrupt_files: Vec<String>,
 }
@@ -49,7 +48,6 @@ pub struct DiagnosticResults {
 impl DiagnosticResults {
     pub fn has_issues(&self) -> bool {
         !self.issues.is_empty()
-            || !self.stale_locks.is_empty()
             || !self.blocked_by_cancelled.is_empty()
             || !self.blocked_by_missing.is_empty()
             || !self.orphan_in_progress.is_empty()
@@ -79,7 +77,6 @@ impl DiagnosticResults {
             .iter()
             .filter(|i| i.severity == Severity::Warning)
             .count()
-            + self.stale_locks.len()
             + self.orphan_in_progress.len()
             + if self.missing_active_epic { 1 } else { 0 }
     }
@@ -153,20 +150,8 @@ pub fn run(
         let all_task_ids: HashSet<_> = epic.tasks.iter().map(|t| t.id.clone()).collect();
 
         for task in &epic.tasks {
-            // Check for stale locks
-            if task.is_stale_lock(stale_hours) {
-                if let (Some(locked_by), Some(hours)) = (&task.locked_by, task.lock_age_hours()) {
-                    results.stale_locks.push((
-                        epic_tag.clone(),
-                        task.id.clone(),
-                        locked_by.clone(),
-                        hours,
-                    ));
-                }
-            }
-
-            // Check for orphan in-progress tasks (in-progress but not locked, >24h old)
-            if task.status == TaskStatus::InProgress && !task.is_locked() {
+            // Check for orphan in-progress tasks (in-progress for too long without activity)
+            if task.status == TaskStatus::InProgress {
                 if let Some(ref updated_at) = task.updated_at {
                     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(updated_at) {
                         let hours =
@@ -245,30 +230,13 @@ pub fn run(
 
         let mut fixed_count = 0;
 
-        // Fix stale locks
-        for (epic_tag, task_id, locked_by, hours) in &results.stale_locks {
-            if let Some(epic) = all_tasks.get_mut(epic_tag) {
-                if let Some(task) = epic.get_task_mut(task_id) {
-                    task.release();
-                    println!(
-                        "{} Released stale lock: {} (was locked by {} for {:.1}h)",
-                        "✓".green(),
-                        task_id.cyan(),
-                        locked_by,
-                        hours
-                    );
-                    fixed_count += 1;
-                }
-            }
-        }
-
         // Fix orphan in-progress tasks (reset to pending)
         for (epic_tag, task_id) in &results.orphan_in_progress {
             if let Some(epic) = all_tasks.get_mut(epic_tag) {
                 if let Some(task) = epic.get_task_mut(task_id) {
                     task.set_status(TaskStatus::Pending);
                     println!(
-                        "{} Reset orphan task to pending: {}",
+                        "{} Reset stale in-progress task to pending: {}",
                         "✓".green(),
                         task_id.cyan()
                     );
@@ -314,29 +282,6 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
         println!();
         print_recovery_instructions();
         return;
-    }
-
-    // Print stale locks
-    if !results.stale_locks.is_empty() {
-        println!("{}", "Stale Locks (>threshold hours)".yellow().bold());
-        println!("{}", "-".repeat(40).yellow());
-        for (epic, task_id, locked_by, hours) in &results.stale_locks {
-            println!(
-                "  {} {} in {} locked by {} ({:.1}h)",
-                "⚠".yellow(),
-                task_id.cyan(),
-                epic.dimmed(),
-                locked_by.green(),
-                hours
-            );
-            if !fix_attempted {
-                println!(
-                    "    {}",
-                    format!("→ scud release {} --force -e {}", task_id, epic).dimmed()
-                );
-            }
-        }
-        println!();
     }
 
     // Print blocked by cancelled
@@ -385,12 +330,12 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
     if !results.orphan_in_progress.is_empty() {
         println!(
             "{}",
-            "Orphan In-Progress Tasks (no lock, stale)".yellow().bold()
+            "Stale In-Progress Tasks (no activity)".yellow().bold()
         );
         println!("{}", "-".repeat(40).yellow());
         for (epic, task_id) in &results.orphan_in_progress {
             println!(
-                "  {} {} in {} - in-progress but not locked",
+                "  {} {} in {} - in-progress but no recent activity",
                 "⚠".yellow(),
                 task_id.cyan(),
                 epic.dimmed()
@@ -456,8 +401,7 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
         results.warning_count().to_string().blue()
     );
 
-    if !fix_attempted && (!results.stale_locks.is_empty() || !results.orphan_in_progress.is_empty())
-    {
+    if !fix_attempted && !results.orphan_in_progress.is_empty() {
         println!();
         println!("{}", "To auto-fix recoverable issues, run:".blue());
         println!("  scud doctor --fix");
@@ -512,33 +456,24 @@ mod tests {
         let empty = DiagnosticResults::default();
         assert!(!empty.has_issues());
 
-        let mut with_stale = DiagnosticResults::default();
-        with_stale.stale_locks.push((
-            "epic".to_string(),
-            "task".to_string(),
-            "user".to_string(),
-            48.0,
-        ));
-        assert!(with_stale.has_issues());
+        let mut with_orphan = DiagnosticResults::default();
+        with_orphan
+            .orphan_in_progress
+            .push(("epic".to_string(), "task".to_string()));
+        assert!(with_orphan.has_issues());
     }
 
     #[test]
     fn test_diagnostic_results_counts() {
         let mut results = DiagnosticResults::default();
 
-        // Add stale locks (warnings)
-        results.stale_locks.push((
-            "epic".to_string(),
-            "task1".to_string(),
-            "user".to_string(),
-            48.0,
-        ));
-        results.stale_locks.push((
-            "epic".to_string(),
-            "task2".to_string(),
-            "user".to_string(),
-            36.0,
-        ));
+        // Add orphan in-progress (warnings)
+        results
+            .orphan_in_progress
+            .push(("epic".to_string(), "task1".to_string()));
+        results
+            .orphan_in_progress
+            .push(("epic".to_string(), "task2".to_string()));
 
         // Add blocked by cancelled (errors)
         results.blocked_by_cancelled.push((
@@ -626,21 +561,5 @@ mod tests {
         }
 
         assert!(found_missing_dep);
-    }
-
-    #[test]
-    fn test_stale_lock_detection() {
-        let mut task = Task::new("1".to_string(), "Test".to_string(), "Desc".to_string());
-        task.claim("alice").unwrap();
-
-        // Not stale immediately
-        assert!(!task.is_stale_lock(24.0));
-
-        // Simulate old lock
-        let two_days_ago = chrono::Utc::now() - chrono::Duration::hours(48);
-        task.locked_at = Some(two_days_ago.to_rfc3339());
-
-        assert!(task.is_stale_lock(24.0));
-        assert!(!task.is_stale_lock(72.0));
     }
 }

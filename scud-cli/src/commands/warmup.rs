@@ -73,38 +73,28 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
         }
     }
 
-    // 4. Show active sessions (who's working on what)
-    println!("\n{}", "Active sessions:".bold());
+    // 4. Show current assignments
+    println!("\n{}", "Current assignments:".bold());
     let tasks = storage.load_tasks()?;
-    let mut found_sessions = false;
+    let mut found_assignments = false;
 
     for (tag, phase) in &tasks {
         for task in &phase.tasks {
-            if task.is_locked() {
-                found_sessions = true;
-                let age = task
-                    .lock_age_hours()
-                    .map(|h| format!("{:.1}h", h))
-                    .unwrap_or_else(|| "?".to_string());
-                let stale = task.is_stale_lock(1.0);
-                let stale_marker = if stale {
-                    " (STALE)".red().to_string()
-                } else {
-                    "".to_string()
-                };
+            if let Some(ref assigned_to) = task.assigned_to {
+                found_assignments = true;
+                let status_str = task.status.as_str();
                 println!(
-                    "  {} | {} | {} | {}{}",
+                    "  {} | {} | {} | {}",
                     tag.dimmed(),
                     task.id.cyan(),
-                    task.locked_by.as_deref().unwrap_or("?").yellow(),
-                    age,
-                    stale_marker
+                    assigned_to.yellow(),
+                    status_str
                 );
             }
         }
     }
-    if !found_sessions {
-        println!("  {}", "(no active sessions)".dimmed());
+    if !found_assignments {
+        println!("  {}", "(no assignments)".dimmed());
     }
 
     // 5. Show next available task (with cross-tag dependency checking)
@@ -118,7 +108,6 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
                 .filter(|t| {
                     t.status == crate::models::TaskStatus::Pending
                         && t.has_dependencies_met_refs(&all_tasks_flat)
-                        && !t.is_locked()
                 })
                 .collect();
 
@@ -129,7 +118,7 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
                     task.title,
                     task.complexity
                 );
-                println!("  Run: {}", "scud next --claim --name <your-name>".green());
+                println!("  Run: {}", "scud set-status <task-id> in-progress".green());
             } else if phase
                 .tasks
                 .iter()
@@ -139,28 +128,12 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
             } else {
                 println!(
                     "  {}",
-                    "(no tasks available - check dependencies or locks)".yellow()
+                    "(no tasks available - check dependencies)".yellow()
                 );
             }
         }
     } else {
         println!("  {}", "(set active tag first)".dimmed());
-    }
-
-    // 6. Check for stale locks
-    let stale_count: usize = tasks
-        .values()
-        .flat_map(|p| p.tasks.iter())
-        .filter(|t| t.is_stale_lock(1.0))
-        .count();
-
-    if stale_count > 0 {
-        println!(
-            "\n{} {} stale lock(s) detected. Run: {}",
-            "Warning:".yellow().bold(),
-            stale_count,
-            "scud doctor --fix".cyan()
-        );
     }
 
     println!("\n{}", "=".repeat(50).dimmed());

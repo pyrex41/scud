@@ -116,23 +116,11 @@ enum Commands {
         tag: Option<String>,
     },
 
-    /// Find next available task (EXPERIMENTAL: use --claim for dynamic-wave mode)
+    /// Find next available task
     Next {
         /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
-
-        /// [EXPERIMENTAL] Auto-claim the task for the specified agent
-        #[arg(long, requires = "name")]
-        claim: bool,
-
-        /// Agent/developer name (required with --claim)
-        #[arg(short, long)]
-        name: Option<String>,
-
-        /// [EXPERIMENTAL] Release the currently claimed task for this agent
-        #[arg(long, conflicts_with = "claim", requires = "name")]
-        release: bool,
 
         /// Output machine-readable JSON for orchestrators
         #[arg(long)]
@@ -201,10 +189,11 @@ enum Commands {
 
     /// Expand complex task into subtasks (AI-powered)
     Expand {
-        /// Task ID to expand
-        task_id: Option<String>,
+        /// Specific task ID to expand (expands all in current tag if not provided)
+        #[arg(short = 'i', long)]
+        task: Option<String>,
 
-        /// Expand all tasks with complexity > 13
+        /// Expand all tasks across ALL tags (default: current tag only)
         #[arg(short, long)]
         all: bool,
 
@@ -246,34 +235,6 @@ enum Commands {
         tag: Option<String>,
     },
 
-    /// Claim a task for yourself
-    Claim {
-        /// Task ID
-        task_id: String,
-
-        /// Your name/identifier
-        #[arg(short, long)]
-        name: String,
-
-        /// Phase tag (uses active phase if not provided)
-        #[arg(short = 'e', long)]
-        tag: Option<String>,
-    },
-
-    /// Release task assignment/lock
-    Release {
-        /// Task ID
-        task_id: String,
-
-        /// Force release even if locked by someone else
-        #[arg(short, long)]
-        force: bool,
-
-        /// Phase tag (uses active phase if not provided)
-        #[arg(short = 'e', long)]
-        tag: Option<String>,
-    },
-
     /// Show who is working on what
     WhoIs {
         /// Phase tag (uses active phase if not provided)
@@ -290,13 +251,6 @@ enum Commands {
         /// Maximum number of tasks to return
         #[arg(short, long, default_value = "5")]
         limit: usize,
-    },
-
-    /// Show active task sessions (claimed/locked tasks)
-    Sessions {
-        /// Phase tag (checks all phases if not provided)
-        #[arg(short, long)]
-        tag: Option<String>,
     },
 
     /// Convert task storage format between JSON and SCG
@@ -383,20 +337,7 @@ async fn main() -> Result<()> {
             status,
             tag,
         } => commands::set_status::run(cli.project, &task_id, &status, tag.as_deref()),
-        Commands::Next {
-            tag,
-            claim,
-            name,
-            release,
-            spawn,
-        } => commands::next::run(
-            cli.project,
-            tag.as_deref(),
-            claim,
-            name.as_deref(),
-            release,
-            spawn,
-        ),
+        Commands::Next { tag, spawn } => commands::next::run(cli.project, tag.as_deref(), spawn),
         Commands::Stats { tag } => commands::stats::run(cli.project, tag.as_deref()),
         Commands::Migrate { dry_run } => commands::migrate::run(cli.project, dry_run),
         Commands::Waves {
@@ -428,8 +369,8 @@ async fn main() -> Result<()> {
             commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())
                 .await
         }
-        Commands::Expand { task_id, all, tag } => {
-            commands::ai::expand::run(cli.project, task_id.as_deref(), all, tag.as_deref()).await
+        Commands::Expand { task, all, tag } => {
+            commands::ai::expand::run(cli.project, task.as_deref(), all, tag.as_deref()).await
         }
         Commands::ReanalyzeDeps {
             tag,
@@ -445,19 +386,10 @@ async fn main() -> Result<()> {
             assignee,
             tag,
         } => commands::assign::run(cli.project, &task_id, &assignee, tag.as_deref()),
-        Commands::Claim { task_id, name, tag } => {
-            commands::claim::run(cli.project, &task_id, &name, tag.as_deref())
-        }
-        Commands::Release {
-            task_id,
-            force,
-            tag,
-        } => commands::release::run(cli.project, &task_id, force, tag.as_deref()),
         Commands::WhoIs { tag } => commands::whois::run(cli.project, tag.as_deref()),
         Commands::NextBatch { tag, limit } => {
             commands::next_batch::run(cli.project, tag.as_deref(), limit)
         }
-        Commands::Sessions { tag } => commands::sessions::run(cli.project, tag.as_deref()),
         Commands::Convert { from, to, backup } => {
             commands::convert::run(cli.project, &from, &to, backup)
         }

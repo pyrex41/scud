@@ -23,7 +23,6 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, limit: usize) -> Re
         .iter()
         .filter(|t| t.status == TaskStatus::Pending)
         .filter(|t| t.has_dependencies_met_refs(&all_tasks_flat))
-        .filter(|t| !t.is_locked())
         .take(limit)
         .collect();
 

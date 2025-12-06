@@ -10,7 +10,6 @@ pub mod mermaid;
 pub mod migrate;
 pub mod next;
 pub mod next_batch;
-pub mod sessions;
 pub mod set_status;
 pub mod show;
 pub mod stats;
@@ -20,8 +19,6 @@ pub mod waves;
 
 // Task assignment commands
 pub mod assign;
-pub mod claim;
-pub mod release;
 pub mod whois;
 
 // Claude Code hooks

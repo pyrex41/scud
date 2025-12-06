@@ -22,6 +22,7 @@ struct ExpandedTask {
 
 /// Result of expanding a single task
 struct TaskExpansionResult {
+    tag: String,
     parent_id: String,
     parent_priority: Priority,
     expanded_tasks: Vec<ExpandedTask>,
@@ -33,73 +34,108 @@ const CONCURRENCY: usize = 5;
 pub async fn run(
     project_root: Option<PathBuf>,
     task_id: Option<&str>,
-    expand_all: bool,
+    all_tags: bool,
     tag: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
-    let epic_tag = crate::commands::helpers::resolve_group_tag(&storage, tag, true)?;
-
     let mut all_tasks = storage.load_tasks()?;
-    let epic = all_tasks
-        .get_mut(&epic_tag)
-        .ok_or_else(|| anyhow::anyhow!("Epic '{}' not found", epic_tag))?;
 
     // Use project_root for LLM client to find config.toml in correct location
-    let client = Arc::new(if let Some(root) = project_root {
+    let client = Arc::new(if let Some(root) = project_root.clone() {
         LLMClient::new_with_project_root(root)?
     } else {
         LLMClient::new()?
     });
 
-    // Determine which tasks to expand and gather their data
-    let tasks_to_expand: Vec<(String, String, String, Option<String>, u32, Priority)> =
-        if let Some(id) = task_id {
-            let task = epic
-                .get_task(id)
-                .ok_or_else(|| anyhow::anyhow!("Task {} not found", id))?;
-            if !task.needs_expansion() {
-                let reason = if task.is_expanded() {
-                    "already expanded"
-                } else if task.is_subtask() {
-                    "is a subtask"
-                } else {
-                    "complexity too low"
-                };
-                println!(
-                    "{} Task {} doesn't need expansion ({}, complexity: {})",
-                    "⊘".yellow(),
-                    id.cyan(),
-                    reason,
-                    task.complexity
-                );
-                return Ok(());
-            }
-            vec![(
-                task.id.clone(),
-                task.title.clone(),
-                task.description.clone(),
-                task.details.clone(),
-                task.complexity,
-                task.priority.clone(),
-            )]
-        } else if expand_all {
-            epic.tasks
-                .iter()
-                .filter(|t| t.needs_expansion())
-                .map(|t| {
-                    (
-                        t.id.clone(),
-                        t.title.clone(),
-                        t.description.clone(),
-                        t.details.clone(),
-                        t.complexity,
-                        t.priority.clone(),
-                    )
-                })
-                .collect()
+    // Determine which tags to process
+    let tags_to_process: Vec<String> = if all_tags {
+        // --all flag: expand across ALL tags
+        all_tasks.keys().cloned().collect()
+    } else {
+        // Default or --tag: expand in current/specified tag only
+        let epic_tag = crate::commands::helpers::resolve_group_tag(&storage, tag, true)?;
+        if !all_tasks.contains_key(&epic_tag) {
+            anyhow::bail!("Tag '{}' not found", epic_tag);
+        }
+        vec![epic_tag]
+    };
+
+    // Collect tasks to expand from all relevant tags
+    // Format: (tag, task_id, title, description, details, complexity, priority)
+    let mut tasks_to_expand: Vec<(String, String, String, String, Option<String>, u32, Priority)> =
+        Vec::new();
+
+    if let Some(id) = task_id {
+        // Specific task requested - find it in the appropriate tag
+        let search_tag = if tags_to_process.len() == 1 {
+            tags_to_process[0].clone()
         } else {
-            anyhow::bail!("Specify a task ID or use --all to expand all tasks with complexity ≥3");
+            // When --all is used with --task, search all tags for the task
+            let mut found_tag = None;
+            for tag_name in &tags_to_process {
+                if let Some(phase) = all_tasks.get(tag_name) {
+                    if phase.get_task(id).is_some() {
+                        found_tag = Some(tag_name.clone());
+                        break;
+                    }
+                }
+            }
+            found_tag.ok_or_else(|| anyhow::anyhow!("Task {} not found in any tag", id))?
         };
+
+        let epic = all_tasks
+            .get(&search_tag)
+            .ok_or_else(|| anyhow::anyhow!("Tag '{}' not found", search_tag))?;
+        let task = epic
+            .get_task(id)
+            .ok_or_else(|| anyhow::anyhow!("Task {} not found", id))?;
+
+        if !task.needs_expansion() {
+            let reason = if task.is_expanded() {
+                "already expanded"
+            } else if task.is_subtask() {
+                "is a subtask"
+            } else {
+                "complexity too low"
+            };
+            println!(
+                "{} Task {} doesn't need expansion ({}, complexity: {})",
+                "⊘".yellow(),
+                id.cyan(),
+                reason,
+                task.complexity
+            );
+            return Ok(());
+        }
+        tasks_to_expand.push((
+            search_tag,
+            task.id.clone(),
+            task.title.clone(),
+            task.description.clone(),
+            task.details.clone(),
+            task.complexity,
+            task.priority.clone(),
+        ));
+    } else {
+        // No specific task - expand all matching tasks in the target tag(s)
+        for tag_name in &tags_to_process {
+            if let Some(phase) = all_tasks.get(tag_name) {
+                for task in &phase.tasks {
+                    if task.needs_expansion() {
+                        tasks_to_expand.push((
+                            tag_name.clone(),
+                            task.id.clone(),
+                            task.title.clone(),
+                            task.description.clone(),
+                            task.details.clone(),
+                            task.complexity,
+                            task.priority.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+    };
 
     if tasks_to_expand.is_empty() {
         println!(
@@ -128,9 +164,9 @@ pub async fn run(
     );
 
     // Process tasks in parallel with bounded concurrency
-    let results: Vec<Result<TaskExpansionResult, (String, anyhow::Error)>> =
+    let results: Vec<Result<TaskExpansionResult, (String, String, anyhow::Error)>> =
         stream::iter(tasks_to_expand)
-            .map(|(id, title, description, details, complexity, priority)| {
+            .map(|(tag, id, title, description, details, complexity, priority)| {
                 let client = Arc::clone(&client);
                 let mp = multi_progress.clone();
                 let overall = overall_progress.clone();
@@ -163,6 +199,7 @@ pub async fn run(
                                 spinner.finish_and_clear();
                                 overall.inc(1);
                                 return Ok(TaskExpansionResult {
+                                    tag,
                                     parent_id: id,
                                     parent_priority: priority,
                                     expanded_tasks: expanded,
@@ -185,7 +222,7 @@ pub async fn run(
 
                     spinner.finish_and_clear();
                     overall.inc(1);
-                    Err((id, last_error.unwrap()))
+                    Err((tag, id, last_error.unwrap()))
                 }
             })
             .buffer_unordered(CONCURRENCY)
@@ -202,6 +239,7 @@ pub async fn run(
     for result in results {
         match result {
             Ok(expansion) => {
+                let tag = &expansion.tag;
                 let parent_id = &expansion.parent_id;
                 let subtask_count = expansion.expanded_tasks.len();
 
@@ -211,6 +249,11 @@ pub async fn run(
                     parent_id.cyan(),
                     subtask_count
                 );
+
+                // Get the phase for this task's tag
+                let epic = all_tasks
+                    .get_mut(tag)
+                    .expect("Tag should exist since task came from it");
 
                 // Create subtasks
                 let mut new_subtask_ids = Vec::new();
@@ -274,7 +317,7 @@ pub async fn run(
                 total_subtasks += subtask_count;
                 success_count += 1;
             }
-            Err((id, e)) => {
+            Err((_tag, id, e)) => {
                 println!("{} Task {} failed: {}", "✗".red(), id.cyan(), e);
                 error_count += 1;
             }
@@ -315,7 +358,7 @@ pub async fn run(
         );
         println!(
             "     Run '{}' to check.",
-            format!("scud reanalyze-deps --tag {}", epic_tag).green()
+            "scud reanalyze-deps".green()
         );
     }
 

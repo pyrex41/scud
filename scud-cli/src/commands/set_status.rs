@@ -29,28 +29,9 @@ pub fn run(
         .get_task_mut(task_id)
         .ok_or_else(|| anyhow::anyhow!("Task {} not found in epic '{}'", task_id, epic_tag))?;
 
-    // Auto-release lock when marking task as done (fulfills the promise in claim messaging)
-    let was_locked = task.is_locked();
-    let is_done = new_status == TaskStatus::Done;
-    if is_done && was_locked {
-        task.release();
-        task.assigned_to = None;
-    }
-
     task.set_status(new_status);
 
     storage.update_group(&epic_tag, &epic)?;
-
-    // Show lock release message if applicable
-    if is_done && was_locked {
-        println!(
-            "{} Task {} → {} (lock released)",
-            "✓".green(),
-            task_id.cyan(),
-            status_str.green()
-        );
-        return Ok(());
-    }
 
     println!(
         "{} Task {} → {}",

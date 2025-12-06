@@ -15,7 +15,7 @@ const command = process.argv[2];
 const args = process.argv.slice(3);
 
 // Task management commands (use Rust CLI)
-const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', 'stats', 'mermaid', 'waves', 'doctor', 'convert', 'assign', 'claim', 'release', 'whois', 'migrate', 'hooks', 'warmup', 'commit', 'sessions', 'next-batch', 'who-is', 'reanalyze-deps'];
+const taskCommands = ['tags', 'use-tag', 'list', 'show', 'set-status', 'next', 'stats', 'mermaid', 'waves', 'doctor', 'convert', 'assign', 'whois', 'migrate', 'hooks', 'warmup', 'commit', 'next-batch', 'who-is', 'reanalyze-deps'];
 
 // AI-powered commands (use Rust CLI)
 const aiCommands = ['parse-prd', 'analyze-complexity', 'expand', 'research'];
@@ -72,7 +72,7 @@ Task Management (built-in, fast):
 AI-Powered (built-in, requires ANTHROPIC_API_KEY):
   parse-prd <file> --tag=<tag>    Parse PRD into tasks
   analyze-complexity [--task=<id>] Analyze task complexity
-  expand [<id>] [--all]           Expand task into subtasks
+  expand [--task=<id>] [--all]    Expand tasks (default: all in current tag)
   research "<query>"              AI research
 
 Examples:
@@ -85,7 +85,9 @@ Examples:
 
   scud parse-prd epic.md --tag epic-1   # Parse PRD (AI)
   scud analyze-complexity               # Analyze all tasks (AI)
-  scud expand --all                     # Expand complex tasks (AI)
+  scud expand                           # Expand tasks in current tag (AI)
+  scud expand --all                     # Expand tasks in ALL tags (AI)
+  scud expand --task auth:1             # Expand specific task (AI)
   scud research "OAuth best practices"  # Research topic (AI)
 
 For more information, visit:
@@ -903,12 +905,6 @@ function getViewerScript() {
       // Assignment
       if (task.assigned_to) {
         html += '<div class="detail-section"><h3>Assigned To</h3><p>' + escapeHtml(task.assigned_to) + '</p></div>';
-      }
-
-      if (task.locked_by) {
-        html += '<div class="detail-section"><h3>Locked By</h3><p>' + escapeHtml(task.locked_by);
-        if (task.locked_at) html += ' (since ' + escapeHtml(task.locked_at) + ')';
-        html += '</p></div>';
       }
 
       content.innerHTML = html;

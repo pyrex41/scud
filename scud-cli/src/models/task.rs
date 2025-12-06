@@ -104,15 +104,9 @@ pub struct Task {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
 
-    // Parallel execution support
+    // Assignment tracking (informational only, no locking)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assigned_to: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub locked_by: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub locked_at: Option<String>,
 }
 
 impl Task {
@@ -141,8 +135,6 @@ impl Task {
             created_at: Some(now.clone()),
             updated_at: Some(now),
             assigned_to: None,
-            locked_by: None,
-            locked_at: None,
         }
     }
 
@@ -344,65 +336,16 @@ impl Task {
         }
     }
 
-    // Assignment and locking methods
+    // Assignment methods (informational only, no locking)
     pub fn assign(&mut self, assignee: &str) {
         self.assigned_to = Some(assignee.to_string());
         self.update();
-    }
-
-    pub fn claim(&mut self, assignee: &str) -> Result<(), String> {
-        if let Some(ref locked_by) = self.locked_by {
-            if locked_by != assignee {
-                return Err(format!("Task is locked by {}", locked_by));
-            }
-        }
-
-        self.assigned_to = Some(assignee.to_string());
-        self.locked_by = Some(assignee.to_string());
-        self.locked_at = Some(chrono::Utc::now().to_rfc3339());
-        self.update();
-        Ok(())
-    }
-
-    pub fn release(&mut self) {
-        self.locked_by = None;
-        self.locked_at = None;
-        self.update();
-    }
-
-    pub fn is_locked(&self) -> bool {
-        self.locked_by.is_some()
-    }
-
-    pub fn is_locked_by(&self, assignee: &str) -> bool {
-        self.locked_by
-            .as_ref()
-            .map(|s| s == assignee)
-            .unwrap_or(false)
     }
 
     pub fn is_assigned_to(&self, assignee: &str) -> bool {
         self.assigned_to
             .as_ref()
             .map(|s| s == assignee)
-            .unwrap_or(false)
-    }
-
-    pub fn lock_age_hours(&self) -> Option<f64> {
-        self.locked_at.as_ref().and_then(|locked_at| {
-            chrono::DateTime::parse_from_rfc3339(locked_at)
-                .ok()
-                .map(|dt| {
-                    let now = chrono::Utc::now();
-                    let duration = now.signed_duration_since(dt);
-                    duration.num_seconds() as f64 / 3600.0
-                })
-        })
-    }
-
-    pub fn is_stale_lock(&self, hours_threshold: f64) -> bool {
-        self.lock_age_hours()
-            .map(|hours| hours > hours_threshold)
             .unwrap_or(false)
     }
 
@@ -471,8 +414,6 @@ mod tests {
         assert!(task.created_at.is_some());
         assert!(task.updated_at.is_some());
         assert!(task.assigned_to.is_none());
-        assert!(task.locked_by.is_none());
-        assert!(task.locked_at.is_none());
     }
 
     #[test]
@@ -517,80 +458,6 @@ mod tests {
         assert_eq!(task.assigned_to, Some("alice".to_string()));
         assert!(task.is_assigned_to("alice"));
         assert!(!task.is_assigned_to("bob"));
-    }
-
-    #[test]
-    fn test_task_claim_success() {
-        let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
-
-        let result = task.claim("alice");
-        assert!(result.is_ok());
-        assert_eq!(task.assigned_to, Some("alice".to_string()));
-        assert_eq!(task.locked_by, Some("alice".to_string()));
-        assert!(task.locked_at.is_some());
-        assert!(task.is_locked());
-        assert!(task.is_locked_by("alice"));
-    }
-
-    #[test]
-    fn test_task_claim_already_locked_by_same_user() {
-        let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
-
-        task.claim("alice").unwrap();
-        let result = task.claim("alice");
-        assert!(result.is_ok()); // Same user can re-claim
-    }
-
-    #[test]
-    fn test_task_claim_already_locked_by_different_user() {
-        let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
-
-        task.claim("alice").unwrap();
-        let result = task.claim("bob");
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Task is locked by alice");
-    }
-
-    #[test]
-    fn test_task_release() {
-        let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
-
-        task.claim("alice").unwrap();
-        assert!(task.is_locked());
-
-        task.release();
-        assert!(!task.is_locked());
-        assert_eq!(task.locked_by, None);
-        assert_eq!(task.locked_at, None);
-        assert_eq!(task.assigned_to, Some("alice".to_string())); // Assignment persists
-    }
-
-    #[test]
-    fn test_lock_age_calculation() {
-        let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
-
-        task.claim("alice").unwrap();
-
-        let age = task.lock_age_hours();
-        assert!(age.is_some());
-        assert!(age.unwrap() < 0.001); // Should be very recent (< 1 minute)
-    }
-
-    #[test]
-    fn test_stale_lock_detection() {
-        let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
-
-        task.claim("alice").unwrap();
-
-        // Not stale immediately
-        assert!(!task.is_stale_lock(24.0));
-
-        // Simulate old lock by setting locked_at to 48 hours ago
-        let two_days_ago = chrono::Utc::now() - chrono::Duration::hours(48);
-        task.locked_at = Some(two_days_ago.to_rfc3339());
-
-        assert!(task.is_stale_lock(24.0));
-        assert!(!task.is_stale_lock(72.0));
     }
 
     #[test]
@@ -715,15 +582,14 @@ mod tests {
         let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
         task.details = Some("Detailed info".to_string());
         task.test_strategy = Some("Test plan".to_string());
-        task.claim("alice").unwrap();
+        task.assign("alice");
 
         let json = serde_json::to_string(&task).unwrap();
         let deserialized: Task = serde_json::from_str(&json).unwrap();
 
         assert_eq!(task.details, deserialized.details);
         assert_eq!(task.test_strategy, deserialized.test_strategy);
-        assert_eq!(task.locked_by, deserialized.locked_by);
-        assert_eq!(task.locked_at, deserialized.locked_at);
+        assert_eq!(task.assigned_to, deserialized.assigned_to);
     }
 
     #[test]

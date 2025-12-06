@@ -41,7 +41,6 @@ fn complete_task(project_root: Option<PathBuf>, task_id: &str) -> Result<()> {
     if let Some(task) = phase.get_task_mut(task_id) {
         if task.status != TaskStatus::Done {
             task.status = TaskStatus::Done;
-            task.release(); // Clear any lock
             task.update();
             eprintln!("✓ Hook: Task {} marked complete", task_id);
         }

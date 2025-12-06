@@ -246,25 +246,18 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
                 }
             }
             Some("assignments") => {
-                // Parse "id | assigned_to | locked_by | locked_at"
+                // Parse "id | assigned_to" (new format) or "id | assigned_to | locked_by | locked_at" (legacy)
                 let parts = split_by_pipe(trimmed);
-                if parts.len() >= 4 {
+                if parts.len() >= 2 {
                     let id = parts[0].clone();
                     let assigned = if parts[1].is_empty() {
                         None
                     } else {
                         Some(parts[1].clone())
                     };
-                    let locked_by = if parts[2].is_empty() {
-                        None
-                    } else {
-                        Some(parts[2].clone())
-                    };
-                    let locked_at = if parts[3].is_empty() {
-                        None
-                    } else {
-                        Some(parts[3].clone())
-                    };
+                    // Legacy fields (locked_by, locked_at) are ignored if present
+                    let locked_by: Option<String> = None;
+                    let locked_at: Option<String> = None;
                     assignments.insert(id, (assigned, locked_by, locked_at));
                 }
             }
@@ -331,12 +324,10 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
         }
     }
 
-    // Apply assignments
-    for (id, (assigned, locked_by, locked_at)) in assignments {
+    // Apply assignments (informational only, no locking)
+    for (id, (assigned, _locked_by, _locked_at)) in assignments {
         if let Some(task) = tasks.get_mut(&id) {
             task.assigned_to = assigned;
-            task.locked_by = locked_by;
-            task.locked_at = locked_at;
         }
     }
 
@@ -452,22 +443,20 @@ pub fn serialize_scg(phase: &Phase) -> String {
         output.push('\n');
     }
 
-    // Assignments section
+    // Assignments section (informational only, no locking)
     let assignments: Vec<_> = sorted_tasks
         .iter()
-        .filter(|t| t.assigned_to.is_some() || t.locked_by.is_some())
+        .filter(|t| t.assigned_to.is_some())
         .collect();
 
     if !assignments.is_empty() {
         output.push_str("@assignments\n");
-        output.push_str("# id | assigned_to | locked_by | locked_at\n");
+        output.push_str("# id | assigned_to\n");
         for task in assignments {
             output.push_str(&format!(
-                "{} | {} | {} | {}\n",
+                "{} | {}\n",
                 task.id,
-                task.assigned_to.as_deref().unwrap_or(""),
-                task.locked_by.as_deref().unwrap_or(""),
-                task.locked_at.as_deref().unwrap_or("")
+                task.assigned_to.as_deref().unwrap_or("")
             ));
         }
         output.push('\n');
@@ -680,8 +669,6 @@ mod tests {
         let mut epic = Phase::new("test".to_string());
         let mut task = Task::new("1".to_string(), "Task".to_string(), "Desc".to_string());
         task.assigned_to = Some("alice".to_string());
-        task.locked_by = Some("alice".to_string());
-        task.locked_at = Some("2025-01-01T00:00:00Z".to_string());
         epic.add_task(task);
 
         let scg = serialize_scg(&epic);
@@ -689,8 +676,6 @@ mod tests {
 
         let t = parsed.get_task("1").unwrap();
         assert_eq!(t.assigned_to, Some("alice".to_string()));
-        assert_eq!(t.locked_by, Some("alice".to_string()));
-        assert_eq!(t.locked_at, Some("2025-01-01T00:00:00Z".to_string()));
     }
 
     #[test]
