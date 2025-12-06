@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use anyhow::Result;
 use colored::Colorize;
 use futures::stream::{self, StreamExt};
