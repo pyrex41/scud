@@ -45,11 +45,7 @@ pub fn find_next_available<'a>(
     NextTaskResult::Available(deps_met[0])
 }
 
-pub fn run(
-    project_root: Option<PathBuf>,
-    tag: Option<&str>,
-    spawn: bool,
-) -> Result<()> {
+pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, spawn: bool) -> Result<()> {
     let storage = Storage::new(project_root);
     let phase_tag = resolve_group_tag(&storage, tag, true)?;
 

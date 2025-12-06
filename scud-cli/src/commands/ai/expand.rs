@@ -64,8 +64,15 @@ pub async fn run(
 
     // Collect tasks to expand from all relevant tags
     // Format: (tag, task_id, title, description, details, complexity, priority)
-    let mut tasks_to_expand: Vec<(String, String, String, String, Option<String>, u32, Priority)> =
-        Vec::new();
+    let mut tasks_to_expand: Vec<(
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        u32,
+        Priority,
+    )> = Vec::new();
 
     if let Some(id) = task_id {
         // Specific task requested - find it in the appropriate tag
@@ -168,65 +175,67 @@ pub async fn run(
     // Process tasks in parallel with bounded concurrency
     let results: Vec<Result<TaskExpansionResult, (String, String, anyhow::Error)>> =
         stream::iter(tasks_to_expand)
-            .map(|(tag, id, title, description, details, complexity, priority)| {
-                let client = Arc::clone(&client);
-                let mp = multi_progress.clone();
-                let overall = overall_progress.clone();
+            .map(
+                |(tag, id, title, description, details, complexity, priority)| {
+                    let client = Arc::clone(&client);
+                    let mp = multi_progress.clone();
+                    let overall = overall_progress.clone();
 
-                async move {
-                    let spinner = mp.add(ProgressBar::new_spinner());
-                    spinner.set_style(
-                        ProgressStyle::default_spinner()
-                            .template("{spinner:.blue} {msg}")
-                            .unwrap(),
-                    );
-                    spinner.set_message(format!("Task {}: {}", id, title));
-                    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+                    async move {
+                        let spinner = mp.add(ProgressBar::new_spinner());
+                        spinner.set_style(
+                            ProgressStyle::default_spinner()
+                                .template("{spinner:.blue} {msg}")
+                                .unwrap(),
+                        );
+                        spinner.set_message(format!("Task {}: {}", id, title));
+                        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-                    let recommended_subtasks =
-                        Task::recommended_subtasks_for_complexity(complexity);
-                    let prompt = Prompts::expand_task(
-                        &title,
-                        &description,
-                        complexity,
-                        details.as_deref(),
-                        recommended_subtasks,
-                    );
+                        let recommended_subtasks =
+                            Task::recommended_subtasks_for_complexity(complexity);
+                        let prompt = Prompts::expand_task(
+                            &title,
+                            &description,
+                            complexity,
+                            details.as_deref(),
+                            recommended_subtasks,
+                        );
 
-                    // Retry logic
-                    let mut last_error = None;
-                    for attempt in 1..=3 {
-                        match client.complete_json::<Vec<ExpandedTask>>(&prompt).await {
-                            Ok(expanded) => {
-                                spinner.finish_and_clear();
-                                overall.inc(1);
-                                return Ok(TaskExpansionResult {
-                                    tag,
-                                    parent_id: id,
-                                    parent_priority: priority,
-                                    expanded_tasks: expanded,
-                                });
-                            }
-                            Err(e) => {
-                                last_error = Some(e);
-                                if attempt < 3 {
-                                    spinner.set_message(format!(
-                                        "Task {} (retry {}/3): {}",
-                                        id,
-                                        attempt + 1,
-                                        title
-                                    ));
-                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        // Retry logic
+                        let mut last_error = None;
+                        for attempt in 1..=3 {
+                            match client.complete_json::<Vec<ExpandedTask>>(&prompt).await {
+                                Ok(expanded) => {
+                                    spinner.finish_and_clear();
+                                    overall.inc(1);
+                                    return Ok(TaskExpansionResult {
+                                        tag,
+                                        parent_id: id,
+                                        parent_priority: priority,
+                                        expanded_tasks: expanded,
+                                    });
+                                }
+                                Err(e) => {
+                                    last_error = Some(e);
+                                    if attempt < 3 {
+                                        spinner.set_message(format!(
+                                            "Task {} (retry {}/3): {}",
+                                            id,
+                                            attempt + 1,
+                                            title
+                                        ));
+                                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    spinner.finish_and_clear();
-                    overall.inc(1);
-                    Err((tag, id, last_error.unwrap()))
-                }
-            })
+                        spinner.finish_and_clear();
+                        overall.inc(1);
+                        Err((tag, id, last_error.unwrap()))
+                    }
+                },
+            )
             .buffer_unordered(CONCURRENCY)
             .collect()
             .await;
@@ -358,10 +367,7 @@ pub async fn run(
             "{} New subtasks may have cross-phase dependencies.",
             "Tip:".cyan()
         );
-        println!(
-            "     Run '{}' to check.",
-            "scud reanalyze-deps".green()
-        );
+        println!("     Run '{}' to check.", "scud reanalyze-deps".green());
     }
 
     println!();

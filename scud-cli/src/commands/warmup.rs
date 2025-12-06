@@ -126,10 +126,7 @@ pub fn run(project_root: Option<PathBuf>) -> Result<()> {
             {
                 println!("  {}", "All tasks complete!".green());
             } else {
-                println!(
-                    "  {}",
-                    "(no tasks available - check dependencies)".yellow()
-                );
+                println!("  {}", "(no tasks available - check dependencies)".yellow());
             }
         }
     } else {
