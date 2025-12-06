@@ -163,7 +163,8 @@ enum Commands {
     },
 
     /// Parse PRD/phase markdown into tasks (AI-powered)
-    ParsePrd {
+    #[command(alias = "parse-prd")]
+    Parse {
         /// Path to PRD/phase markdown file
         file: PathBuf,
 
@@ -174,6 +175,21 @@ enum Commands {
         /// Number of tasks to generate (default: 10)
         #[arg(short = 'n', long, default_value = "10")]
         num_tasks: u32,
+
+        /// Append tasks to existing tag instead of replacing
+        #[arg(long)]
+        append: bool,
+    },
+
+    /// Clear all tasks (with confirmation)
+    Clean {
+        /// Skip confirmation prompt
+        #[arg(long)]
+        force: bool,
+
+        /// Only clean a specific tag
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
     /// Analyze task complexity (AI-powered)
@@ -360,11 +376,13 @@ async fn main() -> Result<()> {
                 }
             },
         },
-        Commands::ParsePrd {
+        Commands::Parse {
             file,
             tag,
             num_tasks,
-        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks).await,
+            append,
+        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append).await,
+        Commands::Clean { force, tag } => commands::clean::run(cli.project, force, tag.as_deref()),
         Commands::AnalyzeComplexity { task, tag } => {
             commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())
                 .await

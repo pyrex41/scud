@@ -23,6 +23,7 @@ pub async fn run(
     file_path: &Path,
     tag: &str,
     num_tasks: u32,
+    append: bool,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -60,11 +61,39 @@ pub async fn run(
         parsed_tasks.len()
     ));
 
+    // Load existing tasks (propagate errors - don't silently swallow them)
+    let mut all_tasks = storage.load_tasks()?;
+
+    // Check if other phases exist for cross-tag dependency hint
+    let other_phases: Vec<_> = all_tasks.keys().filter(|k| *k != tag).cloned().collect();
+
+    // Determine starting ID based on append mode
+    let start_id = if append && all_tasks.contains_key(tag) {
+        let existing = all_tasks.get(tag).unwrap();
+        existing.tasks.len() + 1
+    } else {
+        1
+    };
+
     // Convert to our task model
-    let mut group = Phase::new(tag.to_string());
+    let mut group = if append && all_tasks.contains_key(tag) {
+        println!(
+            "{}",
+            format!("📎 Appending to existing task group '{}'...", tag).cyan()
+        );
+        all_tasks.get(tag).unwrap().clone()
+    } else {
+        if all_tasks.contains_key(tag) {
+            println!(
+                "{}",
+                format!("⚠ Task group '{}' already exists. Replacing...", tag).yellow()
+            );
+        }
+        Phase::new(tag.to_string())
+    };
 
     for (idx, parsed) in parsed_tasks.iter().enumerate() {
-        let task_id = (idx + 1).to_string();
+        let task_id = (start_id + idx).to_string();
 
         let priority = match parsed.priority.to_lowercase().as_str() {
             "high" => Priority::High,
@@ -82,19 +111,6 @@ pub async fn run(
         task.dependencies = parsed.dependencies.clone();
 
         group.add_task(task);
-    }
-
-    // Load existing tasks (propagate errors - don't silently swallow them)
-    let mut all_tasks = storage.load_tasks()?;
-
-    // Check if other phases exist for cross-tag dependency hint
-    let other_phases: Vec<_> = all_tasks.keys().filter(|k| *k != tag).cloned().collect();
-
-    if all_tasks.contains_key(tag) {
-        println!(
-            "{}",
-            format!("⚠ Task group '{}' already exists. Overwriting...", tag).yellow()
-        );
     }
 
     all_tasks.insert(tag.to_string(), group);

@@ -292,6 +292,17 @@ impl Storage {
         *self.active_group_cache.write().unwrap() = None;
     }
 
+    /// Clear the active group setting (remove the active-tag file)
+    pub fn clear_active_group(&self) -> Result<()> {
+        let active_tag_path = self.active_tag_file();
+        if active_tag_path.exists() {
+            fs::remove_file(&active_tag_path)
+                .with_context(|| format!("Failed to remove {}", active_tag_path.display()))?;
+        }
+        *self.active_group_cache.write().unwrap() = Some(None);
+        Ok(())
+    }
+
     /// Load a single task group by tag
     /// Parses the SCG file and extracts the requested group
     pub fn load_group(&self, group_tag: &str) -> Result<Phase> {
