@@ -31,7 +31,7 @@ struct TaskExpansionResult {
 }
 
 /// Number of concurrent LLM requests
-const CONCURRENCY: usize = 5;
+const CONCURRENCY: usize = 10;
 
 pub async fn run(
     project_root: Option<PathBuf>,
@@ -149,7 +149,7 @@ pub async fn run(
     if tasks_to_expand.is_empty() {
         println!(
             "{}",
-            "No tasks need expansion (all complexity <3 or already expanded)".green()
+            "No tasks need expansion (all complexity <5 or already expanded)".green()
         );
         return Ok(());
     }

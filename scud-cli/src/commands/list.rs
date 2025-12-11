@@ -1,27 +1,124 @@
 use anyhow::Result;
+use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::commands::helpers::resolve_group_tag;
 use crate::formats::serialize_scg;
-use crate::models::{Phase, TaskStatus};
+use crate::models::{Phase, Priority, TaskStatus};
 use crate::storage::Storage;
+
+/// Format status for human display
+fn format_status(status: &TaskStatus) -> String {
+    match status {
+        TaskStatus::Pending => "○ Pending".normal().to_string(),
+        TaskStatus::InProgress => "◐ In Progress".yellow().to_string(),
+        TaskStatus::Done => "● Done".green().to_string(),
+        TaskStatus::Review => "◑ Review".cyan().to_string(),
+        TaskStatus::Blocked => "✗ Blocked".red().to_string(),
+        TaskStatus::Deferred => "◌ Deferred".dimmed().to_string(),
+        TaskStatus::Cancelled => "⊘ Cancelled".dimmed().to_string(),
+        TaskStatus::Expanded => "◈ Expanded".blue().to_string(),
+    }
+}
+
+/// Format priority for human display
+fn format_priority(priority: &Priority) -> String {
+    match priority {
+        Priority::Critical => "Crit".red().bold().to_string(),
+        Priority::High => "High".yellow().to_string(),
+        Priority::Medium => "Med".normal().to_string(),
+        Priority::Low => "Low".dimmed().to_string(),
+    }
+}
+
+/// Print human-readable task list
+fn print_human_readable(phase: &Phase, phase_tag: &str) {
+    println!("{} {}\n", "Phase:".blue().bold(), phase_tag.cyan());
+
+    if phase.tasks.is_empty() {
+        println!("{}", "(no tasks)".dimmed());
+        return;
+    }
+
+    // Header
+    println!(
+        "{:>4}  {:<8} {:<40} {:<14} {:>4}  {}",
+        "#".dimmed(),
+        "ID".dimmed(),
+        "Title".dimmed(),
+        "Status".dimmed(),
+        "Cplx".dimmed(),
+        "Pri".dimmed()
+    );
+    println!("{}", "─".repeat(80).dimmed());
+
+    // Sort tasks by ID for display
+    let mut sorted_tasks = phase.tasks.clone();
+    sorted_tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
+
+    for (idx, task) in sorted_tasks.iter().enumerate() {
+        let title = if task.title.len() > 38 {
+            format!("{}...", &task.title[..35])
+        } else {
+            task.title.clone()
+        };
+
+        println!(
+            "{:>4}  {:<8} {:<40} {:<14} {:>4}  {}",
+            (idx + 1).to_string().dimmed(),
+            task.id.cyan(),
+            title,
+            format_status(&task.status),
+            task.complexity,
+            format_priority(&task.priority)
+        );
+    }
+
+    println!();
+    println!(
+        "{} {} tasks",
+        "Total:".dimmed(),
+        phase.tasks.len()
+    );
+}
+
+/// Natural sort for task IDs
+fn natural_sort_ids(a: &str, b: &str) -> std::cmp::Ordering {
+    let a_parts: Vec<&str> = a.split('.').collect();
+    let b_parts: Vec<&str> = b.split('.').collect();
+
+    for (ap, bp) in a_parts.iter().zip(b_parts.iter()) {
+        match (ap.parse::<u32>(), bp.parse::<u32>()) {
+            (Ok(an), Ok(bn)) => {
+                if an != bn {
+                    return an.cmp(&bn);
+                }
+            }
+            _ => {
+                if ap != bp {
+                    return ap.cmp(bp);
+                }
+            }
+        }
+    }
+    a_parts.len().cmp(&b_parts.len())
+}
 
 pub fn run(
     project_root: Option<PathBuf>,
     status_filter: Option<&str>,
     tag: Option<&str>,
     json_output: bool,
+    verbose: bool,
 ) -> Result<()> {
     let storage = Storage::new(project_root);
 
-    // Resolve phase tag (explicit --tag, active phase, or interactive selection)
     let phase_tag = resolve_group_tag(&storage, tag, true)?;
     let tasks = storage.load_tasks()?;
     let phase = tasks
         .get(&phase_tag)
         .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
 
-    // Parse filter status once
     let filter_status = status_filter
         .map(|s| {
             TaskStatus::from_str(s).ok_or_else(|| {
@@ -30,7 +127,6 @@ pub fn run(
         })
         .transpose()?;
 
-    // Create filtered phase for output
     let filtered_phase = if filter_status.is_some() {
         let filtered_tasks: Vec<_> = phase
             .tasks
@@ -54,26 +150,30 @@ pub fn run(
     if filtered_phase.tasks.is_empty() {
         if json_output {
             println!("[]");
-        } else {
-            // Output empty SCG
+        } else if verbose {
             println!("# SCUD Graph v1");
             println!("# Phase: {}", phase_tag);
             println!();
             println!("@nodes");
             println!("# id | title | status | complexity | priority");
             println!("# (no tasks)");
+        } else {
+            println!("{} {}\n", "Phase:".blue().bold(), phase_tag.cyan());
+            println!("{}", "(no tasks)".dimmed());
         }
         return Ok(());
     }
 
     if json_output {
-        // JSON output
         let json = serde_json::to_string_pretty(&filtered_phase.tasks)?;
         println!("{}", json);
-    } else {
-        // SCG output (default)
+    } else if verbose {
+        // Raw SCG format
         let scg = serialize_scg(&filtered_phase);
         print!("{}", scg);
+    } else {
+        // Human-readable format (default)
+        print_human_readable(&filtered_phase, &phase_tag);
     }
 
     Ok(())

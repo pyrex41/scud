@@ -307,19 +307,16 @@ impl Task {
     }
 
     /// Returns whether this task should be expanded into subtasks
-    /// All tasks with complexity >= 3 can benefit from expansion
+    /// Only tasks with complexity >= 5 benefit from expansion
     /// Subtasks and already-expanded tasks don't need expansion
     pub fn needs_expansion(&self) -> bool {
-        self.complexity >= 3 && !self.is_expanded() && !self.is_subtask()
+        self.complexity >= 5 && !self.is_expanded() && !self.is_subtask()
     }
 
     /// Returns the recommended number of subtasks based on complexity
-    /// Complexity 1-2: 2 subtasks
-    /// Complexity 3: 2-3 subtasks
-    /// Complexity 5: 3-4 subtasks
-    /// Complexity 8: 4-5 subtasks
-    /// Complexity 13: 5-6 subtasks
-    /// Complexity 21+: 6-8 subtasks
+    /// Complexity 0-3: 0 subtasks (trivial/simple, no expansion needed)
+    /// Complexity 5-8: 2 broad, multi-step subtasks
+    /// Complexity 13+: 3 broad, multi-step subtasks
     pub fn recommended_subtasks(&self) -> usize {
         Self::recommended_subtasks_for_complexity(self.complexity)
     }
@@ -327,12 +324,11 @@ impl Task {
     /// Static version for use when we only have complexity value
     pub fn recommended_subtasks_for_complexity(complexity: u32) -> usize {
         match complexity {
-            0..=2 => 2,
-            3 => 3,
-            5 => 4,
-            8 => 5,
-            13 => 6,
-            _ => 8, // 21+
+            0..=3 => 0,  // Trivial/simple tasks: no expansion needed
+            5 => 2,      // Moderate tasks: 2 broad subtasks
+            8 => 2,      // Complex tasks: 2 broad subtasks
+            13 => 3,     // Very complex: 3 broad subtasks
+            _ => 3,      // Extremely complex (21+): 3 broad subtasks max
         }
     }
 
@@ -526,15 +522,18 @@ mod tests {
     fn test_needs_expansion() {
         let mut task = Task::new("TASK-1".to_string(), "Test".to_string(), "Desc".to_string());
 
-        // Complexity < 3 should not need expansion
+        // Complexity < 5 should not need expansion
         task.complexity = 1;
         assert!(!task.needs_expansion());
 
         task.complexity = 2;
         assert!(!task.needs_expansion());
 
-        // Complexity >= 3 should need expansion
         task.complexity = 3;
+        assert!(!task.needs_expansion());
+
+        // Complexity >= 5 should need expansion
+        task.complexity = 5;
         assert!(task.needs_expansion());
 
         task.complexity = 8;
