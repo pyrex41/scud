@@ -324,11 +324,11 @@ impl Task {
     /// Static version for use when we only have complexity value
     pub fn recommended_subtasks_for_complexity(complexity: u32) -> usize {
         match complexity {
-            0..=3 => 0,  // Trivial/simple tasks: no expansion needed
-            5 => 2,      // Moderate tasks: 2 broad subtasks
-            8 => 2,      // Complex tasks: 2 broad subtasks
-            13 => 3,     // Very complex: 3 broad subtasks
-            _ => 3,      // Extremely complex (21+): 3 broad subtasks max
+            0..=3 => 0, // Trivial/simple tasks: no expansion needed
+            5 => 2,     // Moderate tasks: 2 broad subtasks
+            8 => 2,     // Complex tasks: 2 broad subtasks
+            13 => 3,    // Very complex: 3 broad subtasks
+            _ => 3,     // Extremely complex (21+): 3 broad subtasks max
         }
     }
 

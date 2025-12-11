@@ -346,9 +346,18 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Init { provider } => commands::init::run(cli.project, provider),
         Commands::Tags { tag } => commands::tags::run(cli.project, tag.as_deref()),
-        Commands::List { status, tag, json, verbose } => {
-            commands::list::run(cli.project, status.as_deref(), tag.as_deref(), json, verbose)
-        }
+        Commands::List {
+            status,
+            tag,
+            json,
+            verbose,
+        } => commands::list::run(
+            cli.project,
+            status.as_deref(),
+            tag.as_deref(),
+            json,
+            verbose,
+        ),
         Commands::Show { task_id, tag } => {
             commands::show::run(cli.project, &task_id, tag.as_deref())
         }

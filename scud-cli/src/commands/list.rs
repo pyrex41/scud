@@ -75,11 +75,7 @@ fn print_human_readable(phase: &Phase, phase_tag: &str) {
     }
 
     println!();
-    println!(
-        "{} {} tasks",
-        "Total:".dimmed(),
-        phase.tasks.len()
-    );
+    println!("{} {} tasks", "Total:".dimmed(), phase.tasks.len());
 }
 
 /// Natural sort for task IDs
