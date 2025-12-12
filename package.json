@@ -1,6 +1,6 @@
 {
   "name": "scud-task",
-  "version": "1.25.0",
+  "version": "1.26.0",
   "description": "SCUD Task Manager - Fast, AI-powered task management for building software",
   "main": "src/validators/scud-validator.js",
   "bin": {
