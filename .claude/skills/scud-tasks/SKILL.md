@@ -1,99 +1,61 @@
 ---
 name: scud-tasks
-description: SCUD task management - view, update, claim, and track tasks in the SCUD graph system
+description: SCUD task management - view, update, and track tasks in the SCUD graph system (project)
 ---
 
 # SCUD Task Management
 
-This skill provides tools and knowledge for managing tasks in the SCUD (Structured Collaboration Using Dependencies) system. SCUD is a phase-gated task management system designed for AI-driven development workflows.
+SCUD is a DAG-based task management system for AI-driven development. Tasks are organized into tags (phases) with dependencies.
 
-## When to Use This Skill
+## When to Use
 
-Use this skill when:
-- Viewing or listing tasks (`scud list`, `scud show`)
-- Updating task status (`scud set-status`)
-- Claiming or releasing tasks for parallel work
-- Finding the next available task
-- Checking progress and statistics
-- Understanding wave-based parallelism
-- Working with task dependencies
+- Viewing tasks: `scud list`, `scud show <id>`
+- Finding work: `scud next`, `scud waves`
+- Updating status: `scud set-status <id> <status>`
+- Checking progress: `scud stats`
 
-## Quick Reference
+## Essential Commands
 
-### View Tasks
 ```bash
-scud list                           # List all tasks in active tag
-scud list --tag auth                # List tasks in specific tag
-scud list --status pending          # Filter by status
-scud show <task-id>                 # Show task details
-scud show <task-id> --tag auth      # Show task in specific tag
-```
+# View tasks
+scud list                    # List tasks in active tag
+scud list --status pending   # Filter by status
+scud show 3                  # Show task details
 
-### Update Status
-```bash
-scud set-status <task-id> pending
-scud set-status <task-id> in-progress
-scud set-status <task-id> done
-scud set-status <task-id> blocked
-scud set-status <task-id> review
-```
+# Find work
+scud next                    # Get next available task
+scud waves                   # See parallel execution waves
 
-### Task Assignment & Locking
-```bash
-scud claim <task-id> --name <name>  # Lock task for yourself
-scud release <task-id>              # Release lock
-scud whois                          # Show who's working on what
-```
+# Update status
+scud set-status 3 in-progress
+scud set-status 3 done
 
-### Find Work
-```bash
-scud next                           # Get next available task
-scud next --claim --name <name>     # Find and claim in one step
-scud waves                          # See parallel execution waves
-```
-
-### Progress
-```bash
-scud stats                          # Show completion statistics
-scud tags                           # List all tags
-scud tags <tag>                     # Set active tag
+# Progress
+scud stats                   # Completion statistics
+scud tags                    # List/set active tag
 ```
 
 ## Task Statuses
 
-| Code | Name | Meaning |
-|------|------|---------|
-| P | Pending | Not started |
-| I | InProgress | Currently being worked on |
-| D | Done | Completed |
-| R | Review | Awaiting review |
-| B | Blocked | Cannot proceed |
-| F | Deferred | Postponed |
-| C | Cancelled | Aborted |
-| X | Expanded | Decomposed into subtasks |
+| Status | Meaning |
+|--------|---------|
+| pending | Not started |
+| in-progress | Being worked on |
+| done | Completed |
+| blocked | Cannot proceed |
+| expanded | Decomposed into subtasks |
+
+## Workflow
+
+1. `scud next` - find available task
+2. `scud set-status <id> in-progress` - start working
+3. Implement the task
+4. `scud set-status <id> done` - mark complete
 
 ## Key Concepts
 
-### Tags (Task Groups)
-Tasks are organized into tags (like `auth`, `api`, `ui`). Always specify `--tag <tag>` or set the active tag with `scud tags <tag>`.
+**Tags**: Tasks grouped by feature/phase. Set active tag with `scud tags <name>`.
 
-### Waves
-Tasks are organized into waves based on dependencies:
-- **Wave 1**: Tasks with no dependencies (can all run in parallel)
-- **Wave 2+**: Tasks that depend on earlier waves
+**Waves**: Dependency-based parallelism. Wave 1 has no deps, Wave 2+ depends on prior waves. Use `scud waves` to plan parallel work.
 
-Use `scud waves` to see the wave breakdown.
-
-### Claiming Tasks
-When multiple agents or developers work in parallel, use `scud claim` to prevent conflicts:
-```bash
-scud claim <task-id> --name alice   # Lock task
-# ... work on task ...
-scud release <task-id>              # Unlock when done
-```
-
-## Additional Documentation
-
-For more details, see:
-- [Task Commands Reference](task-commands.md) - Complete CLI command reference
-- [Graph Concepts](graph-concepts.md) - Understanding SCG format and waves
+**Dependencies**: Tasks can depend on others. `scud next` only returns tasks with all deps satisfied.
