@@ -218,67 +218,42 @@ switch (command) {
 async function runView() {
   const scudDir = path.join(process.cwd(), '.scud');
   const tasksJsonPath = path.join(scudDir, 'tasks', 'tasks.json');
+  const tasksScgPath = path.join(scudDir, 'tasks', 'tasks.scg');
 
   if (!fs.existsSync(scudDir)) {
     console.error('❌ Error: No .scud directory found. Run: scud init');
     process.exit(1);
   }
 
-  if (!fs.existsSync(tasksJsonPath)) {
+  // Check for either JSON or SCG format
+  const hasJson = fs.existsSync(tasksJsonPath);
+  const hasScg = fs.existsSync(tasksScgPath);
+
+  if (!hasJson && !hasScg) {
     console.error('❌ Error: No tasks found. Run: scud parse-prd <prd-file>');
     process.exit(1);
   }
 
-  // Load task data
-  const tasksData = JSON.parse(fs.readFileSync(tasksJsonPath, 'utf8'));
-
-  // Find Rust binary - prefer system-installed (cargo) over local builds
-  const homedir = require('os').homedir();
-  const cargoBinary = path.join(homedir, '.cargo', 'bin', 'scud');
-  const localRelease = path.join(__dirname, '..', 'scud-cli', 'target', 'release', 'scud');
-  const localDebug = path.join(__dirname, '..', 'scud-cli', 'target', 'debug', 'scud');
-  const scudBinary = fs.existsSync(cargoBinary) ? cargoBinary :
-                     fs.existsSync(localRelease) ? localRelease : localDebug;
-
-  // Generate mermaid diagram by calling Rust binary directly
-  let mermaidDiagram = '';
-  try {
-    if (fs.existsSync(scudBinary)) {
-      mermaidDiagram = execSync(`"${scudBinary}" mermaid --all-tags`, {
-        encoding: 'utf8',
-        cwd: process.cwd()
-      });
-    } else {
-      mermaidDiagram = '```mermaid\ngraph TD\n  A[Rust binary not found - run: cd scud-cli && cargo build --release]\n```';
-    }
-  } catch (e) {
-    mermaidDiagram = '```mermaid\ngraph TD\n  A[No diagram available]\n```';
+  // Load task data - prefer SCG format as it's the current default
+  let tasksData;
+  if (hasScg) {
+    const scgContent = fs.readFileSync(tasksScgPath, 'utf8');
+    tasksData = parseScgFile(scgContent);
+  } else {
+    tasksData = JSON.parse(fs.readFileSync(tasksJsonPath, 'utf8'));
   }
 
-  // Generate waves data by parsing scud waves output
-  let wavesData = {};
-  try {
-    if (fs.existsSync(scudBinary)) {
-      // Get waves for each phase
-      const phases = Object.keys(tasksData);
-      for (const phase of phases) {
-        try {
-          const wavesOutput = execSync(`"${scudBinary}" waves --tag "${phase}"`, {
-            encoding: 'utf8',
-            cwd: process.cwd()
-          });
-          wavesData[phase] = parseWavesOutput(wavesOutput);
-        } catch (e) {
-          wavesData[phase] = [];
-        }
-      }
-    }
-  } catch (e) {
-    // Waves data not available
+  // Compute waves directly from task data (same algorithm as Rust CLI)
+  const wavesData = {};
+  const phases = Object.keys(tasksData);
+  for (const phase of phases) {
+    const phaseData = tasksData[phase];
+    const tasks = phaseData?.tasks || [];
+    wavesData[phase] = computeWaves(tasks);
   }
 
-  // Generate HTML
-  const html = generateViewerHtml(tasksData, mermaidDiagram, wavesData);
+  // Generate HTML (diagrams are generated dynamically in JavaScript)
+  const html = generateViewerHtml(tasksData, wavesData);
 
   // Write to temp file
   const tempFile = path.join(tmpdir(), `scud-view-${Date.now()}.html`);
@@ -291,64 +266,407 @@ async function runView() {
 }
 
 /**
- * Parse waves output from scud waves command
+ * Compute execution waves using Kahn's algorithm (topological sort with level assignment)
+ * This is the same algorithm used in the Rust CLI (waves.rs)
  * Returns array of waves, each wave containing task info
  */
-function parseWavesOutput(output) {
+function computeWaves(tasks) {
+  // Filter to actionable tasks only (not done, not expanded parents, not cancelled)
+  const actionable = tasks.filter(task => {
+    if (task.status === 'Done' || task.status === 'done' ||
+        task.status === 'Expanded' || task.status === 'expanded' ||
+        task.status === 'Cancelled' || task.status === 'cancelled') {
+      return false;
+    }
+
+    // If it's a subtask, only include if parent is expanded
+    if (task.parent_id) {
+      const parent = tasks.find(t => t.id === task.parent_id);
+      if (parent && (parent.status === 'Expanded' || parent.status === 'expanded')) {
+        return true;
+      }
+      return false;
+    }
+
+    return true;
+  });
+
+  if (actionable.length === 0) {
+    return [];
+  }
+
+  // Build set of actionable task IDs
+  const taskIds = new Set(actionable.map(t => t.id));
+
+  // Build in-degree map (how many dependencies does each task have within our set?)
+  const inDegree = new Map();
+  const dependents = new Map(); // task -> tasks that depend on it
+
+  for (const task of actionable) {
+    if (!inDegree.has(task.id)) {
+      inDegree.set(task.id, 0);
+    }
+
+    for (const dep of (task.dependencies || [])) {
+      // Only count dependencies that are in our actionable task set
+      if (taskIds.has(dep)) {
+        inDegree.set(task.id, (inDegree.get(task.id) || 0) + 1);
+        if (!dependents.has(dep)) {
+          dependents.set(dep, []);
+        }
+        dependents.get(dep).push(task.id);
+      }
+    }
+  }
+
+  // Kahn's algorithm with wave tracking
   const waves = [];
-  let currentWave = null;
+  const remaining = new Map(inDegree);
+  let waveNumber = 1;
 
-  const lines = output.split('\n');
-  for (const line of lines) {
-    // Match wave header like "Wave 1:" or "  Wave 1 (Round 1):"
-    const waveMatch = line.match(/Wave\s+(\d+)(?:\s+\(Round\s+(\d+)\))?:/i);
-    if (waveMatch) {
-      currentWave = {
-        wave: parseInt(waveMatch[1]),
-        round: waveMatch[2] ? parseInt(waveMatch[2]) : 1,
-        tasks: []
-      };
-      waves.push(currentWave);
-      continue;
+  while (remaining.size > 0) {
+    // Find all tasks with no remaining dependencies (in-degree = 0)
+    const ready = [];
+    for (const [id, deg] of remaining) {
+      if (deg === 0) {
+        ready.push(id);
+      }
     }
 
-    // Match task line like "  [P] task:1 - Task title (C:3) deps: [task:0]"
-    // or simpler format "  [D] task:1 - Task title"
-    const taskMatch = line.match(/\[([PIDBRCXF])\]\s+(\S+)\s+-\s+(.+?)(?:\s+\(C:(\d+)\))?(?:\s+deps:\s+\[([^\]]*)\])?$/);
-    if (taskMatch && currentWave) {
-      const statusMap = {
-        'P': 'pending',
-        'I': 'in-progress',
-        'D': 'done',
-        'B': 'blocked',
-        'R': 'review',
-        'C': 'cancelled',
-        'X': 'expanded',
-        'F': 'deferred'
-      };
-      currentWave.tasks.push({
-        id: taskMatch[2],
-        title: taskMatch[3].trim(),
-        status: statusMap[taskMatch[1]] || 'pending',
-        complexity: taskMatch[4] ? parseInt(taskMatch[4]) : 0,
-        dependencies: taskMatch[5] ? taskMatch[5].split(',').map(d => d.trim()).filter(d => d) : []
-      });
+    if (ready.length === 0) {
+      // Circular dependency detected - break out
+      console.warn('Warning: Circular dependency detected in tasks');
+      break;
     }
+
+    // Remove ready tasks from remaining and update dependents
+    for (const taskId of ready) {
+      remaining.delete(taskId);
+
+      const deps = dependents.get(taskId) || [];
+      for (const depId of deps) {
+        if (remaining.has(depId)) {
+          remaining.set(depId, Math.max(0, remaining.get(depId) - 1));
+        }
+      }
+    }
+
+    // Create wave with task details
+    const waveTasks = ready.map(taskId => {
+      const task = actionable.find(t => t.id === taskId);
+      return {
+        id: taskId,
+        title: task?.title || taskId,
+        status: task?.status || 'pending',
+        complexity: task?.complexity || 0,
+        dependencies: task?.dependencies || []
+      };
+    });
+
+    waves.push({
+      wave: waveNumber,
+      round: 1,
+      tasks: waveTasks
+    });
+
+    waveNumber++;
   }
 
   return waves;
 }
 
 /**
+ * Parse SCG (SCUD Graph) format file
+ * Returns data in the same format as JSON: { phaseName: { tasks: [...] }, ... }
+ */
+function parseScgFile(content) {
+  const result = {};
+
+  // Split by "# SCUD Graph" header to separate phases
+  const phaseBlocks = content.split(/(?=# SCUD Graph)/);
+
+  for (const block of phaseBlocks) {
+    if (!block.trim()) continue;
+
+    const phase = parseScgPhase(block);
+    if (phase && phase.name) {
+      result[phase.name] = { tasks: phase.tasks };
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parse a single SCG phase block
+ */
+function parseScgPhase(content) {
+  const lines = content.split('\n');
+
+  // Find phase name
+  let phaseName = null;
+  for (const line of lines) {
+    const match = line.match(/^# (?:Phase|Epic):\s*(.+)$/);
+    if (match) {
+      phaseName = match[1].trim();
+      break;
+    }
+  }
+
+  if (!phaseName) return null;
+
+  const tasks = new Map();
+  const edges = [];
+  const parents = new Map();
+  const details = new Map();
+  const assignments = new Map();
+
+  let currentSection = null;
+  let currentDetailId = null;
+  let currentDetailField = null;
+  let currentDetailContent = [];
+
+  // Status code mapping
+  const statusCodes = {
+    'P': 'pending',
+    'I': 'in-progress',
+    'D': 'done',
+    'R': 'review',
+    'B': 'blocked',
+    'F': 'deferred',
+    'C': 'cancelled',
+    'X': 'expanded'
+  };
+
+  // Priority code mapping
+  const priorityCodes = {
+    'C': 'critical',
+    'H': 'high',
+    'M': 'medium',
+    'L': 'low'
+  };
+
+  // Helper to split by pipe, respecting escapes
+  function splitByPipe(line) {
+    const parts = [];
+    let current = '';
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '\\' && i + 1 < line.length) {
+        current += line[i] + line[i + 1];
+        i += 2;
+      } else if (line[i] === '|') {
+        parts.push(current.trim());
+        current = '';
+        i++;
+      } else {
+        current += line[i];
+        i++;
+      }
+    }
+    parts.push(current.trim());
+    return parts;
+  }
+
+  // Helper to unescape text
+  function unescape(text) {
+    return text
+      .replace(/\\n/g, '\n')
+      .replace(/\\\|/g, '|')
+      .replace(/\\\\/g, '\\');
+  }
+
+  // Helper to flush current detail
+  function flushDetail() {
+    if (currentDetailId && currentDetailField) {
+      if (!details.has(currentDetailId)) {
+        details.set(currentDetailId, {});
+      }
+      details.get(currentDetailId)[currentDetailField] = currentDetailContent.join('\n');
+    }
+    currentDetailId = null;
+    currentDetailField = null;
+    currentDetailContent = [];
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip empty lines and comments
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    // Check for section headers
+    if (trimmed.startsWith('@')) {
+      flushDetail();
+      if (trimmed === '@meta {' || trimmed === '@meta') {
+        currentSection = 'meta';
+      } else if (trimmed === '@nodes') {
+        currentSection = 'nodes';
+      } else if (trimmed === '@edges') {
+        currentSection = 'edges';
+      } else if (trimmed === '@parents') {
+        currentSection = 'parents';
+      } else if (trimmed === '@assignments') {
+        currentSection = 'assignments';
+      } else if (trimmed === '@details') {
+        currentSection = 'details';
+      }
+      continue;
+    }
+
+    // Handle continuation lines in details
+    if (currentSection === 'details' && line.startsWith('  ') && currentDetailId) {
+      currentDetailContent.push(line.slice(2));
+      continue;
+    }
+
+    // Skip meta closing brace
+    if (trimmed === '}') continue;
+
+    switch (currentSection) {
+      case 'nodes': {
+        // Parse "id | title | status | complexity | priority"
+        const parts = splitByPipe(trimmed);
+        if (parts.length >= 5) {
+          const id = parts[0];
+          const title = unescape(parts[1]);
+          const status = statusCodes[parts[2].charAt(0)] || 'pending';
+          const complexity = parseInt(parts[3], 10) || 0;
+          const priority = priorityCodes[parts[4].charAt(0)] || 'medium';
+
+          tasks.set(id, {
+            id,
+            title,
+            description: '',
+            status,
+            complexity,
+            priority,
+            dependencies: [],
+            subtasks: [],
+            parent_id: null,
+            assigned_to: null
+          });
+        }
+        break;
+      }
+
+      case 'edges': {
+        // Parse "dependent -> dependency"
+        const match = trimmed.match(/^(.+?)\s*->\s*(.+)$/);
+        if (match) {
+          edges.push({ dependent: match[1].trim(), dependency: match[2].trim() });
+        }
+        break;
+      }
+
+      case 'parents': {
+        // Parse "parent: child1, child2, ..."
+        const match = trimmed.match(/^(.+?):\s*(.+)$/);
+        if (match) {
+          const parentId = match[1].trim();
+          const childIds = match[2].split(',').map(s => s.trim()).filter(s => s);
+          parents.set(parentId, childIds);
+        }
+        break;
+      }
+
+      case 'assignments': {
+        // Parse "id | assigned_to"
+        const parts = splitByPipe(trimmed);
+        if (parts.length >= 2 && parts[1]) {
+          assignments.set(parts[0], parts[1]);
+        }
+        break;
+      }
+
+      case 'details': {
+        flushDetail();
+        // Parse "id | field |"
+        const parts = splitByPipe(trimmed);
+        if (parts.length >= 2) {
+          currentDetailId = parts[0];
+          currentDetailField = parts[1];
+          currentDetailContent = [];
+        }
+        break;
+      }
+    }
+  }
+
+  // Flush any remaining detail
+  flushDetail();
+
+  // Apply edges (dependencies)
+  for (const edge of edges) {
+    const task = tasks.get(edge.dependent);
+    if (task) {
+      task.dependencies.push(edge.dependency);
+    }
+  }
+
+  // Apply parent-child relationships
+  for (const [parentId, childIds] of parents) {
+    const parent = tasks.get(parentId);
+    if (parent) {
+      parent.subtasks = childIds;
+    }
+    for (const childId of childIds) {
+      const child = tasks.get(childId);
+      if (child) {
+        child.parent_id = parentId;
+      }
+    }
+  }
+
+  // Apply details
+  for (const [id, fields] of details) {
+    const task = tasks.get(id);
+    if (task) {
+      if (fields.description) task.description = fields.description;
+      if (fields.details) task.details = fields.details;
+      if (fields.test_strategy) task.test_strategy = fields.test_strategy;
+    }
+  }
+
+  // Apply assignments
+  for (const [id, assignee] of assignments) {
+    const task = tasks.get(id);
+    if (task) {
+      task.assigned_to = assignee;
+    }
+  }
+
+  // Convert to array and sort by ID naturally
+  const taskArray = Array.from(tasks.values());
+  taskArray.sort((a, b) => naturalSortIds(a.id, b.id));
+
+  return { name: phaseName, tasks: taskArray };
+}
+
+/**
+ * Natural sort for task IDs: "1" < "2" < "10", "1.1" < "1.2" < "1.10"
+ */
+function naturalSortIds(a, b) {
+  const aParts = a.split('.');
+  const bParts = b.split('.');
+
+  const minLen = Math.min(aParts.length, bParts.length);
+  for (let i = 0; i < minLen; i++) {
+    const an = parseInt(aParts[i], 10);
+    const bn = parseInt(bParts[i], 10);
+    if (!isNaN(an) && !isNaN(bn)) {
+      if (an !== bn) return an - bn;
+    } else {
+      if (aParts[i] !== bParts[i]) return aParts[i].localeCompare(bParts[i]);
+    }
+  }
+  return aParts.length - bParts.length;
+}
+
+/**
  * Generate the complete HTML viewer
  */
-function generateViewerHtml(tasksData, mermaidDiagram, wavesData) {
-  // Extract mermaid content (remove ```mermaid and ``` markers)
-  const mermaidContent = mermaidDiagram
-    .replace(/```mermaid\n?/, '')
-    .replace(/\n?```$/, '')
-    .trim();
-
+function generateViewerHtml(tasksData, wavesData) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -390,9 +708,12 @@ ${getViewerStyles()}
       </section>
 
       <section id="diagram" class="tab-content">
-        <div class="mermaid">
-${mermaidContent}
+        <div class="diagram-controls">
+          <label class="checkbox-label">
+            <input type="checkbox" id="simplified-view" checked> Simplified (hide subtasks)
+          </label>
         </div>
+        <div id="diagram-phases-container"></div>
       </section>
 
       <section id="stats" class="tab-content">
@@ -713,12 +1034,119 @@ function getViewerStyles() {
       color: #9ca3af;
     }
 
+    /* Diagram controls */
+    .diagram-controls {
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      color: #e4e4e7;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      width: 1rem;
+      height: 1rem;
+      cursor: pointer;
+    }
+
     /* Mermaid diagram */
-    .mermaid {
+    .diagram-phases-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .phase-diagram {
       background: #1e293b;
-      padding: 2rem;
+      border: 1px solid #334155;
       border-radius: 8px;
-      overflow-x: auto;
+      overflow: hidden;
+    }
+
+    .phase-diagram-header {
+      background: #334155;
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      color: #e4e4e7;
+      border-bottom: 1px solid #475569;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .phase-diagram-header .zoom-controls {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .phase-diagram-header .zoom-controls button {
+      background: #475569;
+      border: none;
+      color: #e4e4e7;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .phase-diagram-header .zoom-controls button:hover {
+      background: #64748b;
+    }
+
+    .phase-diagram-header .zoom-level {
+      color: #9ca3af;
+      font-size: 0.8rem;
+      min-width: 3rem;
+      text-align: center;
+    }
+
+    .phase-diagram-viewport {
+      height: 400px;
+      overflow: hidden;
+      cursor: grab;
+      position: relative;
+    }
+
+    .phase-diagram-viewport:active {
+      cursor: grabbing;
+    }
+
+    .phase-diagram-content {
+      transform-origin: 0 0;
+      padding: 1rem;
+    }
+
+    .phase-diagram-content svg {
+      display: block;
+    }
+
+    .cross-phase-deps {
+      background: #1e1b4b;
+      border: 1px solid #4338ca;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .cross-phase-deps h3 {
+      color: #a5b4fc;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .cross-phase-dep {
+      color: #c7d2fe;
+      font-size: 0.85rem;
+      padding: 0.25rem 0;
     }
 
     /* Stats */
@@ -780,29 +1208,239 @@ function getViewerScript() {
   return `
     // Initialize mermaid
     mermaid.initialize({
-      startOnLoad: true,
+      startOnLoad: false,
       theme: 'dark',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: false,
+        htmlLabels: true,
+        curve: 'basis'
+      },
       themeVariables: {
         primaryColor: '#3b82f6',
         primaryTextColor: '#e4e4e7',
         primaryBorderColor: '#334155',
-        lineColor: '#334155',
+        lineColor: '#64748b',
         secondaryColor: '#1e293b',
         tertiaryColor: '#0f172a'
       }
     });
+
+    // Diagram state
+    let diagramRenderCount = 0;
+    let simplifiedView = true; // Default to simplified view
+    const diagramStates = new Map(); // phase -> { zoom, panX, panY }
+
+    // Generate mermaid diagram content for a single phase
+    function generatePhaseDiagram(phaseName, simplified) {
+      const phaseData = phases[phaseName];
+      if (!phaseData || !phaseData.tasks) return null;
+
+      let tasks = phaseData.tasks;
+
+      // Filter to top-level tasks only if simplified view
+      if (simplified) {
+        tasks = tasks.filter(t => !t.parent_id);
+      }
+
+      if (tasks.length === 0) return null;
+
+      let diagram = 'flowchart LR\\n';
+
+      // Add class definitions for status colors
+      diagram += '    classDef pending fill:#fef3c7,stroke:#f59e0b,color:#92400e\\n';
+      diagram += '    classDef inprogress fill:#dbeafe,stroke:#3b82f6,color:#1e40af,stroke-width:2px\\n';
+      diagram += '    classDef done fill:#d1fae5,stroke:#10b981,color:#065f46\\n';
+      diagram += '    classDef blocked fill:#fee2e2,stroke:#ef4444,color:#991b1b\\n';
+      diagram += '    classDef review fill:#fef3c7,stroke:#f59e0b,color:#92400e\\n';
+      diagram += '    classDef expanded fill:#e0e7ff,stroke:#6366f1,color:#3730a3\\n';
+      diagram += '    classDef cancelled fill:#f3f4f6,stroke:#9ca3af,color:#6b7280\\n';
+
+      // Add nodes
+      for (const task of tasks) {
+        const safeId = 't' + task.id.replace(/\\./g, '_');
+        const safeTitle = task.title.replace(/"/g, "'").replace(/[\\[\\]()]/g, '');
+        const truncatedTitle = safeTitle.length > 35 ? safeTitle.substring(0, 32) + '...' : safeTitle;
+        diagram += '    ' + safeId + '(["' + truncatedTitle + '"])\\n';
+
+        // Add status class
+        const statusClass = (task.status || 'pending').toLowerCase().replace(/-/g, '');
+        diagram += '    class ' + safeId + ' ' + statusClass + '\\n';
+      }
+
+      // Add edges (dependencies)
+      for (const task of tasks) {
+        const safeId = 't' + task.id.replace(/\\./g, '_');
+        for (const dep of (task.dependencies || [])) {
+          const depTask = tasks.find(t => t.id === dep);
+          if (depTask) {
+            const safeDepId = 't' + dep.replace(/\\./g, '_');
+            diagram += '    ' + safeDepId + ' --> ' + safeId + '\\n';
+          }
+        }
+
+        // Add parent-child edges (dotted) if not simplified
+        if (!simplified && task.parent_id) {
+          const parentTask = tasks.find(t => t.id === task.parent_id);
+          if (parentTask) {
+            const safeParentId = 't' + task.parent_id.replace(/\\./g, '_');
+            diagram += '    ' + safeParentId + ' -.-> ' + safeId + '\\n';
+          }
+        }
+      }
+
+      return diagram;
+    }
+
+    // Setup pan/zoom for a viewport
+    function setupPanZoom(viewport, content, phaseName) {
+      // Calculate initial zoom to fit content
+      const svg = content.querySelector('svg');
+      let initialZoom = 0.5;
+      if (svg) {
+        const svgRect = svg.getBoundingClientRect();
+        const viewportRect = viewport.getBoundingClientRect();
+        const scaleX = viewportRect.width / svgRect.width;
+        const scaleY = viewportRect.height / svgRect.height;
+        initialZoom = Math.min(scaleX, scaleY, 1) * 0.9; // 90% of fit, max 100%
+        initialZoom = Math.max(0.1, Math.min(1, initialZoom)); // Clamp between 10% and 100%
+      }
+
+      let state = diagramStates.get(phaseName) || { zoom: initialZoom, panX: 10, panY: 10 };
+      diagramStates.set(phaseName, state);
+
+      let isPanning = false;
+      let startX, startY;
+
+      function updateTransform() {
+        content.style.transform = 'translate(' + state.panX + 'px, ' + state.panY + 'px) scale(' + state.zoom + ')';
+        const zoomLabel = viewport.parentElement.querySelector('.zoom-level');
+        if (zoomLabel) zoomLabel.textContent = Math.round(state.zoom * 100) + '%';
+      }
+
+      // Mouse drag for panning
+      viewport.addEventListener('mousedown', (e) => {
+        isPanning = true;
+        startX = e.clientX - state.panX;
+        startY = e.clientY - state.panY;
+        viewport.style.cursor = 'grabbing';
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        state.panX = e.clientX - startX;
+        state.panY = e.clientY - startY;
+        updateTransform();
+      });
+
+      document.addEventListener('mouseup', () => {
+        isPanning = false;
+        viewport.style.cursor = 'grab';
+      });
+
+      // Scroll wheel for zoom
+      viewport.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(0.1, Math.min(3, state.zoom * delta));
+
+        // Zoom toward mouse position
+        const rect = viewport.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        state.panX = mouseX - (mouseX - state.panX) * (newZoom / state.zoom);
+        state.panY = mouseY - (mouseY - state.panY) * (newZoom / state.zoom);
+        state.zoom = newZoom;
+
+        updateTransform();
+      });
+
+      // Zoom buttons
+      const header = viewport.parentElement.querySelector('.phase-diagram-header');
+      if (header) {
+        header.querySelector('.zoom-in')?.addEventListener('click', () => {
+          state.zoom = Math.min(3, state.zoom * 1.2);
+          updateTransform();
+        });
+        header.querySelector('.zoom-out')?.addEventListener('click', () => {
+          state.zoom = Math.max(0.1, state.zoom * 0.8);
+          updateTransform();
+        });
+        header.querySelector('.zoom-reset')?.addEventListener('click', () => {
+          state.zoom = initialZoom;
+          state.panX = 10;
+          state.panY = 10;
+          updateTransform();
+        });
+      }
+
+      updateTransform();
+    }
+
+    // Render all phase diagrams
+    async function renderDiagrams() {
+      const container = document.getElementById('diagram-phases-container');
+      if (!container) return;
+
+      container.innerHTML = '';
+
+      for (const phaseName of Object.keys(phases)) {
+        const diagram = generatePhaseDiagram(phaseName, simplifiedView);
+        if (!diagram) continue;
+
+        // Create phase section
+        const section = document.createElement('div');
+        section.className = 'phase-diagram';
+        section.innerHTML =
+          '<div class="phase-diagram-header">' +
+            '<span>' + phaseName + '</span>' +
+            '<div class="zoom-controls">' +
+              '<button class="zoom-out" title="Zoom out">−</button>' +
+              '<span class="zoom-level">80%</span>' +
+              '<button class="zoom-in" title="Zoom in">+</button>' +
+              '<button class="zoom-reset" title="Reset view">⟲</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="phase-diagram-viewport">' +
+            '<div class="phase-diagram-content"></div>' +
+          '</div>';
+
+        container.appendChild(section);
+
+        const content = section.querySelector('.phase-diagram-content');
+        const viewport = section.querySelector('.phase-diagram-viewport');
+
+        try {
+          diagramRenderCount++;
+          const { svg } = await mermaid.render('mermaid-' + phaseName.replace(/[^a-zA-Z0-9]/g, '_') + '-' + diagramRenderCount, diagram);
+          content.innerHTML = svg;
+          setupPanZoom(viewport, content, phaseName);
+        } catch (e) {
+          console.error('Mermaid render error for ' + phaseName + ':', e);
+          content.innerHTML = '<p style="color: #ef4444; padding: 1rem;">Error: ' + e.message + '</p>';
+        }
+      }
+    }
 
     // State
     let selectedTaskId = null;
     let currentPhase = null;
 
     // Tab navigation
+    let diagramsRendered = false;
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById(btn.dataset.tab).classList.add('active');
+
+        // Render diagrams when diagram tab is shown (first time only, or after toggle)
+        if (btn.dataset.tab === 'diagram' && !diagramsRendered) {
+          diagramsRendered = true;
+          setTimeout(renderDiagrams, 100);
+        }
       });
     });
 
@@ -830,6 +1468,16 @@ function getViewerScript() {
           select.appendChild(option);
         });
       });
+
+      // Event handler for simplified view checkbox
+      const simplifiedCheckbox = document.getElementById('simplified-view');
+      if (simplifiedCheckbox) {
+        simplifiedCheckbox.addEventListener('change', (e) => {
+          simplifiedView = e.target.checked;
+          diagramStates.clear(); // Reset pan/zoom states
+          renderDiagrams();
+        });
+      }
     }
 
     populatePhaseSelectors();

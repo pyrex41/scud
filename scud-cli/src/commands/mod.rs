@@ -12,7 +12,6 @@ pub mod mermaid;
 pub mod migrate;
 pub mod next;
 pub mod next_batch;
-pub mod serve;
 pub mod set_status;
 pub mod show;
 pub mod stats;

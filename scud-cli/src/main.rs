@@ -334,17 +334,6 @@ enum Commands {
         task_id: String,
     },
 
-    /// Start web dashboard server
-    Serve {
-        /// Port to listen on (default: 3000)
-        #[arg(short, long, default_value = "3000")]
-        port: u16,
-
-        /// Don't automatically open browser
-        #[arg(long)]
-        no_open: bool,
-    },
-
     /// Quick orientation for new session (show recent commits, active sessions, next task)
     Warmup,
 
@@ -459,7 +448,6 @@ async fn main() -> Result<()> {
             tag,
         } => commands::log::run(cli.project, &task_id, &summary, tag.as_deref()),
         Commands::LogShow { task_id } => commands::log::show(cli.project, &task_id),
-        Commands::Serve { port, no_open } => commands::serve::run(cli.project, port, no_open).await,
         Commands::Warmup => commands::warmup::run(cli.project),
         Commands::Commit { message, all } => {
             commands::commit::run(cli.project, message.as_deref(), all)
