@@ -1,6 +1,6 @@
 {
   "name": "scud-task",
-  "version": "1.27.0",
+  "version": "1.28.0",
   "description": "Fast, simple task master for AI-driven development - BMAD-TM workflow automation",
   "main": "index.js",
   "bin": {
@@ -11,9 +11,7 @@
     "build": "cargo build --release",
     "test": "cargo test"
   },
-  "dependencies": {
-    "open": "^10.0.0"
-  },
+  "dependencies": {},
   "keywords": [
     "task-management",
     "ai",

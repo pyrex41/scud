@@ -1,6 +1,6 @@
 [package]
 name = "scud-cli"
-version = "1.27.0"
+version = "1.28.0"
 edition = "2021"
 authors = ["SCUD Team"]
 description = "Fast, simple task master for AI-driven development"
@@ -31,6 +31,7 @@ toml = "0.8"  # TOML parsing for config files
 dialoguer = "0.11"  # Interactive CLI prompts
 atty = "0.2"  # TTY detection for interactive mode
 futures = "0.3"  # Async utilities for parallel execution
+webbrowser = "1.0"  # Cross-platform browser opening
 
 [dev-dependencies]
 tempfile = "3.8"  # Temporary directories for tests

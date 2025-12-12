@@ -16,10 +16,11 @@ This is a high-performance Rust rewrite of the SCUD task management system. It r
 ```
 scud (Rust Binary)
 ├── Core Commands (No AI - Instant)
-│   ├── init               # Initialize .taskmaster/
+│   ├── init               # Initialize .scud/ and install agents
 │   ├── tags               # List tags
 │   ├── use-tag            # Switch active tag
 │   ├── list               # List tasks with filters
+│   ├── view               # Open interactive HTML viewer in browser
 │   ├── show               # Show task details
 │   ├── set-status         # Update task status
 │   ├── next               # Find next available task (--claim for dynamic-wave)
@@ -36,14 +37,49 @@ scud (Rust Binary)
     └── .scud/tasks/tasks.scg
 ```
 
-## Building
+## Installation
 
-### Development
+### Option 1: npm (Recommended)
+
+Install globally via npm - this will build the Rust binary automatically:
+
+```bash
+npm install -g scud-task
+```
+
+**Requirements:** Rust toolchain must be installed ([rustup.rs](https://rustup.rs/))
+
+### Option 2: Cargo
+
+Install directly via Cargo:
+
+```bash
+cargo install scud-cli
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/pyrex41/scud.git
+cd scud/scud-cli
+cargo install --path .
+```
+
+### Verify Installation
+
+```bash
+scud --version
+scud --help
+```
+
+## Building (Development)
+
+### Debug Build
 ```bash
 cargo build
 ```
 
-### Release (Optimized)
+### Release Build
 ```bash
 cargo build --release
 ```
@@ -77,6 +113,9 @@ scud next
 
 # Show statistics
 scud stats
+
+# Open interactive task viewer in browser
+scud view
 ```
 
 ### [EXPERIMENTAL] Dynamic-Wave Mode
@@ -165,7 +204,7 @@ scud init
 
 ### Configuration File
 
-The configuration is stored in `.taskmaster/config.toml`:
+The configuration is stored in `.scud/config.toml`:
 
 ```toml
 [llm]
@@ -279,7 +318,7 @@ scud-cli/
 
 1. Add command to `Commands` enum in `main.rs`
 2. Create handler in `src/commands/`
-3. Add to `rustCommands` array in `bin/scud.js`
+3. Add module to `src/commands/mod.rs`
 4. Update help text
 
 ### Adding New LLM Prompts
@@ -315,23 +354,20 @@ cargo build --release
 # Copy to /usr/local/bin or similar
 ```
 
-### As Part of npm Package
+### Via npm Package
 
-The SCUD npm package includes the Rust binary:
-- Pre-built binaries for major platforms
-- Auto-built on first use if needed
-- Seamless integration via `bin/scud.js`
+The npm package builds the Rust binary during installation:
+- Runs `cargo build --release` during `npm install`
+- Binary is placed in `bin/` directory
+- `bin/scud.js` is a thin wrapper that executes the binary
+- Requires Rust toolchain to be installed
 
 ## Future Enhancements
 
 - [ ] Cross-compilation for multiple platforms
-- [ ] Pre-built binaries in npm package
-- [ ] Configuration file support
-- [ ] Additional LLM providers (OpenAI, etc.)
-- [ ] Offline mode for core commands
+- [ ] Pre-built binaries in npm package (eliminate Rust requirement)
 - [ ] Task export/import
 - [ ] Custom prompt templates
-- [ ] Parallel task execution analysis
 - [ ] Integration tests with real API calls
 
 ## License

@@ -16,6 +16,7 @@ pub mod set_status;
 pub mod show;
 pub mod stats;
 pub mod tags;
+pub mod view;
 pub mod warmup;
 pub mod waves;
 

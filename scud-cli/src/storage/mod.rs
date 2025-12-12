@@ -28,6 +28,11 @@ impl Storage {
         }
     }
 
+    /// Get the project root directory
+    pub fn project_root(&self) -> &Path {
+        &self.project_root
+    }
+
     /// Acquire an exclusive file lock with retry logic
     fn acquire_lock_with_retry(&self, file: &File, max_retries: u32) -> Result<()> {
         let mut retries = 0;

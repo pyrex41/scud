@@ -1,8 +1,10 @@
 use anyhow::Result;
 use colored::Colorize;
 use dialoguer::{Input, Select};
+use std::fs;
 use std::path::PathBuf;
 
+use crate::commands::config as config_cmd;
 use crate::commands::helpers::is_interactive;
 use crate::config::{Config, LLMConfig};
 use crate::storage::Storage;
@@ -92,7 +94,26 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
 
     storage.initialize_with_config(&config)?;
 
-    println!("\n{}", "✅ SCUD initialized successfully!".green().bold());
+    println!("\n{}", "SCUD initialized successfully!".green().bold());
+
+    // Auto-install all agents and commands
+    println!("\n{}", "Installing SCUD agents and commands...".blue());
+    if let Err(e) = config_cmd::agents_add(Some(storage.project_root().to_path_buf()), None, true) {
+        println!(
+            "{}",
+            format!("  Could not install agents: {}", e).yellow()
+        );
+        println!("  You can install them later with: scud config agents add --all");
+    }
+
+    // Update CLAUDE.md with SCUD instructions
+    if let Err(e) = update_claude_md(&storage) {
+        println!(
+            "{}",
+            format!("  Could not update CLAUDE.md: {}", e).yellow()
+        );
+    }
+
     println!("\n{}", "Configuration:".blue());
     println!("  Provider: {}", config.llm.provider.yellow());
     println!("  Model: {}", config.llm.model.yellow());
@@ -104,7 +125,45 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     println!("\n{}", "Next steps:".blue());
     println!("  1. Set your API key environment variable");
     println!("  2. Run: scud tags");
-    println!("  3. Create or import tasks, then use: /scud:task-next\n");
+    println!("  3. Create or import tasks, then use: /scud:next\n");
 
+    Ok(())
+}
+
+/// Update CLAUDE.md with SCUD instructions
+fn update_claude_md(storage: &Storage) -> Result<()> {
+    let claude_md_path = storage.project_root().join("CLAUDE.md");
+
+    let scud_section = r#"
+## SCUD Task Management
+
+This project uses SCUD for AI-driven task management.
+
+### Quick Start
+- `scud tags` - List available phases
+- `scud next` - Find next available task
+- `scud set-status <id> in-progress` - Claim a task
+- `scud view` - Open interactive task viewer
+
+### Slash Commands
+Use `/scud:` commands in Claude Code for task operations.
+"#;
+
+    let marker = "## SCUD Task Management";
+
+    if claude_md_path.exists() {
+        let content = fs::read_to_string(&claude_md_path)?;
+        if content.contains(marker) {
+            return Ok(()); // Already has SCUD section
+        }
+        // Append to existing file
+        let new_content = format!("{}\n{}", content.trim_end(), scud_section);
+        fs::write(&claude_md_path, new_content)?;
+    } else {
+        // Create new file
+        fs::write(&claude_md_path, scud_section.trim_start())?;
+    }
+
+    println!("  {} Updated CLAUDE.md with SCUD instructions", "✓".green());
     Ok(())
 }

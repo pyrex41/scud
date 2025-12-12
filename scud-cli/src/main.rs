@@ -80,7 +80,6 @@ enum Commands {
     },
 
     /// List tasks in active phase
-    #[command(alias = "view")]
     List {
         /// Filter by status
         #[arg(short, long)]
@@ -98,6 +97,9 @@ enum Commands {
         #[arg(short = 'v', long)]
         verbose: bool,
     },
+
+    /// Open interactive task viewer in browser
+    View,
 
     /// Show detailed task information
     Show {
@@ -368,6 +370,7 @@ async fn main() -> Result<()> {
             json,
             verbose,
         ),
+        Commands::View => commands::view::run(cli.project),
         Commands::Show { task_id, tag } => {
             commands::show::run(cli.project, &task_id, tag.as_deref())
         }
