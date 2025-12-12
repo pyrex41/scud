@@ -12,6 +12,5 @@ scud stats $ARGUMENTS
 
 Summarize:
 - Overall progress percentage
-- Tasks by status (pending, in-progress, done, blocked)
-- Total complexity points completed vs remaining
-- Highlight any blocked tasks that need attention
+- Tasks by status (pending, in-progress, done, expanded, blocked)
+- Per-tag breakdown if multiple tags exist

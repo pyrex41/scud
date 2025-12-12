@@ -4,14 +4,12 @@ allowed-tools: Bash(scud:*)
 argument-hint: [--tag <tag>]
 ---
 
-Show task assignments and locks.
+Show task assignments and active work.
 
 ```bash
-scud whois $ARGUMENTS
+scud who-is $ARGUMENTS
 ```
 
 Display:
-- Which tasks are assigned to whom
-- Which tasks are currently locked
-- How long each lock has been held
-- Flag any stale locks (>24 hours)
+- Which tasks are in-progress and by whom
+- Any stale in-progress tasks (started long ago)

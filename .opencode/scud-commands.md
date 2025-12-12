@@ -1,35 +1,35 @@
 # SCUD CLI Commands - Quick Reference
 
-**IMPORTANT: This reference should be included in all agent contexts for SCUD operations.**
+**SCUD Task Manager v1.25.0**
+
+---
+
+## Session Startup
+
+```bash
+# Quick orientation at session start
+scud warmup
+
+# View task statistics
+scud stats
+```
 
 ---
 
 ## Tag Management
 
 ```bash
-# List all tags
+# List all tags (shows active tag with *)
 scud tags
 
-# Create new tag and parse PRD into it
-scud parse-prd docs/features/auth.md --tag auth
+# Set active tag
+scud tags <tag-name>
 
-# Switch to work on specific tag
-scud use-tag auth
-
-# Add a new empty tag
-scud add-tag todos --d="Todo CRUD operations"
-
-# Copy existing tag to new tag
-scud copy-tag auth auth-v2
-
-# Rename a tag
-scud rename-tag old-name new-name
-
-# Delete a tag (with confirmation)
-scud delete-tag old-tag
+# Parse markdown into tasks (creates tag if needed)
+scud parse docs/features/auth.md --tag auth
 ```
 
-**Critical Note:** All task operations apply to the **currently active tag** only. Always verify which tag is active before operations.
+**Note:** All task operations apply to the **active tag**. Verify with `scud tags`.
 
 ---
 
@@ -39,19 +39,19 @@ scud delete-tag old-tag
 # List all tasks in active tag
 scud list
 
-# List tasks by status
-scud list --status=pending
-scud list --status=done
-scud list --status=in-progress
-
-# List tasks with subtasks
-scud list --with-subtasks
+# Filter by status
+scud list --status pending
+scud list --status done
+scud list --status in-progress
 
 # Show detailed task information
 scud show 3
 
-# Find next task to work on (considers dependencies)
+# Find next available task (considers dependencies)
 scud next
+
+# View task graph as Mermaid diagram
+scud mermaid
 ```
 
 ---
@@ -60,288 +60,141 @@ scud next
 
 ```bash
 # Update task status
-scud set-status --id=3 --status=in-progress
-scud set-status --id=3 --status=done
-scud set-status --id=3 --status=review
-scud set-status --id=3 --status=blocked
+scud set-status 3 in-progress
+scud set-status 3 done
+scud set-status 3 blocked
 
-# Valid status values:
+# Valid statuses:
 # - pending
 # - in-progress
 # - done
+# - blocked
 # - review
 # - deferred
 # - cancelled
-# - blocked
 ```
 
 ---
 
-## Dependency Management
+## Parallel Execution Planning
 
 ```bash
-# Add dependency (task 3 depends on task 1)
-scud add-dependency --id=3 --depends-on=1
+# Show parallel execution waves
+scud waves
 
-# Remove dependency
-scud remove-dependency --id=3 --depends-on=1
+# Limit parallel tasks per wave
+scud waves --max-parallel 3
 
-# Validate all dependencies (check for issues)
-scud validate-dependencies
+# Plan across all tags
+scud waves --all-tags
 
-# Fix invalid dependencies automatically
-scud fix-dependencies
-```
-
-**Dependency Rules:**
-- Cannot start task if dependencies not done
-- Circular dependencies are invalid
-- Subtask dependencies inherit from parent
-
----
-
-## Task Creation & Modification
-
-```bash
-# Add new task using AI
-scud add-task --prompt="Create login API endpoint" --priority=high
-
-# Add task with dependencies
-scud add-task --prompt="Add JWT middleware" --dependencies=3,4
-
-# Remove a task
-scud remove-task --id=5 -y
-
-# Update task with new context
-scud update-task --id=3 --prompt="Also needs rate limiting"
-
-# Update multiple tasks from specific ID onwards
-scud update --from=5 --prompt="All endpoints need CORS headers"
+# Show who is working on what
+scud who-is
 ```
 
 ---
 
-## Subtask Management
+## AI-Powered Commands
 
 ```bash
-# Add subtask to parent task
-scud add-subtask --parent=3 --title="Write unit tests" --description="Test all edge cases"
+# Parse PRD/markdown into tasks
+scud parse docs/feature.md --tag feature-name
 
-# Convert existing task to subtask
-scud add-subtask --parent=3 --task-id=7
-
-# Remove subtask
-scud remove-subtask --id=3.1
-
-# Remove subtask and convert to standalone task
-scud remove-subtask --id=3.1 --convert
-
-# Clear all subtasks from a task
-scud clear-subtasks --id=3
-
-# Clear all subtasks from all tasks
-scud clear-subtasks --all
-```
-
----
-
-## Complexity Analysis & Task Breakdown
-
-```bash
-# Analyze all tasks for complexity
+# Analyze task complexity
 scud analyze-complexity
 
-# Analyze with higher threshold (default: 5)
-scud analyze-complexity --threshold=8
+# Expand complex task into subtasks
+scud expand 5
 
-# Use research mode for deeper analysis
-scud analyze-complexity --research
-
-# View complexity report
-scud complexity-report
-
-# Expand single task into subtasks
-scud expand --id=3 --num=5
-
-# Expand with specific context
-scud expand --id=3 --prompt="Focus on security concerns"
-
-# Expand with research mode
-scud expand --id=3 --research
-
-# Expand all pending tasks
-scud expand --all
-
-# Force expand even if already has subtasks
-scud expand --all --force
-```
-
-**Fibonacci Complexity Scale:**
-- 1: Trivial (< 30 min)
-- 2: Simple (30 min - 1 hour)
-- 3: Moderate (1-2 hours)
-- 5: Complex (2-4 hours)
-- 8: Very Complex (4-8 hours)
-- 13: Extremely Complex (1 day) - **SPLIT INTO SUBTASKS**
-
----
-
-## AI Research & Context
-
-```bash
-# Perform research query
-scud research "What is the best way to implement JWT auth?"
-
-# Research with specific task context
-scud research "Security best practices" -i=3,4,5
-
-# Research with file context
-scud research "How does this work?" -f=src/auth.js,src/middleware.js
-
-# Research with additional context
-scud research "Optimization strategies" -c="Focus on database queries"
-
-# Save research output to file
-scud research "API design patterns" -s=docs/research-api-patterns.md
-
-# Display research as tree
-scud research "System architecture" --tree
-
-# Set detail level (1-5)
-scud research "Implementation details" -d=3
+# Re-analyze cross-tag dependencies
+scud reanalyze-deps
 ```
 
 ---
 
-## PRD Parsing & Task Generation
+## Git Integration
 
 ```bash
-# Parse PRD into tasks (creates or updates tag)
-scud parse-prd docs/features/auth.md --tag auth
+# Commit with task context (auto-prefixes with task ID)
+scud commit -m "implement feature"
 
-# Generate with specific number of tasks
-scud parse-prd docs/prd/product.md --num-tasks=15 --tag main-product
-
-# Generate individual task files from tasks.scg
-scud generate
-```
-
-**PRD Format Requirements:**
-- Use markdown with clear sections
-- Tasks should be under `## Tasks` heading
-- Format: `### Task N: Title`
-- Include Description, Complexity, Dependencies
-
----
-
-## Export & Documentation
-
-```bash
-# Export tasks to README.md
-scud sync-readme
-
-# Export with subtasks
-scud sync-readme --with-subtasks
-
-# Export only specific status
-scud sync-readme --status=pending
+# Stage all and commit
+scud commit -a -m "complete implementation"
 ```
 
 ---
 
-## Project Setup & Configuration
+## Task Logging
 
 ```bash
-# Initialize new SCUD project
+# Write progress log for a task
+scud log 3 "Completed auth module, moving to tests"
+
+# View logs for a task
+scud log-show 3
+```
+
+---
+
+## Diagnostics
+
+```bash
+# Diagnose workflow issues
+scud doctor
+
+# Auto-fix recoverable issues
+scud doctor --fix
+
+# Check specific tag
+scud doctor --tag auth
+
+# Set stale threshold (hours)
+scud doctor --stale-hours 12
+```
+
+---
+
+## Project Setup
+
+```bash
+# Initialize SCUD in project
 scud init
 
-# Initialize with project details
-scud init --name="My App" --description="Todo application" -y
+# View/edit configuration
+scud config
 
-# View AI model configuration
-scud models
-
-# Setup AI models interactively
-scud models --setup
-
-# Set main model
-scud models --set-main claude-sonnet-4
-
-# Set research model
-scud models --set-research claude-opus-4
-
-# Set fallback model
-scud models --set-fallback gpt-4
+# Start web dashboard
+scud serve
 ```
 
 ---
 
 ## Common Workflows
 
-### Starting New Feature
+### Starting a New Feature
 ```bash
-# 1. Parse PRD with tag
-scud parse-prd docs/features/auth.md --tag auth
-
-# 2. Verify it's active
-scud tags
-
-# 3. List tasks
-scud list
-
-# 4. Analyze complexity
-scud analyze-complexity
-
-# 5. Expand complex tasks (>13 points)
-scud expand --id=5
+scud parse docs/features/auth.md --tag auth
+scud tags auth                    # Switch to new tag
+scud list                         # View generated tasks
+scud analyze-complexity           # Check complexity
+scud expand 5                     # Break down complex tasks
 ```
 
 ### Working on Tasks
 ```bash
-# 1. Find next available task
-scud next
-
-# 2. Start the task
-scud set-status --id=3 --status=in-progress
-
-# 3. View task details
-scud show 3
-
-# 4. Complete the task
-scud set-status --id=3 --status=done
+scud warmup                       # Orient yourself
+scud next                         # Find available task
+scud set-status 3 in-progress     # Start working
+scud show 3                       # View details
+scud set-status 3 done            # Complete task
+scud commit -m "implement auth"   # Commit with context
 ```
 
-### Switching Between Tags
+### Parallel Team Work
 ```bash
-# 1. List all tags
-scud tags
-
-# 2. Switch to different tag
-scud use-tag todos
-
-# 3. Verify switch worked
-scud list
-
-# 4. Switch back
-scud use-tag auth
-```
-
-### Breaking Down Complex Tasks
-```bash
-# 1. Identify complex tasks
-scud analyze-complexity --threshold=13
-
-# 2. View report
-scud complexity-report
-
-# 3. Expand the complex task
-scud expand --id=5 --num=5
-
-# 4. Verify subtasks created
-scud show 5
-
-# 5. Update dependencies if needed
-scud add-dependency --id=5.2 --depends-on=5.1
+scud waves                        # Plan parallel execution
+scud who-is                       # See who's working on what
+scud next --spawn                 # Get task as JSON for orchestrators
 ```
 
 ---
@@ -352,74 +205,35 @@ scud add-dependency --id=5.2 --depends-on=5.1
 .scud/
 ├── tasks/
 │   └── tasks.scg           # All tasks in SCG format
-├── config.toml             # AI model configuration and active tag
-└── task-files/             # Individual task files (if using generate)
+├── config.toml             # Configuration (provider, model, active tag)
+├── current-task            # Currently active task ID
+└── docs/                   # Documentation and PRDs
 ```
 
 ---
 
 ## Environment Variables
 
-Required in `.env`:
 ```bash
-XAI_API_KEY=xai-...           # Default provider
-# Alternative providers:
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-OPENROUTER_API_KEY=...
+# Set your AI provider API key:
+export XAI_API_KEY=xai-...           # xAI (Grok) - default
+export ANTHROPIC_API_KEY=sk-ant-...  # Anthropic (Claude)
+export OPENAI_API_KEY=sk-...         # OpenAI
+export OPENROUTER_API_KEY=...        # OpenRouter
 ```
 
 ---
 
 ## Tips for Agents
 
-1. **Always verify active tag** before task operations:
-   ```bash
-   scud tags  # Shows active tag with indicator
-   ```
-
-2. **Use `scud next`** to find tasks with met dependencies:
-   ```bash
-   scud next  # Returns task ID or "No tasks available"
-   ```
-
-3. **Check dependencies before starting** work:
-   ```bash
-   scud show 3  # Shows dependencies and their status
-   ```
-
-4. **Break down tasks >13 complexity**:
-   ```bash
-   scud expand --id=5 --num=5
-   ```
-
-5. **Use research mode** for complex planning:
-   ```bash
-   scud research "Best approach for..." -i=3
-   ```
-
-6. **Validate dependencies** before marking tag complete:
-   ```bash
-   scud validate-dependencies
-   ```
+1. **Start every session** with `scud warmup` for context
+2. **Use `scud next`** to find tasks with satisfied dependencies
+3. **Check task details** with `scud show <id>` before starting
+4. **Mark status changes** immediately with `scud set-status`
+5. **Use `scud commit`** to auto-prefix commits with task context
+6. **Run `scud doctor`** if workflow seems stuck
 
 ---
 
-## Error Prevention
-
-- Start task without checking dependencies
-- Change task status without verifying work complete
-- Parse PRD without `--tag` flag
-- Forget which tag is active
-- Create tasks with complexity >13 without breaking down
-
-- Always use tags for feature organization
-- Validate dependencies regularly
-- Check `scud next` for available tasks
-- Expand complex tasks into subtasks
-- Use research mode for complex decisions
-
----
-
-**Last Updated:** 2025-12-02
-**Version:** SCUD v1.17.0
+**Last Updated:** 2025-12-12
+**Version:** SCUD v1.25.0
