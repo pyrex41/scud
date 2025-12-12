@@ -1,10 +1,10 @@
 # SCUD
 
+> *Inspired by the SCUD short-range ballistic missile system—lightweight, flexible, and powerful. Like its namesake, SCUD can be deployed quickly in a variety of contexts, delivering results with minimal overhead.*
+
 **Sprint Cycle Unified Development** - Fast, AI-powered task management for building software
 
-> **Version 1.17.0** - Stable release. Fast Rust CLI with SCG format, DAG-driven execution, and Claude Code hook integration.
-
-A lightweight DAG-driven task management system with automatic completion enforcement via Claude Code hooks.
+A lightweight DAG-driven task management system. Parse PRDs into tasks, track dependencies, and visualize parallel execution waves.
 
 ---
 
@@ -17,7 +17,6 @@ A lightweight DAG-driven task management system with automatic completion enforc
 pnpm add -g scud-task
 cd your-project
 scud init
-scud hooks install  # Enable automatic task completion
 ```
 
 **Using npm:**
@@ -25,131 +24,30 @@ scud hooks install  # Enable automatic task completion
 npm install -g scud-task
 cd your-project
 scud init
-scud hooks install
-```
-
-**Using Bun:**
-```bash
-# Bun blocks postinstall scripts by default, so use npm or pnpm
-# Or manually run the postinstall after bun install:
-bun install -g scud-task
-cd ~/.bun/install/global/node_modules/scud-task
-node bin/postinstall.js
 ```
 
 ### Basic Usage
 ```bash
-# Create tasks manually or parse from a PRD
-scud parse-prd docs/feature.md --tag my-feature
+# Create tasks from a PRD or feature doc
+scud parse docs/feature.md --tag my-feature
+
+# View tasks and dependencies
+scud list --tag my-feature
+scud waves --tag my-feature    # Show parallel execution plan
 
 # Find and work on next ready task
 scud next --tag my-feature
 scud set-status 1 in-progress
 
-# When done, mark complete (or let hooks do it automatically)
+# When done, mark complete
 scud set-status 1 done
+
+# Visualize in browser
+scud serve
 ```
 
-**Full guide:** [docs/guides/COMPLETE_GUIDE.md](docs/guides/COMPLETE_GUIDE.md)
+**Quick reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
 **Orchestrator pattern:** [docs/orchestrator.md](docs/orchestrator.md)
-
----
-
-## Usage Modes
-
-SCUD offers two ways to work with AI assistants, each with different trade-offs:
-
-### Mode 1: Direct CLI (Recommended)
-
-**How it works:**
-- Use SCUD CLI directly via bash for manual task management
-- Hooks enforce automatic task completion when Claude Code sessions end
-- DAG execution ensures tasks become ready when dependencies complete
-
-**Setup:**
-```bash
-pnpm add -g scud-task   # or: npm install -g scud-task
-cd your-project
-scud init
-scud hooks install      # Critical: enables automatic completion
-```
-
-**Pros:**
-- ✅ Full file system access (can edit tasks.scg directly if needed)
-- ✅ Automatic task completion via hooks (prevents forgotten updates)
-- ✅ More flexible - can use any tool/command
-- ✅ Better error messages (sees full CLI output)
-- ✅ Can combine SCUD with other tools seamlessly
-- ✅ DAG-driven execution (tasks ready when deps complete)
-
-**Cons:**
-- ❌ Requires bash/shell access
-- ❌ Must learn CLI commands
-
-**Best for:** Individual developers, orchestrator patterns, automated workflows
-
----
-
-### Mode 2: MCP Server (Universal Protocol)
-
-**How it works:**
-- Lightweight TypeScript server wraps SCUD CLI
-- Exposes 20 MCP tools + 3 resources via standardized protocol
-- Works with any MCP-compatible client (Claude Desktop, Cursor, Claude Code, etc.)
-
-**Setup:**
-```bash
-pnpm add -g scud-task scud-mcp   # or: npm install -g scud-task scud-mcp
-
-# Configure your MCP client (example for Claude Desktop):
-# ~/Library/Application Support/Claude/claude_desktop_config.json
-{
-  "mcpServers": {
-    "scud": {
-      "command": "scud-mcp",
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-..."
-      }
-    }
-  }
-}
-
-# For Cursor/other clients, see scud-mcp/README.md for config
-# Then use naturally: "Initialize SCUD and parse my PRD"
-```
-
-**Pros:**
-- ✅ Structured protocol (well-defined tool schemas)
-- ✅ Works across multiple AI clients (Claude Desktop, Cursor, etc.)
-- ✅ Cleaner interface (named tools vs bash commands)
-- ✅ Type-safe tool calls with validation
-- ✅ Can add file access via MCP resources (extensible)
-
-**Cons:**
-- ❌ Requires MCP server installation (extra dependency)
-- ❌ Less ad-hoc than direct bash (predefined tools only)
-- ❌ Client must support MCP protocol
-
-**Best for:** Multi-client usage, structured workflows, type-safe operations
-
----
-
-### Which Mode Should You Use?
-
-**Use Direct CLI if:**
-- You want maximum flexibility (any bash command)
-- You need DAG-driven execution with hooks
-- You're building orchestrator patterns (parallel execution)
-- You want zero external dependencies (just the CLI)
-- You want automatic task completion enforcement
-
-**Use MCP Server if:**
-- You use multiple AI clients (Claude Desktop, Cursor, etc.)
-- You want structured, type-safe tool calls
-- You prefer protocol-based integration
-- You want extensible architecture (can add custom tools/resources)
-
-**Can you use both?** Yes! The MCP server wraps the CLI, so they're fully compatible. Both modes work in Claude Code, Cursor, and Claude Desktop.
 
 ---
 
@@ -183,50 +81,43 @@ Task 2 ──┘      │
 ### Tags
 Group related tasks together (e.g., `auth-system`, `payment-flow`). Each tag has its own task graph.
 
-### Automatic Completion
-Claude Code hooks enforce task completion when sessions end. Set `SCUD_TASK_ID` env var and the hook marks it done automatically.
-
 ### Parallel Execution
-Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each working on a ready task.
+Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each working on a ready task. See [docs/orchestrator.md](docs/orchestrator.md).
 
 ---
 
 ## Key Features
 
 ### Fast Rust CLI
-- ⚡ **50x faster** than JavaScript alternatives
-- 🎯 **42x fewer tokens** (500 vs 21k)
-- 📦 **Single binary** - no dependencies
-
-### Hook-Enforced Completion
-- 🔒 **Automatic task completion** via Claude Code hooks
-- ✅ **Prevents forgotten updates** (solves 15% failure case)
-- 🎯 **Session-based** - marks done when Claude session ends
+- **50x faster** than JavaScript alternatives
+- **42x fewer tokens** (500 vs 21k)
+- **Single binary** - no dependencies
 
 ### DAG-Driven Execution
-- 📊 **Dependency graphs** - tasks ready when deps complete
-- 🔀 **Parallel waves** - visualize concurrent work
-- 🎯 **Smart scheduling** - next command finds ready tasks
+- **Dependency graphs** - tasks ready when deps complete
+- **Parallel waves** - visualize concurrent work with `scud waves`
+- **Smart scheduling** - `scud next` finds ready tasks
+
+### Web Dashboard
+- **Visual task board** - `scud serve` opens browser dashboard
+- **Mermaid diagrams** - dependency graph visualization
+- **Real-time stats** - progress tracking
 
 ### Orchestrator Support
-- 👥 **Parallel agents** - spawn multiple Claude instances
-- 🔒 **Task locking** - prevent conflicts
-- 📊 **Session monitoring** - track active work
+- **Parallel agents** - spawn multiple Claude instances
+- **Task locking** - `scud claim/release` prevents conflicts
+- **Session monitoring** - `scud whois` tracks active work
 
 ---
 
 ## Documentation
 
 **Getting Started:**
-- [Complete Guide](docs/guides/COMPLETE_GUIDE.md) - Comprehensive reference (25,000 words)
-- [Orchestrator Pattern](docs/orchestrator.md) - Parallel execution guide
-- [Migration Guide](docs/guides/MIGRATION.md) - Upgrading from BMAD-TM Lite
-
-**Integration:**
-- [MCP Server Guide](scud-mcp/README.md) - Model Context Protocol integration
 - [Quick Reference](docs/reference/QUICK_REFERENCE.md) - Command cheat sheet
+- [SCG Format Spec](docs/reference/SCG_FORMAT_SPEC.md) - Task file format
 
-**Advanced:**
+**Patterns:**
+- [Orchestrator Pattern](docs/orchestrator.md) - Parallel execution guide
 - [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task locking & orchestration
 
 **Development:**
@@ -238,36 +129,51 @@ Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each
 
 ### Setup
 ```bash
-scud init                          # Initialize SCUD
-scud hooks install                 # Enable automatic completion
-scud hooks status                  # Check hook status
+scud init                          # Initialize SCUD in current directory
+scud warmup                        # Quick session orientation
 ```
 
 ### Core Commands (Instant)
 ```bash
 scud tags                          # List all tags
-scud list [--tag <tag>]           # List tasks
-scud next [--tag <tag>]           # Find next ready task
-scud set-status <id> <status>      # Update task
-scud stats [--tag <tag>]          # Show statistics
-scud waves [--tag <tag>]          # Show parallel waves
+scud tags <tag>                    # Set active tag
+scud list [--tag <tag>]            # List tasks
+scud show <id>                     # Show task details
+scud next [--tag <tag>]            # Find next ready task
+scud set-status <id> <status>      # Update task status
+scud stats [--tag <tag>]           # Show statistics
+scud waves [--tag <tag>]           # Show parallel execution waves
+```
+
+### Visualization
+```bash
+scud serve                         # Start web dashboard (port 3000)
+scud mermaid [--tag <tag>]         # Generate Mermaid diagram
 ```
 
 ### AI Commands (Requires XAI_API_KEY)
 ```bash
-scud parse-prd <file> --tag <tag>  # Parse PRD into tasks
-scud analyze-complexity             # Analyze all tasks
-scud expand --all                   # Break down complex tasks
+scud parse <file> --tag <tag>      # Parse PRD/doc into tasks
+scud analyze-complexity            # Analyze task complexity
+scud expand --all                  # Break down complex tasks
 ```
 
-Default: `grok-code-fast-1` via xAI. Configure with `scud config --provider <provider> --model <model>`.
+Default model: `grok-3-mini`. Configure with `scud config --provider <provider> --model <model>`.
 
 ### Orchestrator Commands
 ```bash
 scud claim <id> --name <name>      # Claim task (lock)
 scud release <id>                  # Release task lock
-scud whois [--tag <tag>]          # See who's working on what
-scud doctor [--tag <tag>]         # Check for stale locks
+scud whois [--tag <tag>]           # See who's working on what
+scud doctor [--tag <tag>]          # Check for stale locks
+```
+
+### Utilities
+```bash
+scud log <id> "message"            # Add log entry to task
+scud log-show <id>                 # Show task log entries
+scud commit [-m "msg"]             # Git commit with task context
+scud clean [--tag <tag>]           # Clear tasks (with confirmation)
 ```
 
 ---
@@ -277,10 +183,9 @@ scud doctor [--tag <tag>]         # Check for stale locks
 ```bash
 # 1. Initialize
 scud init
-scud hooks install
 
 # 2. Create tasks from PRD
-scud parse-prd docs/feature.md --tag auth-system
+scud parse docs/feature.md --tag auth-system
 # Creates tasks with dependencies
 
 # 3. View execution plan
@@ -291,17 +196,17 @@ scud waves --tag auth-system
 scud next --tag auth-system
 # Returns: Task 1 is ready
 
-# 5. Implement (manual or via orchestrator)
-# Manual: Work on task, then mark done
+scud set-status 1 in-progress
+# ... do the work ...
 scud set-status 1 done
 
-# Or with orchestrator: Start Claude session with task ID
-SCUD_TASK_ID=1 claude "Implement task 1"
-# Hook auto-marks complete when session ends
-
-# 6. Repeat until done
+# 5. Track progress
 scud stats --tag auth-system
 # Shows progress: 8/10 complete
+
+# 6. Visualize
+scud serve
+# Opens web dashboard with task graph
 ```
 
 See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns.
@@ -312,21 +217,19 @@ See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns
 
 **DAG-Driven:**
 - Tasks become ready when dependencies complete
-- No manual phase management
 - Visualize parallel execution waves
 - Smart scheduling finds ready work
 
-**Hook-Enforced:**
-- Automatic task completion
-- Prevents forgotten status updates
-- Session-based tracking
-- Solves 15% agent failure case
-
 **Fast & Simple:**
-- Rust CLI is instant
+- Rust CLI is instant (<50ms)
 - SCG format is human-readable and git-friendly
 - Works offline (core commands)
 - No vendor lock-in
+
+**Visual:**
+- Web dashboard with task board
+- Mermaid dependency diagrams
+- Real-time progress tracking
 
 **Orchestrator-Ready:**
 - Spawn parallel Claude agents
@@ -353,16 +256,11 @@ Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`
 
 ```
 .scud/
-├── tasks/tasks.scg           # All tasks in SCG format (see spec)
-├── config.toml               # Active tag and settings
-└── current-task              # Active task ID (for hooks)
-
-.claude/
-└── settings.local.json       # Claude Code hooks config
-
-docs/
-├── prd/                      # Product requirements
-└── epics/                    # Feature descriptions
+├── tasks/tasks.scg           # All tasks in SCG format
+├── config.toml               # Provider/model settings
+├── active-tag                # Currently active tag
+├── current-task              # Active task ID (for commits)
+└── logs/                     # Task log entries
 ```
 
 ---
@@ -394,10 +292,9 @@ MIT
 
 ## Learn More
 
-- **Complete Guide:** [docs/guides/COMPLETE_GUIDE.md](docs/guides/COMPLETE_GUIDE.md)
-- **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
 - **Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
+- **SCG Format:** [docs/reference/SCG_FORMAT_SPEC.md](docs/reference/SCG_FORMAT_SPEC.md)
+- **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
 - **Parallel Features:** [docs/features/PARALLEL_FEATURES.md](docs/features/PARALLEL_FEATURES.md)
-- **Implementation Logs:** [log_docs/](log_docs/)
 
 **Happy building!**

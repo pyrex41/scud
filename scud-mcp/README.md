@@ -1,6 +1,6 @@
 # SCUD MCP Server
 
-Model Context Protocol (MCP) server for [SCUD](https://github.com/yourusername/bmad-tm) task management. Enables AI assistants like Claude Desktop to interact with SCUD's task management and AI-powered workflow features.
+Model Context Protocol (MCP) server for [SCUD](https://github.com/pyrex41/scud) task management. Enables AI assistants like Claude Desktop to interact with SCUD's task management and AI-powered workflow features.
 
 ## Overview
 
@@ -29,11 +29,10 @@ Perfect for teams using Claude Desktop, Cline, or other MCP clients who want AI-
 - `scud_tags` - List all tags
 - `scud_use_tag` - Set active tag
 
-#### AI-Powered (Requires ANTHROPIC_API_KEY)
+#### AI-Powered (Requires XAI_API_KEY)
 - `scud_parse_prd` - Parse PRD markdown into tasks
 - `scud_analyze_complexity` - Analyze task complexity (Fibonacci scale)
 - `scud_expand` - Break down complex tasks into subtasks
-- `scud_research` - AI-powered research
 
 #### Parallel Development
 - `scud_create_group` - Create tag group for parallel work
@@ -86,14 +85,14 @@ Add the SCUD MCP server:
     "scud": {
       "command": "scud-mcp",
       "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-your-api-key-here"
+        "XAI_API_KEY": "xai-your-api-key-here"
       }
     }
   }
 }
 ```
 
-**Note:** The `ANTHROPIC_API_KEY` is only required for AI-powered tools (`scud_parse_prd`, `scud_analyze_complexity`, `scud_expand`, `scud_research`). Core task management works without it.
+**Note:** The `XAI_API_KEY` is only required for AI-powered tools (`scud_parse_prd`, `scud_analyze_complexity`, `scud_expand`). Core task management works without it. Alternative providers: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`.
 
 ### Restart Claude Desktop
 
@@ -249,14 +248,13 @@ Overall: 7/35 tasks completed (20%)
 | `scud_tags` | - | List all tags |
 | `scud_use_tag` | `tag` | Set active tag |
 
-### AI Tools (Require ANTHROPIC_API_KEY)
+### AI Tools (Require XAI_API_KEY)
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `scud_parse_prd` | `file`, `tag` | Parse PRD into tasks |
 | `scud_analyze_complexity` | `task?` | Analyze task complexity |
 | `scud_expand` | `task_id?`, `all?` | Expand complex tasks |
-| `scud_research` | `query` | AI-powered research |
 
 ### Parallel Development
 
@@ -317,7 +315,7 @@ which scud  # macOS/Linux
 where scud  # Windows
 ```
 
-### "ANTHROPIC_API_KEY environment variable not set"
+### "API key environment variable not set"
 
 AI tools require an API key. Add it to your Claude Desktop config:
 
@@ -327,12 +325,14 @@ AI tools require an API key. Add it to your Claude Desktop config:
     "scud": {
       "command": "scud-mcp",
       "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-your-key"
+        "XAI_API_KEY": "xai-your-key"
       }
     }
   }
 }
 ```
+
+Alternative keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`.
 
 ### "No active tag set"
 
@@ -356,8 +356,8 @@ Initialize a project and set an active tag:
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/bmad-tm
-cd bmad-tm/scud-mcp
+git clone https://github.com/pyrex41/scud
+cd scud/scud-mcp
 npm install
 npm run build
 npm link  # Test locally
@@ -410,15 +410,15 @@ MIT License - see LICENSE file for details
 
 ## Related Projects
 
-- [SCUD CLI](https://github.com/yourusername/bmad-tm/tree/master/scud-cli) - The Rust CLI this server wraps
+- [SCUD CLI](https://github.com/pyrex41/scud/tree/master/scud-cli) - The Rust CLI this server wraps
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
 - [Claude Desktop](https://claude.ai/download) - MCP-compatible AI assistant
 
 ## Support
 
-- Issues: https://github.com/yourusername/bmad-tm/issues
-- Documentation: https://github.com/yourusername/bmad-tm/tree/master/docs
-- SCUD Guide: https://github.com/yourusername/bmad-tm/blob/master/docs/guides/COMPLETE_GUIDE.md
+- Issues: https://github.com/pyrex41/scud/issues
+- Documentation: https://github.com/pyrex41/scud/tree/master/docs
+- Quick Reference: https://github.com/pyrex41/scud/blob/master/docs/reference/QUICK_REFERENCE.md
 
 ---
 

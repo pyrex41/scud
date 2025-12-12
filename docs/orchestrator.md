@@ -11,10 +11,7 @@ This guide shows how to build orchestrator patterns that spawn multiple Claude C
 ## Quick Start
 
 ```bash
-# 1. Install hooks first (critical!)
-scud hooks install
-
-# 2. Basic orchestrator loop
+# Basic orchestrator loop
 while true; do
     TASK=$(scud next --tag myproject)
     if [ -z "$TASK" ]; then
@@ -22,30 +19,19 @@ while true; do
         break
     fi
 
-    TASK_ID=$(echo "$TASK" | grep -o "Task [0-9]*" | awk '{print $2}')
+    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
     echo "Starting task $TASK_ID"
 
-    SCUD_TASK_ID=$TASK_ID claude "Implement task $TASK_ID" &
+    # Claim and work on task
+    scud claim "$TASK_ID" --name "agent-$$"
+    scud set-status "$TASK_ID" in-progress
+
+    claude "Implement task $TASK_ID then mark it done with: scud set-status $TASK_ID done" &
 done
 
 wait
 echo "All tasks complete"
 ```
-
----
-
-## How Hooks Ensure Completion
-
-The orchestrator pattern relies on Claude Code hooks to automatically mark tasks complete:
-
-1. **Install hooks** - Run `scud hooks install` to create `.claude/settings.local.json`
-2. **Set task ID** - Pass `SCUD_TASK_ID=<id>` as environment variable to Claude session
-3. **Work happens** - Agent implements the task
-4. **Session ends** - Claude Code fires the Stop hook
-5. **Hook marks complete** - Hook calls `scud _hook-complete` internally
-6. **Task updated** - If `SCUD_TASK_ID` is set, that task is marked Done and unlocked
-
-This prevents the ~15% of cases where agents forget to mark tasks complete.
 
 ---
 
@@ -59,16 +45,41 @@ scud next --tag myproject
 
 Output (when task is ready):
 ```
-Task 3 is ready (depends on: task-1, task-2)
-Title: Implement user authentication
-Dependencies: task-1 (done), task-2 (done)
-Complexity: 8
+Next ready task:
+  ID: 3
+  Title: Implement user authentication
+  Complexity: 8
+  Dependencies: 1 (done), 2 (done)
 ```
 
 Output (when no tasks ready):
 ```
 No tasks ready. Check dependencies or all tasks may be complete.
 ```
+
+### Get Multiple Ready Tasks
+
+```bash
+scud next-batch --tag myproject --count 5
+```
+
+Returns up to 5 ready tasks at once - useful for orchestrators.
+
+### Claim a Task
+
+```bash
+scud claim <task-id> --name <agent-name>
+```
+
+Locks the task so other agents don't work on it.
+
+### Release a Task
+
+```bash
+scud release <task-id>
+```
+
+Releases the lock (use after completing or abandoning).
 
 ### Monitor Active Sessions
 
@@ -120,11 +131,11 @@ Wave 1 (3 tasks):
   - Task 3: Design UI mockups
 
 Wave 2 (2 tasks):
-  - Task 4: Implement auth middleware (depends on: task-1, task-2)
-  - Task 5: Build login form (depends on: task-3)
+  - Task 4: Implement auth middleware (depends on: 1, 2)
+  - Task 5: Build login form (depends on: 3)
 
 Wave 3 (1 task):
-  - Task 6: Integration tests (depends on: task-4, task-5)
+  - Task 6: Integration tests (depends on: 4, 5)
 ```
 
 ---
@@ -139,17 +150,15 @@ Spawn up to 4 parallel agents:
 #!/bin/bash
 # parallel-simple.sh
 
-scud hooks install
-
 MAX_PARALLEL=4
-ACTIVE=0
+TAG="myproject"
 
 while true; do
     # Find ready tasks
-    TASK=$(scud next --tag myproject)
+    TASK=$(scud next --tag $TAG)
 
     if [ -z "$TASK" ]; then
-        if [ $ACTIVE -eq 0 ]; then
+        if [ $(jobs -r | wc -l) -eq 0 ]; then
             echo "All tasks complete"
             break
         else
@@ -160,42 +169,41 @@ while true; do
     fi
 
     # Wait if at max parallel
-    while [ $ACTIVE -ge $MAX_PARALLEL ]; do
+    while [ $(jobs -r | wc -l) -ge $MAX_PARALLEL ]; do
         sleep 2
-        # Count active jobs
-        ACTIVE=$(jobs -r | wc -l)
     done
 
-    # Spawn agent
-    TASK_ID=$(echo "$TASK" | grep -o "Task [0-9]*" | awk '{print $2}')
-    echo "Starting task $TASK_ID (active: $ACTIVE)"
+    # Extract task ID and claim
+    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
+    scud claim "$TASK_ID" --name "agent-$$-$TASK_ID"
+    scud set-status "$TASK_ID" in-progress
 
-    SCUD_TASK_ID=$TASK_ID claude "Implement task $TASK_ID" &
-    ACTIVE=$((ACTIVE + 1))
+    echo "Starting task $TASK_ID"
+    (
+        claude "Implement task $TASK_ID. When done, run: scud set-status $TASK_ID done"
+        scud release "$TASK_ID"
+    ) &
 done
 
 wait
 ```
 
-### Example 2: Claim-Based Orchestrator
+### Example 2: Claim-Based Orchestrator with Auto-Complete
 
-Use task claiming for more control:
+Use task claiming with explicit completion:
 
 ```bash
 #!/bin/bash
 # parallel-claim.sh
 
-scud hooks install
-
 MAX_PARALLEL=4
 AGENT_NAME="orchestrator-$$"
+TAG="myproject"
 
 while true; do
-    # Get next ready task
-    TASK=$(scud next --tag myproject)
+    TASK=$(scud next --tag $TAG)
 
     if [ -z "$TASK" ]; then
-        # Check if any jobs still running
         if [ $(jobs -r | wc -l) -eq 0 ]; then
             echo "All tasks complete"
             break
@@ -204,20 +212,21 @@ while true; do
         continue
     fi
 
-    # Wait if at capacity
     while [ $(jobs -r | wc -l) -ge $MAX_PARALLEL ]; do
         sleep 2
     done
 
-    # Extract task ID
-    TASK_ID=$(echo "$TASK" | grep -o "Task [0-9]*" | awk '{print $2}')
+    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
+    scud claim "$TASK_ID" --name "$AGENT_NAME-$TASK_ID"
+    scud set-status "$TASK_ID" in-progress
 
-    # Claim task
-    scud claim "$TASK_ID" --name "$AGENT_NAME-$TASK_ID" --tag myproject
-
-    # Spawn agent with task ID
     echo "Starting task $TASK_ID"
-    SCUD_TASK_ID=$TASK_ID claude "Implement task $TASK_ID" &
+    (
+        # Run claude and mark done when complete
+        claude "Complete task $TASK_ID. When finished, the task will be marked done."
+        scud set-status "$TASK_ID" done
+        scud release "$TASK_ID"
+    ) &
 done
 
 wait
@@ -232,33 +241,34 @@ Execute entire waves in parallel:
 #!/bin/bash
 # parallel-waves.sh
 
-scud hooks install
-
 TAG="myproject"
 
-# Get wave count
-WAVES=$(scud waves --tag $TAG | grep "^Wave" | wc -l)
-
-for WAVE in $(seq 1 $WAVES); do
-    echo "Starting Wave $WAVE..."
-
+while true; do
     # Get all ready tasks
-    READY_TASKS=$(scud list --tag $TAG --status pending | grep "^Task" | awk '{print $2}')
+    READY_TASKS=$(scud next-batch --tag $TAG --count 10 | grep "ID:" | awk '{print $2}')
 
     if [ -z "$READY_TASKS" ]; then
         echo "No more ready tasks"
         break
     fi
 
+    echo "Starting wave with $(echo "$READY_TASKS" | wc -w) tasks..."
+
     # Spawn agents for all ready tasks
     for TASK_ID in $READY_TASKS; do
+        scud claim "$TASK_ID" --name "wave-$$"
+        scud set-status "$TASK_ID" in-progress
         echo "  - Starting task $TASK_ID"
-        SCUD_TASK_ID=$TASK_ID claude "Implement task $TASK_ID" &
+        (
+            claude "Implement task $TASK_ID"
+            scud set-status "$TASK_ID" done
+            scud release "$TASK_ID"
+        ) &
     done
 
     # Wait for wave to complete
     wait
-    echo "Wave $WAVE complete"
+    echo "Wave complete"
 done
 
 echo "All waves complete"
@@ -287,6 +297,14 @@ Total tasks: 10
 Completion: 50% (5/10)
 ```
 
+### Web Dashboard
+
+```bash
+scud serve
+```
+
+Opens a web dashboard with visual task board and dependency graph.
+
 ### Session Dashboard
 
 ```bash
@@ -297,25 +315,9 @@ watch -n 2 "scud whois --tag myproject && echo && scud stats --tag myproject"
 
 ## Best Practices
 
-### 1. Always Install Hooks First
+### 1. Use Claiming for Coordination
 
-```bash
-scud hooks install
-```
-
-Without hooks, agents may forget to mark tasks complete, breaking the DAG.
-
-### 2. Set SCUD_TASK_ID Environment Variable
-
-```bash
-SCUD_TASK_ID=5 claude "Implement task 5"
-```
-
-This tells the hook which task to mark complete when the session ends.
-
-### 3. Use Claiming for Team Coordination
-
-If multiple orchestrators run simultaneously:
+Always claim tasks before working on them:
 
 ```bash
 scud claim <task-id> --name <unique-name>
@@ -323,7 +325,16 @@ scud claim <task-id> --name <unique-name>
 
 This prevents two agents from working on the same task.
 
-### 4. Monitor with `whois` and `doctor`
+### 2. Mark Tasks Complete Explicitly
+
+After completing work:
+
+```bash
+scud set-status <task-id> done
+scud release <task-id>
+```
+
+### 3. Monitor with `whois` and `doctor`
 
 ```bash
 # See active work
@@ -333,7 +344,7 @@ scud whois --tag myproject
 scud doctor --tag myproject --stale-hours 2
 ```
 
-### 5. Clean Up Stale Locks
+### 4. Clean Up Stale Locks
 
 If an agent crashes without releasing:
 
@@ -356,20 +367,14 @@ scud release <task-id> --force
 **Symptom:** Agent finishes but task stays "in-progress"
 
 **Causes:**
-1. Hooks not installed (`scud hooks install`)
-2. `SCUD_TASK_ID` not set when spawning agent
-3. Hook file corrupted (check `.claude/settings.local.json`)
+1. Agent didn't run `scud set-status <id> done`
+2. Script crashed before completion command
 
 **Fix:**
 ```bash
-# Check hook status
-scud hooks status
-
-# Reinstall if needed
-scud hooks install
-
 # Manually mark complete
 scud set-status <id> done
+scud release <id>
 ```
 
 ### No Tasks Ready
@@ -418,8 +423,8 @@ scud release <task-id> --force
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `SCUD_TASK_ID` | Task ID for hook completion | `SCUD_TASK_ID=5 claude "work"` |
-| `ANTHROPIC_API_KEY` | API key for AI commands | `export ANTHROPIC_API_KEY=sk-ant-...` |
+| `SCUD_TASK_ID` | Current task for context | `export SCUD_TASK_ID=5` |
+| `XAI_API_KEY` | API key for AI commands | `export XAI_API_KEY=xai-...` |
 
 ---
 
@@ -434,32 +439,22 @@ while true; do
     TASK=$(scud next --tag myproject)
     [ -z "$TASK" ] && break
 
-    TASK_ID=$(echo "$TASK" | grep -o "Task [0-9]*" | awk '{print $2}')
+    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
     COMPLEXITY=$(scud show $TASK_ID | grep "Complexity:" | awk '{print $2}')
 
     # Only spawn for low-complexity tasks
     if [ "$COMPLEXITY" -lt 10 ]; then
-        SCUD_TASK_ID=$TASK_ID claude "Implement task $TASK_ID" &
+        scud claim "$TASK_ID" --name "agent-$$"
+        scud set-status "$TASK_ID" in-progress
+        (
+            claude "Implement task $TASK_ID"
+            scud set-status "$TASK_ID" done
+            scud release "$TASK_ID"
+        ) &
     else
         echo "Skipping high-complexity task $TASK_ID"
     fi
 done
-wait
-```
-
-### Priority-Based Execution
-
-Execute high-priority tasks first:
-
-```bash
-# Get all ready tasks sorted by complexity (low to high)
-TASKS=$(scud list --tag myproject --status pending | sort -k3 -n)
-
-for TASK_LINE in $TASKS; do
-    TASK_ID=$(echo "$TASK_LINE" | awk '{print $2}')
-    SCUD_TASK_ID=$TASK_ID claude "Implement task $TASK_ID" &
-done
-
 wait
 ```
 
@@ -477,8 +472,14 @@ for TAG in "${TAGS[@]}"; do
         TASK=$(scud next --tag $TAG)
         [ -z "$TASK" ] && break
 
-        TASK_ID=$(echo "$TASK" | grep -o "Task [0-9]*" | awk '{print $2}')
-        SCUD_TASK_ID=$TASK_ID claude "Implement $TAG task $TASK_ID" &
+        TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
+        scud claim "$TASK_ID" --name "multi-$$"
+        scud set-status "$TASK_ID" in-progress
+        (
+            claude "Implement $TAG task $TASK_ID"
+            scud set-status "$TASK_ID" done
+            scud release "$TASK_ID"
+        ) &
     done
 done
 
@@ -502,23 +503,17 @@ wait
 ### Key Commands
 
 ```bash
-scud hooks install          # Enable automatic completion
 scud next --tag <tag>       # Find next ready task
+scud next-batch --count N   # Get multiple ready tasks
 scud claim <id> --name <n>  # Lock task
 scud release <id>           # Unlock task
+scud set-status <id> done   # Mark complete
 scud whois --tag <tag>      # Show active work
 scud doctor --tag <tag>     # Check for issues
 scud waves --tag <tag>      # Show parallel waves
 scud stats --tag <tag>      # Show progress
+scud serve                  # Web dashboard
 ```
-
-### Hook Mechanism
-
-1. Hooks installed via `scud hooks install`
-2. Creates `.claude/settings.local.json` with Stop hook
-3. Hook calls `scud _hook-complete` on every Claude session end
-4. If `SCUD_TASK_ID` env var is set, that task is marked Done
-5. Task lock is automatically released
 
 ---
 
@@ -526,4 +521,3 @@ scud stats --tag <tag>      # Show progress
 
 - [Quick Reference](reference/QUICK_REFERENCE.md) - Command cheat sheet
 - [Parallel Features](features/PARALLEL_FEATURES.md) - Task locking details
-- [Complete Guide](guides/COMPLETE_GUIDE.md) - Full documentation

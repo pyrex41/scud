@@ -7,34 +7,22 @@ This directory contains all user-facing documentation for SCUD.
 ```
 docs/
 ├── README.md                     # This file
-├── guides/                       # Getting started and comprehensive guides
-│   ├── COMPLETE_GUIDE.md        # Full documentation (25,000 words)
-│   └── MIGRATION.md             # Migration guide from BMAD-TM Lite
+├── orchestrator.md               # Parallel execution patterns
 ├── reference/                    # Quick reference materials
-│   └── QUICK_REFERENCE.md       # Command cheat sheet
-├── features/                     # Feature-specific documentation
-│   └── PARALLEL_FEATURES.md     # Epic groups & task assignment
-├── prd/                          # Product Requirements Documents
-├── epics/                        # Epic descriptions
-├── architecture/                 # Technical design documents
-└── retrospectives/               # Project retrospectives and learnings
+│   ├── QUICK_REFERENCE.md        # Command cheat sheet
+│   └── SCG_FORMAT_SPEC.md        # Task file format specification
+└── features/                     # Feature-specific documentation
+    └── PARALLEL_FEATURES.md      # Task locking & orchestration
 ```
 
 ## Documentation Overview
 
 ### For Users
 
-- **New to SCUD?** Start with [Complete Guide](guides/COMPLETE_GUIDE.md)
-- **Upgrading?** See [Migration Guide](guides/MIGRATION.md)
-- **Quick lookup?** Use [Quick Reference](reference/QUICK_REFERENCE.md)
-- **Using parallel features?** See [Parallel Features](features/PARALLEL_FEATURES.md)
-
-### For Development
-
-- **PRDs**: Product requirements documents go in `prd/`
-- **Epics**: Epic descriptions go in `epics/`
-- **Architecture**: Technical designs go in `architecture/`
-- **Retrospectives**: Post-epic learnings go in `retrospectives/`
+- **Quick lookup:** [Quick Reference](reference/QUICK_REFERENCE.md) - Command cheat sheet
+- **Parallel execution:** [Orchestrator Pattern](orchestrator.md) - Multi-agent workflows
+- **Task file format:** [SCG Format Spec](reference/SCG_FORMAT_SPEC.md) - Task storage format
+- **Task locking:** [Parallel Features](features/PARALLEL_FEATURES.md) - Claim/release mechanics
 
 ## Additional Resources
 
