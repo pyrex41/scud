@@ -62,7 +62,19 @@ impl Phase {
                 super::task::TaskStatus::InProgress => in_progress += 1,
                 super::task::TaskStatus::Done => done += 1,
                 super::task::TaskStatus::Blocked => blocked += 1,
-                super::task::TaskStatus::Expanded => expanded += 1,
+                super::task::TaskStatus::Expanded => {
+                    // Check if all subtasks are done - if so, count as done
+                    let all_subtasks_done = task.subtasks.iter().all(|subtask_id| {
+                        self.get_task(subtask_id)
+                            .map(|st| st.status == super::task::TaskStatus::Done)
+                            .unwrap_or(false)
+                    });
+                    if all_subtasks_done && !task.subtasks.is_empty() {
+                        done += 1;
+                    } else {
+                        expanded += 1;
+                    }
+                }
                 _ => {}
             }
         }
@@ -483,5 +495,104 @@ mod tests {
         assert_eq!(phase.name, deserialized.name);
         assert_eq!(phase.tasks.len(), deserialized.tasks.len());
         assert_eq!(phase.tasks[0].id, deserialized.tasks[0].id);
+    }
+
+    #[test]
+    fn test_get_stats_expanded_with_all_subtasks_done() {
+        let mut phase = Phase::new("phase-1".to_string());
+
+        // Create an expanded parent task
+        let mut parent = Task::new(
+            "TASK-1".to_string(),
+            "Parent Task".to_string(),
+            "Desc".to_string(),
+        );
+        parent.complexity = 8;
+        parent.set_status(TaskStatus::Expanded);
+        parent.subtasks = vec!["TASK-1.1".to_string(), "TASK-1.2".to_string()];
+
+        // Create subtasks - all done
+        let mut subtask1 = Task::new(
+            "TASK-1.1".to_string(),
+            "Subtask 1".to_string(),
+            "Desc".to_string(),
+        );
+        subtask1.parent_id = Some("TASK-1".to_string());
+        subtask1.set_status(TaskStatus::Done);
+
+        let mut subtask2 = Task::new(
+            "TASK-1.2".to_string(),
+            "Subtask 2".to_string(),
+            "Desc".to_string(),
+        );
+        subtask2.parent_id = Some("TASK-1".to_string());
+        subtask2.set_status(TaskStatus::Done);
+
+        // Add a regular done task
+        let mut task2 = Task::new(
+            "TASK-2".to_string(),
+            "Regular Task".to_string(),
+            "Desc".to_string(),
+        );
+        task2.complexity = 3;
+        task2.set_status(TaskStatus::Done);
+
+        phase.add_task(parent);
+        phase.add_task(subtask1);
+        phase.add_task(subtask2);
+        phase.add_task(task2);
+
+        let stats = phase.get_stats();
+
+        // Should count 2 total (parent + regular task, not subtasks)
+        assert_eq!(stats.total, 2);
+        // Both should be done (parent has all subtasks done, regular is done)
+        assert_eq!(stats.done, 2);
+        // Expanded should be 0 since all subtasks are done
+        assert_eq!(stats.expanded, 0);
+    }
+
+    #[test]
+    fn test_get_stats_expanded_with_incomplete_subtasks() {
+        let mut phase = Phase::new("phase-1".to_string());
+
+        // Create an expanded parent task
+        let mut parent = Task::new(
+            "TASK-1".to_string(),
+            "Parent Task".to_string(),
+            "Desc".to_string(),
+        );
+        parent.complexity = 8;
+        parent.set_status(TaskStatus::Expanded);
+        parent.subtasks = vec!["TASK-1.1".to_string(), "TASK-1.2".to_string()];
+
+        // Create subtasks - one done, one pending
+        let mut subtask1 = Task::new(
+            "TASK-1.1".to_string(),
+            "Subtask 1".to_string(),
+            "Desc".to_string(),
+        );
+        subtask1.parent_id = Some("TASK-1".to_string());
+        subtask1.set_status(TaskStatus::Done);
+
+        let mut subtask2 = Task::new(
+            "TASK-1.2".to_string(),
+            "Subtask 2".to_string(),
+            "Desc".to_string(),
+        );
+        subtask2.parent_id = Some("TASK-1".to_string());
+        // Pending by default
+
+        phase.add_task(parent);
+        phase.add_task(subtask1);
+        phase.add_task(subtask2);
+
+        let stats = phase.get_stats();
+
+        // Should count 1 total (just parent, not subtasks)
+        assert_eq!(stats.total, 1);
+        // Parent should still be expanded (not all subtasks done)
+        assert_eq!(stats.expanded, 1);
+        assert_eq!(stats.done, 0);
     }
 }
