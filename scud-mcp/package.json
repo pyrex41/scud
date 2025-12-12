@@ -1,6 +1,6 @@
 {
   "name": "scud-mcp",
-  "version": "1.8.0",
+  "version": "1.23.0",
   "description": "Model Context Protocol server for SCUD task management",
   "type": "module",
   "bin": {

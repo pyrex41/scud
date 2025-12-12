@@ -1,6 +1,6 @@
 [package]
 name = "scud-cli"
-version = "1.22.0"
+version = "1.23.0"
 edition = "2021"
 authors = ["SCUD Team"]
 description = "Fast, simple task master for AI-driven development"
@@ -28,6 +28,9 @@ indicatif = "0.17"
 dirs = "5.0"
 fs2 = "0.4"  # File locking for concurrent access
 toml = "0.8"  # TOML parsing for config files
+axum = "0.7"  # HTTP server for web UI
+tower-http = { version = "0.5", features = ["cors"] }  # CORS support
+open = "5"  # Open browser
 dialoguer = "0.11"  # Interactive CLI prompts
 atty = "0.2"  # TTY detection for interactive mode
 futures = "0.3"  # Async utilities for parallel execution

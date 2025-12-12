@@ -80,6 +80,7 @@ enum Commands {
     },
 
     /// List tasks in active phase
+    #[command(alias = "view")]
     List {
         /// Filter by status
         #[arg(short, long)]
@@ -314,15 +315,35 @@ enum Commands {
         all_tags: bool,
     },
 
-    /// Manage Claude Code hooks for automatic task completion
-    Hooks {
-        /// Action: install, uninstall, or status
-        action: Option<String>,
+    /// Write a summary log entry for a task
+    Log {
+        /// Task ID to log for
+        task_id: String,
+
+        /// Summary text (100-200 words recommended)
+        summary: String,
+
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
     },
 
-    /// Internal: Called by Claude Code Stop hook
-    #[command(hide = true)]
-    HookComplete,
+    /// Show log entries for a task
+    LogShow {
+        /// Task ID
+        task_id: String,
+    },
+
+    /// Start web dashboard server
+    Serve {
+        /// Port to listen on (default: 3000)
+        #[arg(short, long, default_value = "3000")]
+        port: u16,
+
+        /// Don't automatically open browser
+        #[arg(long)]
+        no_open: bool,
+    },
 
     /// Quick orientation for new session (show recent commits, active sessions, next task)
     Warmup,
@@ -432,10 +453,13 @@ async fn main() -> Result<()> {
         Commands::Mermaid { tag, all_tags } => {
             commands::mermaid::run(cli.project, tag.as_deref(), all_tags)
         }
-        Commands::Hooks { action } => {
-            commands::hooks::run(cli.project, action.as_deref().unwrap_or("status"))
-        }
-        Commands::HookComplete => commands::hook_complete::run(cli.project),
+        Commands::Log {
+            task_id,
+            summary,
+            tag,
+        } => commands::log::run(cli.project, &task_id, &summary, tag.as_deref()),
+        Commands::LogShow { task_id } => commands::log::show(cli.project, &task_id),
+        Commands::Serve { port, no_open } => commands::serve::run(cli.project, port, no_open).await,
         Commands::Warmup => commands::warmup::run(cli.project),
         Commands::Commit { message, all } => {
             commands::commit::run(cli.project, message.as_deref(), all)
