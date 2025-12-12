@@ -158,12 +158,11 @@ async function main() {
 
     // Show welcome message
     console.log(`
-╭─────────────────────────────────────╮
-│                                     │
-│  SCUD installed! 🚀                 │
-│  Sprint Cycle Unified Development   │
-│                                     │
-╰─────────────────────────────────────╯
+╭───────────────────────────────╮
+│                               │
+│  SCUD Task Manager installed! │
+│                               │
+╰───────────────────────────────╯
 
 To get started in your project:
 

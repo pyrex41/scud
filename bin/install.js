@@ -325,7 +325,7 @@ max_tokens = 4096
   const scudInstructions = `
 ## SCUD Task Management
 
-This project uses SCUD (Sprint Cycle Unified Development) for task management.
+This project uses SCUD Task Manager for task management.
 
 ### Session Workflow
 

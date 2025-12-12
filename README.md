@@ -1,4 +1,4 @@
-# SCUD
+# SCUD Task Manager
 
 <p align="center">
   <img src="scud.jpeg" alt="SCUD" width="400">
@@ -6,9 +6,7 @@
 
 > *Inspired by the SCUD short-range ballistic missile system—lightweight, flexible, and powerful. Like its namesake, SCUD can be deployed quickly in a variety of contexts, delivering results with minimal overhead.*
 
-**Sprint Cycle Unified Development** - Fast, AI-powered task management for building software
-
-A lightweight DAG-driven task management system. Parse PRDs into tasks, track dependencies, and visualize parallel execution waves.
+A fast, AI-powered task management system. Parse PRDs into tasks, track dependencies, and visualize parallel execution waves.
 
 ---
 

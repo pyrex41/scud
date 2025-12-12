@@ -2,7 +2,6 @@
 
 /**
  * SCUD CLI
- * Sprint Cycle Unified Development
  * Main entry point for scud commands
  */
 
@@ -44,12 +43,11 @@ const commands = {
 
 function showHelp() {
   console.log(`
-╭────────────────────────────────────╮
-│                                    │
-│   SCUD CLI                         │
-│   Sprint Cycle Unified Development │
-│                                    │
-╰────────────────────────────────────╯
+╭─────────────────────────────╮
+│                             │
+│   SCUD Task Manager         │
+│                             │
+╰─────────────────────────────╯
 
 Usage: scud <command> [options]
 

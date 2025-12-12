@@ -2,7 +2,6 @@
 
 /**
  * Simple Task Manager for SCUD
- * Sprint Cycle Unified Development
  *
  * DEPRECATED: This file is kept for reference only.
  * Use the scud CLI (Rust) for all task operations.
