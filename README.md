@@ -1,5 +1,9 @@
 # SCUD
 
+<p align="center">
+  <img src="scud.jpeg" alt="SCUD" width="400">
+</p>
+
 > *Inspired by the SCUD short-range ballistic missile system—lightweight, flexible, and powerful. Like its namesake, SCUD can be deployed quickly in a variety of contexts, delivering results with minimal overhead.*
 
 **Sprint Cycle Unified Development** - Fast, AI-powered task management for building software
