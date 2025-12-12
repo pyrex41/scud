@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #1e1e2e; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #1e1e2e; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  display: flex; position: relative;
+}
+.left-bar { width: 6pt; background: #94e2d5; height: 100%; position: absolute; left: 0; }
+.content { margin: 30pt 40pt 30pt 40pt; flex: 1; }
+h1 { color: #cdd6f4; font-size: 26pt; margin: 0 0 6pt 0; font-weight: bold; }
+.subtitle { color: #a6adc8; font-size: 11pt; margin: 0 0 14pt 0; }
+.main-grid { display: flex; gap: 14pt; }
+.left-col { flex: 1; }
+.right-col { flex: 1; }
+.section-label { color: #94e2d5; font-size: 10pt; margin: 0 0 6pt 0; font-weight: bold; }
+.skill-box {
+  background: #313244; border-radius: 6pt; padding: 10pt 12pt;
+  margin-bottom: 8pt; border-left: 3pt solid #94e2d5;
+}
+.skill-box p { margin: 0; }
+.skill-name { color: #cdd6f4; font-size: 11pt; font-weight: bold; }
+.skill-desc { color: #a6adc8; font-size: 9pt; margin-top: 3pt; }
+.file-path { color: #6c7086; font-size: 8pt; font-family: Courier New, monospace; margin-top: 4pt; }
+.commands-grid { display: flex; flex-wrap: wrap; gap: 6pt; }
+.cmd-chip {
+  background: #181825; border-radius: 4pt; padding: 5pt 8pt;
+  border: 1pt solid #45475a;
+}
+.cmd-chip p { color: #89b4fa; font-size: 9pt; margin: 0; font-family: Courier New, monospace; }
+.benefit-box {
+  background: #181825; border-radius: 6pt; padding: 10pt 12pt;
+  margin-top: 10pt;
+}
+.benefit-box p { margin: 0; }
+.benefit-title { color: #f9e2af; font-size: 10pt; font-weight: bold; margin-bottom: 6pt; }
+.benefit-item { display: flex; align-items: flex-start; margin-bottom: 4pt; }
+.benefit-check { color: #a6e3a1; font-size: 10pt; margin-right: 6pt; }
+.benefit-text { color: #bac2de; font-size: 9pt; }
+.path-box {
+  background: #313244; border-radius: 4pt; padding: 8pt 10pt;
+  margin-top: 10pt;
+}
+.path-box p { margin: 0; font-family: Courier New, monospace; font-size: 9pt; }
+.path-label { color: #6c7086; }
+.path-value { color: #94e2d5; }
+</style>
+</head>
+<body>
+<div class="left-bar"></div>
+<div class="content">
+  <h1>Agent Skills &amp; Commands</h1>
+  <p class="subtitle">Teaching AI agents how to use the SCUD CLI effectively</p>
+  <div class="main-grid">
+    <div class="left-col">
+      <p class="section-label">SKILL FILES</p>
+      <div class="skill-box">
+        <p class="skill-name">SKILL.md</p>
+        <p class="skill-desc">Entry point - when to use SCUD, essential commands, workflow overview</p>
+      </div>
+      <div class="skill-box">
+        <p class="skill-name">task-commands.md</p>
+        <p class="skill-desc">Full CLI reference - tags, viewing, status updates, AI commands</p>
+      </div>
+      <div class="skill-box">
+        <p class="skill-name">graph-concepts.md</p>
+        <p class="skill-desc">DAG structure, SCG format, waves algorithm, complexity scoring</p>
+      </div>
+      <div class="path-box">
+        <p><span class="path-label">Location: </span><span class="path-value">.claude/skills/scud-tasks/</span></p>
+      </div>
+    </div>
+    <div class="right-col">
+      <p class="section-label">SLASH COMMANDS</p>
+      <div class="commands-grid">
+        <div class="cmd-chip"><p>/scud:list</p></div>
+        <div class="cmd-chip"><p>/scud:show</p></div>
+        <div class="cmd-chip"><p>/scud:status</p></div>
+        <div class="cmd-chip"><p>/scud:next</p></div>
+        <div class="cmd-chip"><p>/scud:waves</p></div>
+        <div class="cmd-chip"><p>/scud:stats</p></div>
+      </div>
+      <div class="benefit-box">
+        <p class="benefit-title">Why Skills Matter</p>
+        <div class="benefit-item">
+          <p class="benefit-check">+</p>
+          <p class="benefit-text">Agents understand task structure without prompting</p>
+        </div>
+        <div class="benefit-item">
+          <p class="benefit-check">+</p>
+          <p class="benefit-text">Consistent command usage across sessions</p>
+        </div>
+        <div class="benefit-item">
+          <p class="benefit-check">+</p>
+          <p class="benefit-text">Proper status updates after completing work</p>
+        </div>
+        <div class="benefit-item">
+          <p class="benefit-check">+</p>
+          <p class="benefit-text">Awareness of dependencies and waves</p>
+        </div>
+      </div>
+      <div class="path-box">
+        <p><span class="path-label">Location: </span><span class="path-value">.claude/commands/scud/</span></p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

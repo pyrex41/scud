@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #1e1e2e; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #1e1e2e; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  display: flex; position: relative;
+}
+.left-bar { width: 6pt; background: #89b4fa; height: 100%; position: absolute; left: 0; }
+.content { margin: 36pt 50pt 45pt 50pt; flex: 1; }
+h1 { color: #cdd6f4; font-size: 32pt; margin: 0 0 6pt 0; font-weight: bold; }
+.step-num { color: #89b4fa; font-size: 12pt; margin: 0 0 4pt 0; font-weight: bold; }
+.desc { color: #a6adc8; font-size: 12pt; margin: 0 0 16pt 0; }
+.code-block {
+  background: #313244; border-radius: 6pt; padding: 12pt 16pt;
+  margin-bottom: 14pt; border-left: 3pt solid #94e2d5;
+}
+.code-block p { color: #a6e3a1; font-size: 14pt; margin: 0; font-family: Courier New, monospace; }
+.result-box {
+  background: #181825; border-radius: 6pt; padding: 10pt 14pt;
+  margin-bottom: 12pt;
+}
+.result-box p { color: #6c7086; font-size: 10pt; margin: 0 0 3pt 0; font-family: Courier New, monospace; }
+.highlight { color: #89b4fa; }
+.bullet-list { margin-top: 12pt; }
+.bullet-list p { color: #bac2de; font-size: 11pt; margin: 0 0 6pt 0; }
+</style>
+</head>
+<body>
+<div class="left-bar"></div>
+<div class="content">
+  <p class="step-num">STEP 1</p>
+  <h1>scud init</h1>
+  <p class="desc">Initialize SCUD in your project directory</p>
+  <div class="code-block">
+    <p>$ scud init</p>
+  </div>
+  <div class="result-box">
+    <p>Created .scud/</p>
+    <p>Created .scud/tasks/tasks.scg</p>
+    <p>Created .scud/config.toml</p>
+    <p class="highlight">SCUD initialized successfully!</p>
+  </div>
+  <div class="bullet-list">
+    <p>Creates .scud/ directory for task storage</p>
+    <p>Configures AI provider (xAI, Anthropic, OpenAI)</p>
+    <p>Ready to parse your first PRD</p>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #1e1e2e; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #1e1e2e; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  display: flex; position: relative;
+}
+.left-bar { width: 6pt; background: #89b4fa; height: 100%; position: absolute; left: 0; }
+.content { margin: 30pt 50pt 45pt 50pt; flex: 1; }
+h1 { color: #cdd6f4; font-size: 28pt; margin: 0 0 12pt 0; font-weight: bold; }
+.compare-grid { display: flex; gap: 20pt; }
+.compare-col { flex: 1; }
+.col-header {
+  background: #313244; border-radius: 6pt 6pt 0 0; padding: 10pt 14pt;
+  text-align: center;
+}
+.col-header p { margin: 0; }
+.col-title { color: #cdd6f4; font-size: 14pt; font-weight: bold; }
+.col-sub { color: #6c7086; font-size: 10pt; margin-top: 2pt; }
+.col-body {
+  background: #181825; border-radius: 0 0 6pt 6pt; padding: 12pt 14pt;
+}
+.compare-item { margin-bottom: 8pt; }
+.compare-item p { margin: 0; }
+.item-label { color: #6c7086; font-size: 9pt; }
+.item-value { color: #bac2de; font-size: 11pt; margin-top: 2pt; }
+.highlight { color: #a6e3a1; font-weight: bold; }
+.dim { color: #6c7086; }
+.bottom-section { margin-top: 12pt; }
+.bottom-label { color: #89b4fa; font-size: 11pt; margin: 0 0 8pt 0; font-weight: bold; }
+.benefits-row { display: flex; gap: 12pt; }
+.benefit-box {
+  flex: 1; background: #313244; border-radius: 4pt; padding: 8pt 10pt;
+  border-left: 3pt solid #a6e3a1;
+}
+.benefit-box p { color: #cdd6f4; font-size: 10pt; margin: 0; }
+</style>
+</head>
+<body>
+<div class="left-bar"></div>
+<div class="content">
+  <h1>SCUD: What's Different?</h1>
+  <div class="compare-grid">
+    <div class="compare-col">
+      <div class="col-header">
+        <p class="col-title">Task Master</p>
+        <p class="col-sub">JavaScript</p>
+      </div>
+      <div class="col-body">
+        <div class="compare-item">
+          <p class="item-label">Storage Format</p>
+          <p class="item-value dim">JSON files</p>
+        </div>
+        <div class="compare-item">
+          <p class="item-label">Dependency Model</p>
+          <p class="item-value dim">Simple blockers</p>
+        </div>
+        <div class="compare-item">
+          <p class="item-label">Parallel Planning</p>
+          <p class="item-value dim">Manual</p>
+        </div>
+        <div class="compare-item">
+          <p class="item-label">Runtime</p>
+          <p class="item-value dim">Node.js</p>
+        </div>
+      </div>
+    </div>
+    <div class="compare-col">
+      <div class="col-header" style="background: #45475a;">
+        <p class="col-title">SCUD</p>
+        <p class="col-sub">Rust</p>
+      </div>
+      <div class="col-body">
+        <div class="compare-item">
+          <p class="item-label">Storage Format</p>
+          <p class="item-value highlight">SCG (compact text)</p>
+        </div>
+        <div class="compare-item">
+          <p class="item-label">Dependency Model</p>
+          <p class="item-value highlight">Full DAG with edges</p>
+        </div>
+        <div class="compare-item">
+          <p class="item-label">Parallel Planning</p>
+          <p class="item-value highlight">Automatic waves</p>
+        </div>
+        <div class="compare-item">
+          <p class="item-label">Runtime</p>
+          <p class="item-value highlight">Native binary</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="bottom-section">
+    <p class="bottom-label">SCUD Advantages</p>
+    <div class="benefits-row">
+      <div class="benefit-box"><p>Fast native CLI</p></div>
+      <div class="benefit-box"><p>Explicit dependency graph</p></div>
+      <div class="benefit-box"><p>Wave-based parallelism</p></div>
+      <div class="benefit-box"><p>Agent orchestration</p></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

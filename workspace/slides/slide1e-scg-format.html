@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #1e1e2e; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #1e1e2e; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  display: flex; position: relative;
+}
+.left-bar { width: 6pt; background: #f9e2af; height: 100%; position: absolute; left: 0; }
+.content { margin: 30pt 40pt 30pt 40pt; flex: 1; }
+h1 { color: #cdd6f4; font-size: 26pt; margin: 0 0 8pt 0; font-weight: bold; }
+.inspiration-row { display: flex; gap: 10pt; margin-bottom: 12pt; }
+.inspiration-badge {
+  background: #45475a; border-radius: 4pt; padding: 4pt 10pt;
+  display: inline-block;
+}
+.inspiration-badge p { color: #f9e2af; font-size: 9pt; margin: 0; font-weight: bold; }
+.subtitle { color: #a6adc8; font-size: 11pt; margin: 0; }
+.url { color: #89b4fa; font-size: 9pt; font-family: Courier New, monospace; }
+.main-grid { display: flex; gap: 14pt; }
+.code-col { flex: 1.2; }
+.info-col { flex: 1; }
+.code-block {
+  background: #181825; border-radius: 6pt; padding: 8pt 10pt;
+  border-left: 3pt solid #f9e2af; font-family: Courier New, monospace;
+  font-size: 8pt; line-height: 1.35;
+}
+.code-block p { margin: 0; color: #a6adc8; }
+.code-comment { color: #6c7086; }
+.code-section { color: #f9e2af; font-weight: bold; }
+.code-id { color: #89b4fa; }
+.code-status { color: #a6e3a1; }
+.code-arrow { color: #cba6f7; }
+.info-box {
+  background: #313244; border-radius: 6pt; padding: 10pt 12pt;
+  margin-bottom: 10pt;
+}
+.info-box p { margin: 0; }
+.info-title { color: #f9e2af; font-size: 10pt; font-weight: bold; margin-bottom: 6pt; }
+.info-desc { color: #bac2de; font-size: 9pt; line-height: 1.4; }
+.stats-row { display: flex; gap: 8pt; margin-top: 10pt; }
+.stat-box {
+  flex: 1; background: #181825; border-radius: 4pt; padding: 8pt;
+  text-align: center; border-top: 2pt solid #a6e3a1;
+}
+.stat-box p { margin: 0; }
+.stat-num { color: #a6e3a1; font-size: 16pt; font-weight: bold; }
+.stat-label { color: #6c7086; font-size: 8pt; margin-top: 2pt; }
+.philosophy {
+  background: #45475a; border-radius: 4pt; padding: 8pt 10pt;
+  margin-top: 8pt;
+}
+.philosophy p { color: #cdd6f4; font-size: 9pt; margin: 0; font-style: italic; }
+.philosophy-attr { color: #f9e2af; font-size: 8pt; margin-top: 4pt; font-style: normal; }
+</style>
+</head>
+<body>
+<div class="left-bar"></div>
+<div class="content">
+  <h1>SCG: SCUD Graph Format</h1>
+  <div class="inspiration-row">
+    <div class="inspiration-badge"><p>INSPIRED BY JAMS</p></div>
+    <p class="subtitle">Token-efficient, human-readable task storage</p>
+  </div>
+  <p class="url">nikolai.fyi/jams &mdash; Nikolai Mushegian (DeFi pioneer)</p>
+  <div class="main-grid">
+    <div class="code-col">
+      <div class="code-block">
+        <p class="code-comment"># SCUD Graph v1</p>
+        <p class="code-comment"># Phase: auth</p>
+        <p></p>
+        <p><span class="code-section">@nodes</span></p>
+        <p><span class="code-id">auth:1</span> | Design auth | <span class="code-status">D</span> | 5 | H</p>
+        <p><span class="code-id">auth:2</span> | JWT tokens | <span class="code-status">P</span> | 3 | M</p>
+        <p><span class="code-id">auth:3</span> | Rate limits | <span class="code-status">P</span> | 3 | L</p>
+        <p></p>
+        <p><span class="code-section">@edges</span></p>
+        <p><span class="code-id">auth:2</span> <span class="code-arrow">-></span> <span class="code-id">auth:1</span></p>
+        <p><span class="code-id">auth:3</span> <span class="code-arrow">-></span> <span class="code-id">auth:2</span></p>
+        <p></p>
+        <p><span class="code-section">@details</span></p>
+        <p><span class="code-id">auth:1</span> | description |</p>
+        <p>  Design REST endpoints...</p>
+      </div>
+    </div>
+    <div class="info-col">
+      <div class="info-box">
+        <p class="info-title">JAMS Philosophy</p>
+        <p class="info-desc">"Actually Minimalist JSON Alternative" &mdash; Most alternatives have longer specs than JSON itself. JAMS builds on JSON's foundation, reducing quote noise while keeping parsing simple.</p>
+      </div>
+      <div class="info-box">
+        <p class="info-title">SCG Design Goals</p>
+        <p class="info-desc">Graph-native structure with explicit @nodes and @edges. Single-char status codes (P/I/D/B). Pipe-delimited rows. Git-friendly diffs.</p>
+      </div>
+      <div class="info-box">
+        <p class="info-title">Benefits</p>
+        <p class="info-desc">Compact text format. Human-editable. Git-friendly diffs. Reduced context for LLMs.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

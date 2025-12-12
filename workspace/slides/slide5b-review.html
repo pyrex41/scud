@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #1e1e2e; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #1e1e2e; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  display: flex; position: relative;
+}
+.left-bar { width: 6pt; background: #cba6f7; height: 100%; position: absolute; left: 0; }
+.content { margin: 32pt 40pt 32pt 40pt; flex: 1; }
+.step-badge {
+  background: #cba6f7; border-radius: 4pt; padding: 4pt 12pt;
+  display: inline-block; margin-bottom: 8pt;
+}
+.step-badge p { color: #1e1e2e; font-size: 10pt; margin: 0; font-weight: bold; }
+h1 { color: #cdd6f4; font-size: 28pt; margin: 0 0 6pt 0; font-weight: bold; }
+.subtitle { color: #a6adc8; font-size: 11pt; margin: 0 0 14pt 0; }
+.main-grid { display: flex; gap: 16pt; }
+.left-col { flex: 1.1; }
+.right-col { flex: 1; }
+.terminal-box {
+  background: #181825; border-radius: 6pt; padding: 10pt 12pt;
+  border: 1pt solid #313244; margin-bottom: 10pt;
+}
+.terminal-header { display: flex; gap: 4pt; margin-bottom: 8pt; }
+.terminal-dot { width: 8pt; height: 8pt; border-radius: 50%; }
+.dot-red { background: #f38ba8; }
+.dot-yellow { background: #f9e2af; }
+.dot-green { background: #a6e3a1; }
+.terminal-box p { margin: 0; font-family: Courier New, monospace; font-size: 8pt; line-height: 1.4; }
+.cmd-prompt { color: #a6e3a1; }
+.cmd-text { color: #cdd6f4; }
+.cmd-file { color: #89b4fa; }
+.cmd-dim { color: #6c7086; }
+.model-badge {
+  background: #45475a; border-radius: 3pt; padding: 2pt 6pt;
+  display: inline-block; margin-bottom: 6pt;
+}
+.model-badge p { color: #cba6f7; font-size: 8pt; margin: 0; font-weight: bold; }
+.info-box {
+  background: #313244; border-radius: 6pt; padding: 10pt 12pt;
+  margin-bottom: 10pt;
+}
+.info-box p { margin: 0; }
+.info-title { color: #cba6f7; font-size: 10pt; font-weight: bold; margin-bottom: 6pt; }
+.info-desc { color: #bac2de; font-size: 9pt; line-height: 1.4; }
+.checklist { margin-top: 8pt; }
+.check-item { display: flex; align-items: flex-start; margin-bottom: 5pt; }
+.check-item p { margin: 0; }
+.check { color: #a6e3a1; font-size: 10pt; margin-right: 6pt; }
+.check-text { color: #cdd6f4; font-size: 9pt; }
+.context-row { display: flex; gap: 8pt; margin-top: 10pt; }
+.context-box {
+  flex: 1; background: #181825; border-radius: 4pt; padding: 8pt;
+  text-align: center; border-top: 2pt solid #89b4fa;
+}
+.context-box p { margin: 0; }
+.context-icon { color: #89b4fa; font-size: 14pt; }
+.context-label { color: #cdd6f4; font-size: 8pt; margin-top: 3pt; }
+</style>
+</head>
+<body>
+<div class="left-bar"></div>
+<div class="content">
+  <div class="step-badge"><p>STEP 4: VALIDATE</p></div>
+  <h1>Smart Review with Opus</h1>
+  <p class="subtitle">Use a stronger model to validate expanded tasks against the PRD</p>
+  <div class="main-grid">
+    <div class="left-col">
+      <div class="terminal-box">
+        <div class="terminal-header">
+          <div class="terminal-dot dot-red"></div>
+          <div class="terminal-dot dot-yellow"></div>
+          <div class="terminal-dot dot-green"></div>
+        </div>
+        <div class="model-badge"><p>OPUS 4.5</p></div>
+        <p><span class="cmd-prompt">></span> <span class="cmd-text">/cl:create_plan_nt</span></p>
+        <p><span class="cmd-file">  @.scud/tasks/tasks.scg</span></p>
+        <p><span class="cmd-file">  @.scud/docs/prd/h-init.md</span></p>
+        <p></p>
+        <p><span class="cmd-dim"># Prompt:</span></p>
+        <p><span class="cmd-text">Create an implementation plan based</span></p>
+        <p><span class="cmd-text">on the tasks in PRD. Make sure tasks</span></p>
+        <p><span class="cmd-text">and dependencies make sense. We want</span></p>
+        <p><span class="cmd-text">to run in parallel as much as we can.</span></p>
+        <p><span class="cmd-text">Use </span><span class="cmd-file">scud waves</span><span class="cmd-text"> to see the plan.</span></p>
+      </div>
+      <div class="context-row">
+        <div class="context-box">
+          <p class="context-icon">SCG</p>
+          <p class="context-label">Task Graph</p>
+        </div>
+        <div class="context-box">
+          <p class="context-icon">PRD</p>
+          <p class="context-label">Requirements</p>
+        </div>
+        <div class="context-box">
+          <p class="context-icon">WAV</p>
+          <p class="context-label">Parallel Plan</p>
+        </div>
+      </div>
+    </div>
+    <div class="right-col">
+      <div class="info-box">
+        <p class="info-title">Why Review with a Smarter Model?</p>
+        <p class="info-desc">SCUD uses fast models for parsing. A stronger model (Opus/GPT-5) catches gaps, validates dependencies, and refines the plan before execution.</p>
+      </div>
+      <div class="info-box">
+        <p class="info-title">Review Checklist</p>
+        <div class="checklist">
+          <div class="check-item">
+            <p class="check">+</p>
+            <p class="check-text">All PRD requirements have tasks</p>
+          </div>
+          <div class="check-item">
+            <p class="check">+</p>
+            <p class="check-text">Dependencies are correctly ordered</p>
+          </div>
+          <div class="check-item">
+            <p class="check">+</p>
+            <p class="check-text">Parallel waves are well-structured</p>
+          </div>
+          <div class="check-item">
+            <p class="check">+</p>
+            <p class="check-text">No missing edge cases or tests</p>
+          </div>
+          <div class="check-item">
+            <p class="check">+</p>
+            <p class="check-text">Complexity estimates are realistic</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #1e1e2e; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #1e1e2e; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  display: flex; position: relative;
+}
+.left-bar { width: 6pt; background: #94e2d5; height: 100%; position: absolute; left: 0; }
+.content { margin: 30pt 40pt 40pt 40pt; flex: 1; }
+h1 { color: #cdd6f4; font-size: 32pt; margin: 0 0 6pt 0; font-weight: bold; }
+.step-num { color: #94e2d5; font-size: 12pt; margin: 0 0 4pt 0; font-weight: bold; }
+.desc { color: #a6adc8; font-size: 12pt; margin: 0 0 14pt 0; }
+.code-block {
+  background: #313244; border-radius: 6pt; padding: 10pt 14pt;
+  margin-bottom: 14pt; border-left: 3pt solid #94e2d5;
+}
+.code-block p { color: #a6e3a1; font-size: 12pt; margin: 0; font-family: Courier New, monospace; }
+.expand-demo {
+  display: flex; align-items: flex-start; margin-top: 12pt;
+}
+.task-box {
+  background: #313244; border-radius: 6pt; padding: 12pt 14pt;
+  text-align: center; min-width: 120pt;
+}
+.task-box p { margin: 0; }
+.task-id { color: #89b4fa; font-size: 10pt; font-weight: bold; }
+.task-title { color: #cdd6f4; font-size: 11pt; margin-top: 4pt; }
+.task-meta { color: #6c7086; font-size: 9pt; margin-top: 4pt; }
+.arrow {
+  color: #6c7086; font-size: 20pt; margin: 30pt 16pt 0 16pt;
+}
+.subtasks { display: flex; flex-direction: column; gap: 6pt; }
+.subtask-box {
+  background: #181825; border-radius: 4pt; padding: 8pt 12pt;
+  border-left: 2pt solid #a6e3a1;
+}
+.subtask-box p { margin: 0; }
+.parent-badge {
+  background: #45475a; border-radius: 4pt; padding: 2pt 6pt;
+  display: inline-block; margin-bottom: 8pt;
+}
+.parent-badge p { color: #f9e2af; font-size: 8pt; margin: 0; }
+</style>
+</head>
+<body>
+<div class="left-bar"></div>
+<div class="content">
+  <p class="step-num">STEP 3</p>
+  <h1>scud expand</h1>
+  <p class="desc">Break complex tasks into actionable subtasks</p>
+  <div class="code-block">
+    <p>$ scud expand</p>
+  </div>
+  <div class="expand-demo">
+    <div class="subtasks">
+      <div class="parent-badge"><p>PROCESSES IN PARALLEL</p></div>
+      <div class="subtask-box">
+        <p class="task-id">auth:1</p>
+        <p class="task-title">Design auth (13pts) -> 3 subtasks</p>
+      </div>
+      <div class="subtask-box">
+        <p class="task-id">auth:4</p>
+        <p class="task-title">OAuth flow (13pts) -> 4 subtasks</p>
+      </div>
+      <div class="subtask-box">
+        <p class="task-id">api:2</p>
+        <p class="task-title">API routes (21pts) -> 5 subtasks</p>
+      </div>
+    </div>
+    <p class="arrow">-></p>
+    <div class="task-box">
+      <p class="task-id">Result</p>
+      <p class="task-title">12 new subtasks</p>
+      <p class="task-meta">All complex tasks broken down</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

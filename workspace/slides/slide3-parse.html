@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+html { background: #1e1e2e; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #1e1e2e; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  display: flex; position: relative;
+}
+.left-bar { width: 6pt; background: #cba6f7; height: 100%; position: absolute; left: 0; }
+.content { margin: 36pt 50pt 45pt 50pt; flex: 1; display: flex; }
+.left-col { flex: 1; margin-right: 20pt; }
+.right-col { flex: 1; }
+h1 { color: #cdd6f4; font-size: 32pt; margin: 0 0 6pt 0; font-weight: bold; }
+.step-num { color: #cba6f7; font-size: 12pt; margin: 0 0 4pt 0; font-weight: bold; }
+.desc { color: #a6adc8; font-size: 12pt; margin: 0 0 14pt 0; }
+.code-block {
+  background: #313244; border-radius: 6pt; padding: 10pt 14pt;
+  margin-bottom: 12pt; border-left: 3pt solid #f5c2e7;
+}
+.code-block p { color: #a6e3a1; font-size: 11pt; margin: 0; font-family: Courier New, monospace; }
+.feature-box {
+  background: #181825; border-radius: 6pt; padding: 8pt 12pt;
+  margin-bottom: 8pt;
+}
+.feature-box p { color: #bac2de; font-size: 10pt; margin: 0; }
+.feature-title { color: #f5c2e7; font-weight: bold; }
+.output-label { color: #6c7086; font-size: 10pt; margin: 0 0 8pt 0; }
+.output-box {
+  background: #313244; border-radius: 6pt; padding: 10pt 12pt;
+  font-family: Courier New, monospace;
+}
+.output-box p { color: #94e2d5; font-size: 9pt; margin: 0 0 3pt 0; }
+.dim { color: #6c7086; }
+</style>
+</head>
+<body>
+<div class="left-bar"></div>
+<div class="content">
+  <div class="left-col">
+    <p class="step-num">STEP 2</p>
+    <h1>scud parse</h1>
+    <p class="desc">Convert PRD to structured tasks</p>
+    <div class="code-block">
+      <p>$ scud parse feature.md --tag auth</p>
+    </div>
+    <div class="feature-box">
+      <p><span class="feature-title">AI-Powered</span> - Extracts tasks from natural language</p>
+    </div>
+    <div class="feature-box">
+      <p><span class="feature-title">Dependencies</span> - Auto-detects task relationships</p>
+    </div>
+    <div class="feature-box">
+      <p><span class="feature-title">Complexity</span> - Fibonacci estimates (1,2,3,5,8...)</p>
+    </div>
+  </div>
+  <div class="right-col">
+    <p class="output-label">OUTPUT: .scud/tasks/tasks.scg</p>
+    <div class="output-box">
+      <p class="dim">@nodes</p>
+      <p>auth:1 | Design auth | P | 5 | H</p>
+      <p>auth:2 | JWT tokens | P | 3 | H</p>
+      <p>auth:3 | OAuth flow | P | 5 | M</p>
+      <p>auth:4 | Rate limit | P | 3 | M</p>
+      <p></p>
+      <p class="dim">@edges</p>
+      <p>auth:2 -> auth:1</p>
+      <p>auth:3 -> auth:1</p>
+      <p>auth:4 -> auth:2</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
