@@ -22,8 +22,7 @@ scud stats [--tag <tag>]           # Show statistics
 
 ### Visualization
 ```bash
-scud serve                         # Start web dashboard (port 3000)
-scud serve --port 8080             # Custom port
+scud view                          # Open task viewer in browser
 scud mermaid                       # Generate Mermaid diagram
 scud mermaid --all-tags            # All tags in one diagram
 scud waves [--tag <tag>]           # Show parallel execution waves
@@ -32,22 +31,25 @@ scud waves [--tag <tag>]           # Show parallel execution waves
 ### AI Commands (require XAI_API_KEY)
 ```bash
 scud parse <file> --tag <tag>      # Parse PRD into tasks
+scud parse <file> --tag <tag> --no-guidance  # Skip guidance
 scud analyze-complexity            # Score all tasks
 scud analyze-complexity --task <id> # Score specific task
 scud expand <id>                   # Split complex task
 scud expand --all                  # Split all tasks >13
+scud expand --all --no-guidance    # Skip guidance
 ```
 
-Default model: `grok-3-mini`. Configure with `scud config`.
+Default model: `grok-code-fast-1`. Configure with `scud config set-provider <provider> --model <model>`.
+
+Project guidance in `.scud/guidance/*.md` is automatically included in prompts.
 
 ### Orchestrator Commands
 ```bash
-scud claim <id> --name <name>      # Claim task (lock)
-scud release <id>                  # Release task lock
-scud whois [--tag <tag>]           # See who's working on what
+scud assign <id> <name>            # Assign task to a developer
+scud who-is [--tag <tag>]          # See who's working on what
+scud next-batch [--limit 5]        # Get multiple ready tasks
 scud doctor [--tag <tag>]          # Diagnose stuck states
 scud doctor --fix                  # Auto-fix stale locks
-scud next-batch [--count 5]        # Get multiple ready tasks
 ```
 
 ### Utilities
@@ -115,7 +117,7 @@ scud set-status <id> done          # Complete
 
 # 6. Track progress
 scud stats
-scud serve  # Web dashboard
+scud view  # Task viewer
 ```
 
 ---
@@ -128,8 +130,25 @@ scud serve  # Web dashboard
 ├── config.toml         # Provider/model settings
 ├── active-tag          # Currently active tag
 ├── current-task        # Active task ID
+├── guidance/           # Project guidance for AI
+│   └── *.md            # Auto-loaded markdown files
 └── logs/               # Task log entries
 ```
+
+---
+
+## Project Guidance
+
+Provide project context for AI commands by adding `.md` files to `.scud/guidance/`:
+
+```bash
+.scud/guidance/
+├── coding-standards.md    # Your coding conventions
+├── architecture.md        # System architecture notes
+└── tech-stack.md          # Technology decisions
+```
+
+Files are automatically loaded for `parse` and `expand`. Use `--no-guidance` to skip.
 
 ---
 
@@ -166,7 +185,7 @@ export XAI_API_KEY=xai-...
 # export OPENROUTER_API_KEY=sk-or-...
 
 # Configure provider/model:
-scud config --provider xai --model grok-3-mini
+scud config set-provider xai --model grok-code-fast-1
 ```
 
 ---

@@ -138,6 +138,57 @@ impl Storage {
         self.scud_dir().join("docs")
     }
 
+    pub fn guidance_dir(&self) -> PathBuf {
+        self.scud_dir().join("guidance")
+    }
+
+    /// Load all .md files from .scud/guidance/ folder
+    /// Returns concatenated content with file headers, or empty string if no files
+    pub fn load_guidance(&self) -> Result<String> {
+        let guidance_dir = self.guidance_dir();
+
+        if !guidance_dir.exists() {
+            return Ok(String::new());
+        }
+
+        let mut guidance_content = String::new();
+        let mut entries: Vec<_> = fs::read_dir(&guidance_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "md")
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        // Sort by filename for consistent ordering
+        entries.sort_by_key(|e| e.path());
+
+        for entry in entries {
+            let path = entry.path();
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+
+            match fs::read_to_string(&path) {
+                Ok(content) => {
+                    if !guidance_content.is_empty() {
+                        guidance_content.push_str("\n\n");
+                    }
+                    guidance_content.push_str(&format!("### {}\n\n{}", filename, content));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to read guidance file {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(guidance_content)
+    }
+
     pub fn is_initialized(&self) -> bool {
         self.scud_dir().exists() && self.tasks_file().exists()
     }
@@ -172,6 +223,9 @@ impl Storage {
         fs::create_dir_all(docs.join("phases"))?;
         fs::create_dir_all(docs.join("architecture"))?;
         fs::create_dir_all(docs.join("retrospectives"))?;
+
+        // Create guidance directory for project-specific AI context
+        fs::create_dir_all(self.guidance_dir())?;
 
         // Create CLAUDE.md with agent instructions
         self.create_agent_instructions()?;

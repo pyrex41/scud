@@ -38,6 +38,7 @@ pub async fn run(
     task_id: Option<&str>,
     all_tags: bool,
     tag: Option<&str>,
+    no_guidance: bool,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
     let mut all_tasks = storage.load_tasks()?;
@@ -48,6 +49,23 @@ pub async fn run(
     } else {
         LLMClient::new()?
     });
+
+    // Load guidance unless disabled
+    let guidance = if no_guidance {
+        None
+    } else {
+        match storage.load_guidance() {
+            Ok(g) if !g.is_empty() => {
+                println!("{}", "Loading project guidance...".blue());
+                Some(g)
+            }
+            Ok(_) => None,
+            Err(e) => {
+                eprintln!("{} Failed to load guidance: {}", "Warning:".yellow(), e);
+                None
+            }
+        }
+    };
 
     // Determine which tags to process
     let tags_to_process: Vec<String> = if all_tags {
@@ -172,6 +190,9 @@ pub async fn run(
             .progress_chars("█▓░"),
     );
 
+    // Clone guidance for async blocks
+    let guidance_arc = Arc::new(guidance);
+
     // Process tasks in parallel with bounded concurrency
     let results: Vec<Result<TaskExpansionResult, (String, String, anyhow::Error)>> =
         stream::iter(tasks_to_expand)
@@ -180,6 +201,7 @@ pub async fn run(
                     let client = Arc::clone(&client);
                     let mp = multi_progress.clone();
                     let overall = overall_progress.clone();
+                    let guidance_clone = Arc::clone(&guidance_arc);
 
                     async move {
                         let spinner = mp.add(ProgressBar::new_spinner());
@@ -199,6 +221,7 @@ pub async fn run(
                             complexity,
                             details.as_deref(),
                             recommended_subtasks,
+                            guidance_clone.as_deref(),
                         );
 
                         // Retry logic

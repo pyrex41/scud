@@ -45,7 +45,7 @@ scud set-status 1 in-progress
 scud set-status 1 done
 
 # Visualize in browser
-scud serve
+scud view
 ```
 
 **Quick reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
@@ -101,7 +101,7 @@ Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each
 - **Smart scheduling** - `scud next` finds ready tasks
 
 ### Web Dashboard
-- **Visual task board** - `scud serve` opens browser dashboard
+- **Visual task board** - `scud view` opens browser dashboard
 - **Mermaid diagrams** - dependency graph visualization
 - **Real-time stats** - progress tracking
 
@@ -149,25 +149,29 @@ scud waves [--tag <tag>]           # Show parallel execution waves
 
 ### Visualization
 ```bash
-scud serve                         # Start web dashboard (port 3000)
+scud view                          # Open task viewer in browser
 scud mermaid [--tag <tag>]         # Generate Mermaid diagram
 ```
 
 ### AI Commands (Requires XAI_API_KEY)
 ```bash
 scud parse <file> --tag <tag>      # Parse PRD/doc into tasks
+scud parse <file> --tag <tag> --no-guidance  # Parse without project guidance
 scud analyze-complexity            # Analyze task complexity
 scud expand --all                  # Break down complex tasks
+scud expand --all --no-guidance    # Expand without project guidance
 ```
 
-Default model: `grok-3-mini`. Configure with `scud config --provider <provider> --model <model>`.
+Default model: `grok-code-fast-1`. Configure with `scud config set-provider <provider> --model <model>`.
+
+Project guidance files in `.scud/guidance/*.md` are automatically included in AI prompts.
 
 ### Orchestrator Commands
 ```bash
-scud claim <id> --name <name>      # Claim task (lock)
-scud release <id>                  # Release task lock
-scud whois [--tag <tag>]           # See who's working on what
-scud doctor [--tag <tag>]          # Check for stale locks
+scud assign <id> <name>            # Assign task to a developer
+scud who-is [--tag <tag>]          # See who's working on what
+scud next-batch [--limit 5]        # Get multiple ready tasks
+scud doctor [--tag <tag>]          # Diagnose stuck workflow states
 ```
 
 ### Utilities
@@ -207,8 +211,8 @@ scud stats --tag auth-system
 # Shows progress: 8/10 complete
 
 # 6. Visualize
-scud serve
-# Opens web dashboard with task graph
+scud view
+# Opens task viewer in browser
 ```
 
 See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns.
@@ -262,8 +266,30 @@ Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`
 ├── config.toml               # Provider/model settings
 ├── active-tag                # Currently active tag
 ├── current-task              # Active task ID (for commits)
+├── guidance/                 # Project guidance for AI prompts
+│   └── *.md                  # Markdown files auto-loaded
 └── logs/                     # Task log entries
 ```
+
+### Project Guidance
+
+You can provide project-specific context that will be automatically included in AI prompts. Create markdown files in `.scud/guidance/`:
+
+```bash
+# Example: Add coding standards
+echo "# Coding Standards
+- Use TypeScript strict mode
+- All functions must have JSDoc comments
+- Maximum function length: 50 lines" > .scud/guidance/coding-standards.md
+
+# Example: Add architecture notes
+echo "# Architecture
+- Frontend: React with hooks
+- Backend: Express.js
+- Database: PostgreSQL" > .scud/guidance/architecture.md
+```
+
+All `.md` files in this folder are automatically loaded when running `scud parse` or `scud expand`. Use `--no-guidance` to skip loading guidance.
 
 ---
 

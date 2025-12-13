@@ -1,10 +1,27 @@
 pub struct Prompts;
 
 impl Prompts {
-    pub fn parse_prd(phase_content: &str, num_tasks: u32) -> String {
+    pub fn parse_prd(phase_content: &str, num_tasks: u32, guidance: Option<&str>) -> String {
+        let guidance_section = guidance
+            .filter(|g| !g.is_empty())
+            .map(|g| {
+                format!(
+                    r#"
+## Project Guidance
+
+The following project-specific guidance should inform your task breakdown:
+
+{}
+
+"#,
+                    g
+                )
+            })
+            .unwrap_or_default();
+
         format!(
             r#"You are a Scrum Master parsing a phase into actionable development tasks.
-
+{}
 Phase Content:
 {}
 
@@ -36,7 +53,7 @@ Guidelines:
 - Each task should have clear success criteria
 
 Return ONLY the JSON array, no additional explanation."#,
-            phase_content, num_tasks, num_tasks
+            guidance_section, phase_content, num_tasks, num_tasks
         )
     }
 
@@ -93,14 +110,32 @@ Return ONLY the JSON object, no additional explanation."#,
         complexity: u32,
         existing_details: Option<&str>,
         recommended_subtasks: usize,
+        guidance: Option<&str>,
     ) -> String {
         let context = existing_details
             .map(|d| format!("\nExisting Technical Details:\n{}\n", d))
             .unwrap_or_default();
 
+        let guidance_section = guidance
+            .filter(|g| !g.is_empty())
+            .map(|g| {
+                format!(
+                    r#"
+## Project Guidance
+
+The following project-specific guidance should inform your subtask breakdown:
+
+{}
+
+"#,
+                    g
+                )
+            })
+            .unwrap_or_default();
+
         format!(
             r#"You are breaking down a development task into smaller, manageable subtasks.
-
+{}
 Original Task (Complexity {}): {}
 Description: {}{}
 
@@ -135,6 +170,7 @@ Guidelines:
 - DO NOT include "complexity" field - subtasks are all assumed to be small and manageable
 
 Return ONLY the JSON array, no additional explanation."#,
+            guidance_section,
             complexity,
             task_title,
             task_description,

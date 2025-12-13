@@ -24,6 +24,7 @@ pub async fn run(
     tag: &str,
     num_tasks: u32,
     append: bool,
+    no_guidance: bool,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -34,6 +35,23 @@ pub async fn run(
     // Read the PRD file
     println!("{} {}", "Reading PRD from:".blue(), file_path.display());
     let prd_content = storage.read_file(file_path)?;
+
+    // Load guidance unless disabled
+    let guidance = if no_guidance {
+        None
+    } else {
+        match storage.load_guidance() {
+            Ok(g) if !g.is_empty() => {
+                println!("{}", "Loading project guidance...".blue());
+                Some(g)
+            }
+            Ok(_) => None,
+            Err(e) => {
+                eprintln!("{} Failed to load guidance: {}", "Warning:".yellow(), e);
+                None
+            }
+        }
+    };
 
     // Create LLM client with proper project root
     let client = match project_root {
@@ -52,7 +70,7 @@ pub async fn run(
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
     // Call LLM to parse the PRD
-    let prompt = Prompts::parse_prd(&prd_content, num_tasks);
+    let prompt = Prompts::parse_prd(&prd_content, num_tasks, guidance.as_deref());
     let parsed_tasks: Vec<ParsedTask> = client.complete_json(&prompt).await?;
 
     spinner.finish_with_message(format!(

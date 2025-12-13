@@ -186,6 +186,10 @@ enum Commands {
         /// Append tasks to existing tag instead of replacing
         #[arg(long)]
         append: bool,
+
+        /// Skip loading guidance from .scud/guidance/
+        #[arg(long)]
+        no_guidance: bool,
     },
 
     /// Clear all tasks (with confirmation)
@@ -223,6 +227,10 @@ enum Commands {
         /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
+
+        /// Skip loading guidance from .scud/guidance/
+        #[arg(long)]
+        no_guidance: bool,
     },
 
     /// Re-analyze and suggest cross-tag dependencies (AI-powered)
@@ -407,14 +415,15 @@ async fn main() -> Result<()> {
             tag,
             num_tasks,
             append,
-        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append).await,
+            no_guidance,
+        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append, no_guidance).await,
         Commands::Clean { force, tag } => commands::clean::run(cli.project, force, tag.as_deref()),
         Commands::AnalyzeComplexity { task, tag } => {
             commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())
                 .await
         }
-        Commands::Expand { task, all, tag } => {
-            commands::ai::expand::run(cli.project, task.as_deref(), all, tag.as_deref()).await
+        Commands::Expand { task, all, tag, no_guidance } => {
+            commands::ai::expand::run(cli.project, task.as_deref(), all, tag.as_deref(), no_guidance).await
         }
         Commands::ReanalyzeDeps {
             tag,
