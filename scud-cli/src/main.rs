@@ -132,6 +132,10 @@ enum Commands {
         /// Output machine-readable JSON for orchestrators
         #[arg(long)]
         spawn: bool,
+
+        /// Search across all phases for globally-correct next task
+        #[arg(long)]
+        all_tags: bool,
     },
 
     /// Show phase statistics
@@ -282,6 +286,10 @@ enum Commands {
         /// Maximum number of tasks to return
         #[arg(short, long, default_value = "5")]
         limit: usize,
+
+        /// Search across all phases for globally-correct tasks
+        #[arg(long)]
+        all_tags: bool,
     },
 
     /// Convert task storage format between JSON and SCG
@@ -387,7 +395,9 @@ async fn main() -> Result<()> {
             status,
             tag,
         } => commands::set_status::run(cli.project, &task_id, &status, tag.as_deref()),
-        Commands::Next { tag, spawn } => commands::next::run(cli.project, tag.as_deref(), spawn),
+        Commands::Next { tag, spawn, all_tags } => {
+            commands::next::run(cli.project, tag.as_deref(), spawn, all_tags)
+        }
         Commands::Stats { tag } => commands::stats::run(cli.project, tag.as_deref()),
         Commands::Migrate { dry_run } => commands::migrate::run(cli.project, dry_run),
         Commands::Waves {
@@ -440,8 +450,8 @@ async fn main() -> Result<()> {
             tag,
         } => commands::assign::run(cli.project, &task_id, &assignee, tag.as_deref()),
         Commands::WhoIs { tag } => commands::whois::run(cli.project, tag.as_deref()),
-        Commands::NextBatch { tag, limit } => {
-            commands::next_batch::run(cli.project, tag.as_deref(), limit)
+        Commands::NextBatch { tag, limit, all_tags } => {
+            commands::next_batch::run(cli.project, tag.as_deref(), limit, all_tags)
         }
         Commands::Convert { from, to, backup } => {
             commands::convert::run(cli.project, &from, &to, backup)

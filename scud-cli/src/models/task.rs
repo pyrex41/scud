@@ -294,16 +294,39 @@ impl Task {
         })
     }
 
+    /// Get effective dependencies including inherited parent dependencies
+    /// Subtasks inherit their parent's dependencies (including cross-tag deps)
+    pub fn get_effective_dependencies(&self, all_tasks: &[&Task]) -> Vec<String> {
+        let mut deps = self.dependencies.clone();
+
+        // If this is a subtask, inherit parent's dependencies
+        if let Some(ref parent_id) = self.parent_id {
+            if let Some(parent) = all_tasks.iter().find(|t| &t.id == parent_id) {
+                // Recursively get parent's effective dependencies
+                let parent_deps = parent.get_effective_dependencies(all_tasks);
+                deps.extend(parent_deps);
+            }
+        }
+
+        // Deduplicate
+        deps.sort();
+        deps.dedup();
+        deps
+    }
+
     /// Check if all dependencies are met, searching across provided task references
     /// Supports cross-tag dependencies when passed tasks from all phases
+    /// Subtasks inherit parent dependencies via get_effective_dependencies
     pub fn has_dependencies_met_refs(&self, all_tasks: &[&Task]) -> bool {
-        self.dependencies.iter().all(|dep_id| {
-            all_tasks
-                .iter()
-                .find(|t| &t.id == dep_id)
-                .map(|t| t.status == TaskStatus::Done)
-                .unwrap_or(false)
-        })
+        self.get_effective_dependencies(all_tasks)
+            .iter()
+            .all(|dep_id| {
+                all_tasks
+                    .iter()
+                    .find(|t| &t.id == dep_id)
+                    .map(|t| t.status == TaskStatus::Done)
+                    .unwrap_or(false)
+            })
     }
 
     /// Returns whether this task should be expanded into subtasks
@@ -941,5 +964,119 @@ mod tests {
 
         let all_tasks = vec![&dep1];
         assert!(!task.has_dependencies_met_refs(&all_tasks));
+    }
+
+    #[test]
+    fn test_subtask_inherits_parent_dependencies() {
+        // Parent task depends on cross-tag task "terminal:4"
+        let mut parent = Task::new(
+            "main:9".to_string(),
+            "Parent Task".to_string(),
+            "Desc".to_string(),
+        );
+        parent.dependencies = vec!["terminal:4".to_string()];
+        parent.status = TaskStatus::Expanded;
+        parent.subtasks = vec!["main:9.1".to_string()];
+
+        // Subtask has its own dependency on sibling 9.1 (none in this case)
+        let mut subtask = Task::new(
+            "main:9.1".to_string(),
+            "Subtask".to_string(),
+            "Desc".to_string(),
+        );
+        subtask.parent_id = Some("main:9".to_string());
+        // subtask has no direct dependencies, but should inherit parent's
+
+        // Cross-tag dependency (NOT done)
+        let terminal_task = Task::new(
+            "terminal:4".to_string(),
+            "Terminal Task".to_string(),
+            "Desc".to_string(),
+        );
+
+        let all_tasks = vec![&parent, &subtask, &terminal_task];
+
+        // Subtask should have effective dependency on terminal:4 (inherited from parent)
+        let effective_deps = subtask.get_effective_dependencies(&all_tasks);
+        assert!(
+            effective_deps.contains(&"terminal:4".to_string()),
+            "Subtask should inherit parent's cross-tag dependency"
+        );
+
+        // Since terminal:4 is not done, subtask should be blocked
+        assert!(
+            !subtask.has_dependencies_met_refs(&all_tasks),
+            "Subtask should be blocked when inherited dependency is not met"
+        );
+    }
+
+    #[test]
+    fn test_subtask_inherits_parent_dependencies_met() {
+        // Parent task depends on cross-tag task "terminal:4"
+        let mut parent = Task::new(
+            "main:9".to_string(),
+            "Parent Task".to_string(),
+            "Desc".to_string(),
+        );
+        parent.dependencies = vec!["terminal:4".to_string()];
+        parent.status = TaskStatus::Expanded;
+        parent.subtasks = vec!["main:9.1".to_string()];
+
+        // Subtask
+        let mut subtask = Task::new(
+            "main:9.1".to_string(),
+            "Subtask".to_string(),
+            "Desc".to_string(),
+        );
+        subtask.parent_id = Some("main:9".to_string());
+
+        // Cross-tag dependency (DONE)
+        let mut terminal_task = Task::new(
+            "terminal:4".to_string(),
+            "Terminal Task".to_string(),
+            "Desc".to_string(),
+        );
+        terminal_task.set_status(TaskStatus::Done);
+
+        let all_tasks = vec![&parent, &subtask, &terminal_task];
+
+        // Since terminal:4 is done, subtask should be available
+        assert!(
+            subtask.has_dependencies_met_refs(&all_tasks),
+            "Subtask should be available when inherited dependency is met"
+        );
+    }
+
+    #[test]
+    fn test_get_effective_dependencies_no_parent() {
+        let mut task = Task::new("1".to_string(), "Task".to_string(), "Desc".to_string());
+        task.dependencies = vec!["2".to_string(), "3".to_string()];
+
+        let all_tasks: Vec<&Task> = vec![&task];
+        let effective = task.get_effective_dependencies(&all_tasks);
+
+        assert_eq!(effective, vec!["2".to_string(), "3".to_string()]);
+    }
+
+    #[test]
+    fn test_get_effective_dependencies_deduplication() {
+        // Parent has deps A, B
+        let mut parent = Task::new("parent".to_string(), "Parent".to_string(), "Desc".to_string());
+        parent.dependencies = vec!["A".to_string(), "B".to_string()];
+        parent.subtasks = vec!["child".to_string()];
+
+        // Child has deps B, C (B overlaps with parent)
+        let mut child = Task::new("child".to_string(), "Child".to_string(), "Desc".to_string());
+        child.parent_id = Some("parent".to_string());
+        child.dependencies = vec!["B".to_string(), "C".to_string()];
+
+        let all_tasks = vec![&parent, &child];
+        let effective = child.get_effective_dependencies(&all_tasks);
+
+        // Should have A, B, C (B deduplicated)
+        assert_eq!(effective.len(), 3);
+        assert!(effective.contains(&"A".to_string()));
+        assert!(effective.contains(&"B".to_string()));
+        assert!(effective.contains(&"C".to_string()));
     }
 }
