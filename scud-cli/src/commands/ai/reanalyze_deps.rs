@@ -264,12 +264,14 @@ fn apply_suggestions(
 
 /// Parse a task ID into (phase_tag, local_id)
 /// Examples:
-///   "auth:1" -> ("auth", "auth:1")
-///   "1" -> (current_phase, "1")  -- but we'll return empty for tag
+///   "auth:1" -> ("auth", "1")
+///   "main:9.1" -> ("main", "9.1")
+///   "1" -> ("", "1")  -- no phase prefix
 fn parse_task_id(task_id: &str) -> (String, String) {
     if let Some(colon_pos) = task_id.find(':') {
         let phase = task_id[..colon_pos].to_string();
-        (phase, task_id.to_string())
+        let local = task_id[colon_pos + 1..].to_string();
+        (phase, local)
     } else {
         // This shouldn't happen with our prompts, but handle gracefully
         (String::new(), task_id.to_string())
@@ -285,7 +287,21 @@ mod tests {
     fn test_parse_task_id_with_namespace() {
         let (phase, local) = parse_task_id("auth:1");
         assert_eq!(phase, "auth");
-        assert_eq!(local, "auth:1");
+        assert_eq!(local, "1");
+    }
+
+    #[test]
+    fn test_parse_task_id_with_subtask() {
+        let (phase, local) = parse_task_id("main:9.1");
+        assert_eq!(phase, "main");
+        assert_eq!(local, "9.1");
+    }
+
+    #[test]
+    fn test_parse_task_id_with_nested_subtask() {
+        let (phase, local) = parse_task_id("api:2.3.1");
+        assert_eq!(phase, "api");
+        assert_eq!(local, "2.3.1");
     }
 
     #[test]
