@@ -1,13 +1,13 @@
 # SCUD MCP Server
 
-Model Context Protocol (MCP) server for [SCUD](https://github.com/pyrex41/scud) task management. Enables AI assistants like Claude Desktop to interact with SCUD's task management and AI-powered workflow features.
+Model Context Protocol (MCP) server for [SCUD](https://github.com/pyrex41/scud) task management. Enables AI assistants like Claude Desktop to interact with SCUD's DAG-driven task management and AI-powered features.
 
 ## Overview
 
 **SCUD MCP** wraps the SCUD CLI and exposes it through the Model Context Protocol, allowing any MCP-compatible client to:
 - Parse PRDs into tasks using AI
 - Manage tags and task lifecycles
-- Track workflow state and progress
+- Track progress and statistics
 - Coordinate parallel development across teams
 - Analyze complexity and expand tasks automatically
 
@@ -43,8 +43,7 @@ Perfect for teams using Claude Desktop, Cline, or other MCP clients who want AI-
 - `scud_release` - Release claimed task
 - `scud_whois` - Show task assignments
 
-### 📊 **3 MCP Resources** (Read-only Data)
-- `scud://workflow/state` - Current workflow state (JSON)
+### 📊 **2 MCP Resources** (Read-only Data)
 - `scud://tasks/list` - All tasks in active tag (JSON)
 - `scud://stats/current` - Tag statistics (text)
 
@@ -211,21 +210,26 @@ Overall: 7/35 tasks completed (20%)
 ### Example 5: Using Resources
 
 **You:**
-> Read the current workflow state
+> Show me all tasks in the current tag
 
 **Claude:**
 ```
-[reads scud://workflow/state resource]
+[reads scud://tasks/list resource]
 
-{
-  "active_tag": "auth",
-  "current_phase": "development",
-  "phases": {
-    "planning": { "status": "completed", "completed_at": "2025-11-15T10:00:00Z" },
-    "development": { "status": "in-progress", "started_at": "2025-11-15T14:00:00Z" }
+[
+  {
+    "id": "TASK-1",
+    "title": "Set up authentication database schema",
+    "status": "in-progress",
+    "complexity": 5
   },
-  "completed_epics": []
-}
+  {
+    "id": "TASK-2",
+    "title": "Implement user registration",
+    "status": "pending",
+    "complexity": 5
+  }
+]
 ```
 
 ## Tool Reference
@@ -272,7 +276,6 @@ Overall: 7/35 tasks completed (20%)
 
 | Resource | Description | Format |
 |----------|-------------|--------|
-| `scud://workflow/state` | Current workflow state | JSON |
 | `scud://tasks/list` | All tasks in active tag | JSON |
 | `scud://stats/current` | Tag statistics | Text |
 
@@ -372,12 +375,11 @@ scud-mcp/
 │   ├── types.ts           # TypeScript types
 │   ├── tools/             # Tool implementations
 │   │   ├── core.ts        # Core commands
-│   │   ├── tags.ts        # Tag management
+│   │   ├── phase.ts       # Tag management
 │   │   ├── task.ts        # Task operations
 │   │   ├── ai.ts          # AI-powered tools
 │   │   └── parallel.ts    # Parallel development
 │   ├── resources/         # Resource implementations
-│   │   ├── workflow.ts    # Workflow state
 │   │   ├── tasks.ts       # Task lists
 │   │   └── stats.ts       # Statistics
 │   └── utils/

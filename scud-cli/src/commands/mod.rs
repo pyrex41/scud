@@ -23,3 +23,6 @@ pub mod waves;
 // Task assignment commands
 pub mod assign;
 pub mod whois;
+
+// Parallel execution
+pub mod spawn;

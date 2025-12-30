@@ -33,6 +33,10 @@ atty = "0.2"  # TTY detection for interactive mode
 futures = "0.3"  # Async utilities for parallel execution
 webbrowser = "1.0"  # Cross-platform browser opening
 
+# TUI dependencies
+ratatui = "0.29"      # Terminal UI framework
+crossterm = "0.28"    # Cross-platform terminal manipulation
+
 [dev-dependencies]
 tempfile = "3.8"  # Temporary directories for tests
 mockall = "0.12"  # Mock objects for testing

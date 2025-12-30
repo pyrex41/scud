@@ -171,7 +171,7 @@ Project guidance files in `.scud/guidance/*.md` are automatically included in AI
 scud assign <id> <name>            # Assign task to a developer
 scud who-is [--tag <tag>]          # See who's working on what
 scud next-batch [--limit 5]        # Get multiple ready tasks
-scud doctor [--tag <tag>]          # Diagnose stuck workflow states
+scud doctor [--tag <tag>]          # Diagnose stuck task states
 ```
 
 ### Utilities

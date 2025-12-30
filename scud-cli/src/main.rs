@@ -18,7 +18,7 @@ enum ConfigCommands {
         model: Option<String>,
     },
 
-    /// Manage SCUD workflow agents (Claude Code slash commands)
+    /// Manage SCUD agents (Claude Code slash commands)
     Agents {
         #[command(subcommand)]
         command: AgentsCommands,
@@ -307,7 +307,7 @@ enum Commands {
         backup: bool,
     },
 
-    /// [EXPERIMENTAL] Diagnose stuck workflow states
+    /// [EXPERIMENTAL] Diagnose stuck task states
     Doctor {
         /// Phase tag (checks all phases if not provided)
         #[arg(short, long)]
@@ -364,6 +364,59 @@ enum Commands {
         /// Stage all changes before committing
         #[arg(short, long)]
         all: bool,
+    },
+
+    /// Spawn parallel Claude Code agents in terminal windows
+    Spawn {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Maximum agents to spawn (default: 5)
+        #[arg(short = 'n', long, default_value = "5")]
+        limit: usize,
+
+        /// Search across all phases for ready tasks
+        #[arg(long)]
+        all_tags: bool,
+
+        /// Terminal: auto, tmux, kitty, wezterm, iterm2 (default: auto)
+        #[arg(short = 'T', long, default_value = "auto")]
+        terminal: String,
+
+        /// Show plan without spawning
+        #[arg(long)]
+        dry_run: bool,
+
+        /// tmux session name (default: scud-<tag>)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Attach to tmux session after spawn
+        #[arg(long)]
+        attach: bool,
+
+        /// Start TUI monitor after spawn (recommended)
+        #[arg(short, long)]
+        monitor: bool,
+
+        /// Mark spawned tasks as in-progress
+        #[arg(short, long)]
+        claim: bool,
+    },
+
+    /// Monitor spawn session with interactive TUI
+    Monitor {
+        /// Session name to monitor (auto-detects if only one exists)
+        #[arg(short, long)]
+        session: Option<String>,
+    },
+
+    /// List spawn sessions
+    Sessions {
+        /// Show detailed info for each session
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -474,5 +527,29 @@ async fn main() -> Result<()> {
         Commands::Commit { message, all } => {
             commands::commit::run(cli.project, message.as_deref(), all)
         }
+        Commands::Spawn {
+            tag,
+            limit,
+            all_tags,
+            terminal,
+            dry_run,
+            session,
+            attach,
+            monitor,
+            claim,
+        } => commands::spawn::run(
+            cli.project,
+            tag.as_deref(),
+            limit,
+            all_tags,
+            &terminal,
+            dry_run,
+            session,
+            attach,
+            monitor,
+            claim,
+        ),
+        Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
+        Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
     }
 }
