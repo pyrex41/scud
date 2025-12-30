@@ -1,8 +1,11 @@
 //! TUI module for spawn session monitoring
 //!
-//! Split-view design: Agent list on left, live terminal output on right.
-//! Press Enter for fullscreen terminal view, Esc to return.
-//! Press i to enter input mode and send commands to agents.
+//! Three-panel design:
+//! - Top: Waves/Tasks panel showing tasks by execution wave
+//! - Middle: Agents panel showing running agents
+//! - Bottom: Live terminal output from selected agent
+//!
+//! Tab switches focus between panels. Space toggles task selection for spawning.
 
 pub mod app;
 pub mod ui;
@@ -18,7 +21,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use self::app::{App, ViewMode};
+use self::app::{App, FocusedPanel, ViewMode};
 use self::ui::render;
 
 /// Run the TUI monitor
@@ -86,25 +89,26 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                         return Ok(());
                     }
 
-                    // j/k always switch agents
-                    (_, KeyCode::Char('k')) => app.previous_agent(),
-                    (_, KeyCode::Char('j')) => app.next_agent(),
+                    // Tab: switch panel focus
+                    (_, KeyCode::Tab) => app.next_panel(),
+                    (KeyModifiers::SHIFT, KeyCode::BackTab) => app.previous_panel(),
 
-                    // Arrow keys: scroll in fullscreen, navigate agents in split
-                    (_, KeyCode::Up) => {
+                    // j/k: navigate within current panel
+                    (_, KeyCode::Char('k')) | (_, KeyCode::Up) => {
                         if app.view_mode == ViewMode::Fullscreen {
                             app.scroll_up(1);
                         } else {
-                            app.previous_agent();
+                            app.move_up();
                         }
                     }
-                    (_, KeyCode::Down) => {
+                    (_, KeyCode::Char('j')) | (_, KeyCode::Down) => {
                         if app.view_mode == ViewMode::Fullscreen {
                             app.scroll_down(1);
                         } else {
-                            app.next_agent();
+                            app.move_down();
                         }
                     }
+
                     (_, KeyCode::PageUp) => app.scroll_up(10),
                     (_, KeyCode::PageDown) => app.scroll_down(10),
 
@@ -115,8 +119,57 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     // g: jump to top
                     (_, KeyCode::Char('g')) => app.scroll_up(usize::MAX),
 
-                    // Enter: toggle fullscreen
-                    (_, KeyCode::Enter) => app.toggle_fullscreen(),
+                    // Space: toggle task selection (in waves panel)
+                    (_, KeyCode::Char(' ')) => {
+                        if app.focused_panel == FocusedPanel::Waves {
+                            app.toggle_task_selection();
+                        }
+                    }
+
+                    // a: select all ready tasks
+                    (_, KeyCode::Char('a')) => {
+                        if app.focused_panel == FocusedPanel::Waves {
+                            app.select_all_ready();
+                        }
+                    }
+
+                    // c: clear selection
+                    (_, KeyCode::Char('c')) => {
+                        if app.focused_panel == FocusedPanel::Waves {
+                            app.clear_selection();
+                        }
+                    }
+
+                    // s: spawn selected tasks
+                    (_, KeyCode::Char('s')) => {
+                        if app.focused_panel == FocusedPanel::Waves && app.selected_task_count() > 0 {
+                            let count = app.selected_task_count();
+                            match app.spawn_selected_tasks() {
+                                Ok(spawned) if spawned > 0 => {
+                                    app.error = None;
+                                    // Switch to agents panel to see the new agents
+                                    app.focused_panel = FocusedPanel::Agents;
+                                }
+                                Ok(_) => {
+                                    app.error = Some(format!("Failed to spawn {} tasks", count));
+                                }
+                                Err(e) => {
+                                    app.error = Some(format!("Spawn error: {}", e));
+                                }
+                            }
+                        }
+                    }
+
+                    // Enter: toggle fullscreen or view agent output
+                    (_, KeyCode::Enter) => {
+                        if app.focused_panel == FocusedPanel::Output || app.view_mode == ViewMode::Fullscreen {
+                            app.toggle_fullscreen();
+                        } else if app.focused_panel == FocusedPanel::Agents {
+                            // Switch to output panel to see agent's output
+                            app.focused_panel = FocusedPanel::Output;
+                            app.refresh_live_output();
+                        }
+                    }
 
                     // Esc: exit fullscreen or do nothing in split
                     (_, KeyCode::Esc) => {
@@ -126,14 +179,23 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     }
 
                     // i: Enter input mode (send text to agent)
-                    (_, KeyCode::Char('i')) => app.enter_input_mode(),
+                    (_, KeyCode::Char('i')) => {
+                        if app.focused_panel == FocusedPanel::Agents || app.focused_panel == FocusedPanel::Output {
+                            app.enter_input_mode();
+                        }
+                    }
 
                     // x: Stop/interrupt agent (Ctrl+C)
-                    (_, KeyCode::Char('x')) => app.restart_agent()?,
+                    (_, KeyCode::Char('x')) => {
+                        if app.focused_panel == FocusedPanel::Agents {
+                            app.restart_agent()?;
+                        }
+                    }
 
                     // Refresh
                     (_, KeyCode::Char('r')) => {
                         app.refresh()?;
+                        app.refresh_waves();
                         app.refresh_live_output();
                     }
 
