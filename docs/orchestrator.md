@@ -13,17 +13,15 @@ This guide shows how to build orchestrator patterns that spawn multiple Claude C
 ```bash
 # Basic orchestrator loop
 while true; do
-    TASK=$(scud next --tag myproject)
-    if [ -z "$TASK" ]; then
+    TASK=$(scud next --spawn --tag myproject)
+    if [ -z "$TASK" ] || [ "$TASK" = "null" ]; then
         echo "No ready tasks. Exiting."
         break
     fi
 
-    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
+    TASK_ID=$(echo "$TASK" | jq -r '.id')
     echo "Starting task $TASK_ID"
 
-    # Claim and work on task
-    scud claim "$TASK_ID" --name "agent-$$"
     scud set-status "$TASK_ID" in-progress
 
     claude "Implement task $TASK_ID then mark it done with: scud set-status $TASK_ID done" &
@@ -57,46 +55,51 @@ Output (when no tasks ready):
 No tasks ready. Check dependencies or all tasks may be complete.
 ```
 
+### Get Next Task as JSON (for scripts)
+
+```bash
+scud next --spawn --tag myproject
+```
+
+Returns JSON for easy parsing in scripts:
+```json
+{"id":"3","title":"Implement user authentication","complexity":8}
+```
+
 ### Get Multiple Ready Tasks
 
 ```bash
-scud next-batch --tag myproject --count 5
+scud next-batch --tag myproject --limit 5
 ```
 
-Returns up to 5 ready tasks at once - useful for orchestrators.
+Returns up to 5 ready tasks at once as JSON - useful for orchestrators.
 
-### Claim a Task
+### Assign a Task
 
 ```bash
-scud claim <task-id> --name <agent-name>
+scud assign <task-id> <name>
 ```
 
-Locks the task so other agents don't work on it.
+Records who is working on a task for visibility.
 
-### Release a Task
-
-```bash
-scud release <task-id>
-```
-
-Releases the lock (use after completing or abandoning).
-
-### Monitor Active Sessions
+### Monitor Active Work
 
 ```bash
-scud whois --tag myproject
+scud who-is --tag myproject
 ```
 
 Output:
 ```
 Active task assignments:
 
-Task 3: alice (claimed 5m ago)
-Task 4: bob (claimed 2m ago)
-Task 5: charlie (claimed 1m ago)
+alice:
+  [auth] auth:3 - Implement JWT tokens
+
+bob:
+  [api] api:2 - Create REST endpoints
 ```
 
-### Check for Stale Locks
+### Check for Stale Tasks
 
 ```bash
 scud doctor --tag myproject
@@ -107,12 +110,12 @@ Output:
 Checking tasks in tag: myproject
 
 Issues found:
-  - Task 7: Stale lock (claimed by alice 25h ago)
+  - Task 7: In-progress for 25h (stale)
 
-Run with --fix to auto-release stale locks
+Run with --fix to auto-reset stale tasks
 ```
 
-Fix stale locks:
+Fix stale tasks:
 ```bash
 scud doctor --tag myproject --fix
 ```
@@ -155,9 +158,9 @@ TAG="myproject"
 
 while true; do
     # Find ready tasks
-    TASK=$(scud next --tag $TAG)
+    TASK=$(scud next --spawn --tag $TAG)
 
-    if [ -z "$TASK" ]; then
+    if [ -z "$TASK" ] || [ "$TASK" = "null" ]; then
         if [ $(jobs -r | wc -l) -eq 0 ]; then
             echo "All tasks complete"
             break
@@ -173,67 +176,21 @@ while true; do
         sleep 2
     done
 
-    # Extract task ID and claim
-    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
-    scud claim "$TASK_ID" --name "agent-$$-$TASK_ID"
+    # Extract task ID and start work
+    TASK_ID=$(echo "$TASK" | jq -r '.id')
+    scud assign "$TASK_ID" "agent-$$-$TASK_ID"
     scud set-status "$TASK_ID" in-progress
 
     echo "Starting task $TASK_ID"
     (
         claude "Implement task $TASK_ID. When done, run: scud set-status $TASK_ID done"
-        scud release "$TASK_ID"
     ) &
 done
 
 wait
 ```
 
-### Example 2: Claim-Based Orchestrator with Auto-Complete
-
-Use task claiming with explicit completion:
-
-```bash
-#!/bin/bash
-# parallel-claim.sh
-
-MAX_PARALLEL=4
-AGENT_NAME="orchestrator-$$"
-TAG="myproject"
-
-while true; do
-    TASK=$(scud next --tag $TAG)
-
-    if [ -z "$TASK" ]; then
-        if [ $(jobs -r | wc -l) -eq 0 ]; then
-            echo "All tasks complete"
-            break
-        fi
-        sleep 5
-        continue
-    fi
-
-    while [ $(jobs -r | wc -l) -ge $MAX_PARALLEL ]; do
-        sleep 2
-    done
-
-    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
-    scud claim "$TASK_ID" --name "$AGENT_NAME-$TASK_ID"
-    scud set-status "$TASK_ID" in-progress
-
-    echo "Starting task $TASK_ID"
-    (
-        # Run claude and mark done when complete
-        claude "Complete task $TASK_ID. When finished, the task will be marked done."
-        scud set-status "$TASK_ID" done
-        scud release "$TASK_ID"
-    ) &
-done
-
-wait
-echo "All spawned tasks complete"
-```
-
-### Example 3: Wave-Based Execution
+### Example 2: Wave-Based Execution
 
 Execute entire waves in parallel:
 
@@ -245,7 +202,7 @@ TAG="myproject"
 
 while true; do
     # Get all ready tasks
-    READY_TASKS=$(scud next-batch --tag $TAG --count 10 | grep "ID:" | awk '{print $2}')
+    READY_TASKS=$(scud next-batch --tag $TAG --limit 10 | jq -r '.[].id')
 
     if [ -z "$READY_TASKS" ]; then
         echo "No more ready tasks"
@@ -256,13 +213,12 @@ while true; do
 
     # Spawn agents for all ready tasks
     for TASK_ID in $READY_TASKS; do
-        scud claim "$TASK_ID" --name "wave-$$"
+        scud assign "$TASK_ID" "wave-$$"
         scud set-status "$TASK_ID" in-progress
         echo "  - Starting task $TASK_ID"
         (
             claude "Implement task $TASK_ID"
             scud set-status "$TASK_ID" done
-            scud release "$TASK_ID"
         ) &
     done
 
@@ -300,7 +256,7 @@ Completion: 50% (5/10)
 ### Web Dashboard
 
 ```bash
-scud serve
+scud view
 ```
 
 Opens a web dashboard with visual task board and dependency graph.
@@ -308,22 +264,22 @@ Opens a web dashboard with visual task board and dependency graph.
 ### Session Dashboard
 
 ```bash
-watch -n 2 "scud whois --tag myproject && echo && scud stats --tag myproject"
+watch -n 2 "scud who-is --tag myproject && echo && scud stats --tag myproject"
 ```
 
 ---
 
 ## Best Practices
 
-### 1. Use Claiming for Coordination
+### 1. Use Assignment for Coordination
 
-Always claim tasks before working on them:
+Track who is working on what:
 
 ```bash
-scud claim <task-id> --name <unique-name>
+scud assign <task-id> <agent-name>
 ```
 
-This prevents two agents from working on the same task.
+This helps with visibility but doesn't block other agents.
 
 ### 2. Mark Tasks Complete Explicitly
 
@@ -331,31 +287,30 @@ After completing work:
 
 ```bash
 scud set-status <task-id> done
-scud release <task-id>
 ```
 
-### 3. Monitor with `whois` and `doctor`
+### 3. Monitor with `who-is` and `doctor`
 
 ```bash
 # See active work
-scud whois --tag myproject
+scud who-is --tag myproject
 
-# Find stale locks
+# Find stale tasks
 scud doctor --tag myproject --stale-hours 2
 ```
 
-### 4. Clean Up Stale Locks
+### 4. Clean Up Stale Tasks
 
-If an agent crashes without releasing:
+If a task is stuck in-progress:
 
 ```bash
 scud doctor --tag myproject --fix
 ```
 
-Or manually:
+Or manually reset:
 
 ```bash
-scud release <task-id> --force
+scud set-status <task-id> pending
 ```
 
 ---
@@ -374,7 +329,6 @@ scud release <task-id> --force
 ```bash
 # Manually mark complete
 scud set-status <id> done
-scud release <id>
 ```
 
 ### No Tasks Ready
@@ -382,39 +336,36 @@ scud release <id>
 **Symptom:** `scud next` says "No tasks ready" but tasks exist
 
 **Causes:**
-1. All ready tasks are claimed/locked
-2. Dependencies not satisfied
-3. All tasks complete
+1. Dependencies not satisfied
+2. All tasks complete
+3. Tasks are blocked or deferred
 
 **Fix:**
 ```bash
-# Check for claimed tasks
-scud whois --tag myproject
-
-# Check for stale locks
-scud doctor --tag myproject
-
 # View dependency graph
 scud waves --tag myproject
 
 # Check completion
 scud stats --tag myproject
+
+# Check for issues
+scud doctor --tag myproject
 ```
 
-### Stale Locks
+### Stale In-Progress Tasks
 
-**Symptom:** Tasks locked by crashed agents
+**Symptom:** Tasks stuck in-progress after agent crash
 
 **Fix:**
 ```bash
-# Find stale locks (older than 2 hours)
+# Find stale tasks (older than 2 hours)
 scud doctor --tag myproject --stale-hours 2
 
-# Auto-fix
+# Auto-fix (reset to pending)
 scud doctor --tag myproject --stale-hours 2 --fix
 
-# Manual release
-scud release <task-id> --force
+# Manual reset
+scud set-status <task-id> pending
 ```
 
 ---
@@ -436,20 +387,19 @@ Only spawn if task meets criteria:
 
 ```bash
 while true; do
-    TASK=$(scud next --tag myproject)
-    [ -z "$TASK" ] && break
+    TASK=$(scud next --spawn --tag myproject)
+    [ -z "$TASK" ] || [ "$TASK" = "null" ] && break
 
-    TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
-    COMPLEXITY=$(scud show $TASK_ID | grep "Complexity:" | awk '{print $2}')
+    TASK_ID=$(echo "$TASK" | jq -r '.id')
+    COMPLEXITY=$(echo "$TASK" | jq -r '.complexity')
 
     # Only spawn for low-complexity tasks
     if [ "$COMPLEXITY" -lt 10 ]; then
-        scud claim "$TASK_ID" --name "agent-$$"
+        scud assign "$TASK_ID" "agent-$$"
         scud set-status "$TASK_ID" in-progress
         (
             claude "Implement task $TASK_ID"
             scud set-status "$TASK_ID" done
-            scud release "$TASK_ID"
         ) &
     else
         echo "Skipping high-complexity task $TASK_ID"
@@ -469,16 +419,15 @@ for TAG in "${TAGS[@]}"; do
     echo "Processing tag: $TAG"
 
     while true; do
-        TASK=$(scud next --tag $TAG)
-        [ -z "$TASK" ] && break
+        TASK=$(scud next --spawn --tag $TAG)
+        [ -z "$TASK" ] || [ "$TASK" = "null" ] && break
 
-        TASK_ID=$(echo "$TASK" | grep -o "ID: [^ ]*" | awk '{print $2}')
-        scud claim "$TASK_ID" --name "multi-$$"
+        TASK_ID=$(echo "$TASK" | jq -r '.id')
+        scud assign "$TASK_ID" "multi-$$"
         scud set-status "$TASK_ID" in-progress
         (
             claude "Implement $TAG task $TASK_ID"
             scud set-status "$TASK_ID" done
-            scud release "$TASK_ID"
         ) &
     done
 done
@@ -492,8 +441,8 @@ wait
 
 1. **Limit parallelism** - More than 4-5 agents can cause rate limiting
 2. **Use waves** - Execute entire dependency levels at once
-3. **Monitor actively** - Use `watch` with `stats` and `whois`
-4. **Clean stale locks** - Run `doctor` periodically
+3. **Monitor actively** - Use `watch` with `stats` and `who-is`
+4. **Clean stale tasks** - Run `doctor` periodically
 5. **Profile complexity** - Skip or defer high-complexity tasks
 
 ---
@@ -503,16 +452,16 @@ wait
 ### Key Commands
 
 ```bash
-scud next --tag <tag>       # Find next ready task
-scud next-batch --count N   # Get multiple ready tasks
-scud claim <id> --name <n>  # Lock task
-scud release <id>           # Unlock task
-scud set-status <id> done   # Mark complete
-scud whois --tag <tag>      # Show active work
-scud doctor --tag <tag>     # Check for issues
-scud waves --tag <tag>      # Show parallel waves
-scud stats --tag <tag>      # Show progress
-scud serve                  # Web dashboard
+scud next --tag <tag>         # Find next ready task
+scud next --spawn --tag <tag> # Get next task as JSON
+scud next-batch --limit N     # Get multiple ready tasks
+scud assign <id> <name>       # Track who's working on task
+scud set-status <id> done     # Mark complete
+scud who-is --tag <tag>       # Show assignments
+scud doctor --tag <tag>       # Check for issues
+scud waves --tag <tag>        # Show parallel waves
+scud stats --tag <tag>        # Show progress
+scud view                     # Web dashboard
 ```
 
 ---
@@ -520,4 +469,3 @@ scud serve                  # Web dashboard
 ## See Also
 
 - [Quick Reference](reference/QUICK_REFERENCE.md) - Command cheat sheet
-- [Parallel Features](features/PARALLEL_FEATURES.md) - Task locking details

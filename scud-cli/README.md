@@ -17,21 +17,20 @@ This is a high-performance Rust rewrite of the SCUD task management system. It r
 scud (Rust Binary)
 ├── Core Commands (No AI - Instant)
 │   ├── init               # Initialize .scud/ and install agents
-│   ├── tags               # List tags
-│   ├── use-tag            # Switch active tag
+│   ├── tags               # List tags or set active tag
 │   ├── list               # List tasks with filters
 │   ├── view               # Open interactive HTML viewer in browser
 │   ├── show               # Show task details
 │   ├── set-status         # Update task status
-│   ├── next               # Find next available task (--claim for dynamic-wave)
+│   ├── next               # Find next available task (--spawn for JSON output)
 │   ├── stats              # Show statistics
 │   └── doctor             # [EXPERIMENTAL] Diagnose stuck states
 │
-├── AI Commands (Direct Anthropic API)
-│   ├── parse-prd          # Parse PRD markdown into tasks
+├── AI Commands (Direct LLM API)
+│   ├── parse              # Parse PRD markdown into tasks
 │   ├── analyze-complexity # Analyze task complexity
 │   ├── expand             # Break down complex tasks
-│   └── research           # AI-powered research
+│   └── reanalyze-deps     # Re-analyze cross-tag dependencies
 │
 └── Storage (SCG)
     └── .scud/tasks/tasks.scg
@@ -95,8 +94,8 @@ scud init
 # List tags
 scud tags
 
-# Switch to a tag
-scud use-tag auth
+# Set active tag
+scud tags auth
 
 # List tasks
 scud list
@@ -118,19 +117,19 @@ scud stats
 scud view
 ```
 
-### [EXPERIMENTAL] Dynamic-Wave Mode
+### Orchestrator Mode
 
-Dynamic-wave mode allows agents to auto-claim tasks and maintain workflow health:
+For orchestrators spawning multiple agents, use `--spawn` for machine-readable JSON output:
 
 ```bash
-# Find and auto-claim the next available task
-scud next --claim --name agent-1
+# Get next task as JSON (for orchestrators)
+scud next --spawn --tag myproject
 
-# Release all tasks claimed by an agent
-scud next --release --name agent-1
+# Get multiple ready tasks at once
+scud next-batch --limit 5 --tag myproject
 ```
 
-**IMPORTANT:** When using `--claim`, agents MUST run `scud set-status <id> done` when finishing a task. This ensures dependent tasks become unblocked.
+**IMPORTANT:** Agents MUST run `scud set-status <id> done` when finishing a task. This ensures dependent tasks become unblocked.
 
 ### [EXPERIMENTAL] Doctor Command
 
@@ -143,14 +142,14 @@ scud doctor
 # Check specific tag with custom stale threshold
 scud doctor --tag auth --stale-hours 12
 
-# Auto-fix recoverable issues (stale locks, orphan tasks)
+# Auto-fix recoverable issues (reset stale tasks to pending)
 scud doctor --fix
 ```
 
 The doctor command detects:
-- Stale locks (tasks locked >24h by default)
+- Stale in-progress tasks (older than threshold, default 24h)
 - Tasks blocked by cancelled/missing dependencies
-- Orphan in-progress tasks (not locked, stale)
+- Orphan in-progress tasks
 - Missing active tag
 - Corrupt storage files
 
@@ -160,7 +159,7 @@ The doctor command detects:
 
 ```bash
 # Parse PRD into tasks
-scud parse-prd docs/features/auth.md --tag auth
+scud parse docs/features/auth.md --tag auth
 
 # Analyze complexity
 scud analyze-complexity                # All tasks
@@ -170,8 +169,8 @@ scud analyze-complexity --task 5       # Specific task
 scud expand 7                          # Specific task
 scud expand --all                      # All tasks >13 complexity
 
-# Research a topic
-scud research "OAuth 2.0 best practices"
+# Re-analyze dependencies across tags
+scud reanalyze-deps --all-tags
 ```
 
 ## Performance Comparison
@@ -274,7 +273,7 @@ Located in `src/llm/prompts.rs`:
 - `parse_prd()` - Converts markdown to structured tasks
 - `analyze_complexity()` - Scores task difficulty
 - `expand_task()` - Breaks down complex tasks
-- `research_topic()` - AI research assistant
+- `reanalyze_dependencies()` - Suggests cross-tag dependencies
 
 ## Integration with SCUD
 
@@ -303,14 +302,14 @@ scud-cli/
 │   │       ├── parse_prd.rs
 │   │       ├── analyze_complexity.rs
 │   │       ├── expand.rs
-│   │       └── research.rs
+│   │       └── reanalyze_deps.rs
 │   ├── models/
 │   │   ├── task.rs
 │   │   └── phase.rs
 │   ├── storage/
-│   │   └── mod.rs           # JSON I/O
+│   │   └── mod.rs           # SCG I/O
 │   └── llm/
-│       ├── client.rs        # Anthropic API
+│       ├── client.rs        # LLM API client
 │       └── prompts.rs       # Prompt templates
 ```
 

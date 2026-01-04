@@ -107,8 +107,8 @@ Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each
 
 ### Orchestrator Support
 - **Parallel agents** - spawn multiple Claude instances
-- **Task locking** - `scud claim/release` prevents conflicts
-- **Session monitoring** - `scud whois` tracks active work
+- **Assignment tracking** - `scud assign` tracks who's working on what
+- **Session monitoring** - `scud who-is` shows active assignments
 
 ---
 
@@ -120,7 +120,6 @@ Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each
 
 **Patterns:**
 - [Orchestrator Pattern](docs/orchestrator.md) - Parallel execution guide
-- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task locking & orchestration
 
 **Development:**
 - [Development Logs](log_docs/) - Implementation details & history
@@ -323,6 +322,5 @@ MIT
 - **Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
 - **SCG Format:** [docs/reference/SCG_FORMAT_SPEC.md](docs/reference/SCG_FORMAT_SPEC.md)
 - **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
-- **Parallel Features:** [docs/features/PARALLEL_FEATURES.md](docs/features/PARALLEL_FEATURES.md)
 
 **Happy building!**

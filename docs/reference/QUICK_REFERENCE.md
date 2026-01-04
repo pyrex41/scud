@@ -28,7 +28,7 @@ scud mermaid --all-tags            # All tags in one diagram
 scud waves [--tag <tag>]           # Show parallel execution waves
 ```
 
-### AI Commands (require XAI_API_KEY)
+### AI Commands (require API key)
 ```bash
 scud parse <file> --tag <tag>      # Parse PRD into tasks
 scud parse <file> --tag <tag> --no-guidance  # Skip guidance
@@ -37,6 +37,8 @@ scud analyze-complexity --task <id> # Score specific task
 scud expand <id>                   # Split complex task
 scud expand --all                  # Split all tasks >13
 scud expand --all --no-guidance    # Skip guidance
+scud reanalyze-deps --all-tags     # Suggest cross-tag dependencies
+scud reanalyze-deps --apply        # Apply suggested dependencies
 ```
 
 Default model: `grok-code-fast-1`. Configure with `scud config set-provider <provider> --model <model>`.
@@ -49,7 +51,7 @@ scud assign <id> <name>            # Assign task to a developer
 scud who-is [--tag <tag>]          # See who's working on what
 scud next-batch [--limit 5]        # Get multiple ready tasks
 scud doctor [--tag <tag>]          # Diagnose stuck states
-scud doctor --fix                  # Auto-fix stale locks
+scud doctor --fix                  # Auto-fix stale tasks
 ```
 
 ### Utilities
@@ -60,6 +62,19 @@ scud commit [-m "msg"]             # Git commit with task context
 scud commit --all                  # Stage all, then commit
 scud clean [--tag <tag>]           # Clear tasks (with confirmation)
 scud clean --force                 # Skip confirmation
+scud migrate [--dry-run]           # Migrate task data to new format
+scud convert json scg              # Convert JSON tasks to SCG format
+scud reanalyze-deps [--apply]      # Re-analyze cross-tag dependencies
+```
+
+### Configuration
+```bash
+scud config show                   # Show current configuration
+scud config set-provider <p>       # Set LLM provider (xai, anthropic, openai, openrouter)
+scud config set-provider <p> --model <m>  # Set provider and model
+scud config agents list            # List installed SCUD agents
+scud config agents add --all       # Install all SCUD agents
+scud config agents remove --all    # Remove all SCUD agents
 ```
 
 ---
@@ -199,7 +214,7 @@ scud config set-provider xai --model grok-code-fast-1
 | Dependencies not met | `scud next` finds available tasks |
 | Task too complex | `scud expand <id>` |
 | No API key | `export XAI_API_KEY=xai-...` |
-| Stale locks | `scud doctor --fix` |
+| Stale tasks | `scud doctor --fix` |
 | Stuck workflow | `scud doctor` to diagnose |
 
 ---
@@ -215,7 +230,7 @@ scud config set-provider xai --model grok-code-fast-1
 **Don't:**
 - Create tasks >13 complexity without splitting
 - Ignore task dependencies
-- Work on multiple tasks without claiming
+- Work on multiple tasks simultaneously without tracking
 
 ---
 
@@ -223,6 +238,5 @@ scud config set-provider xai --model grok-code-fast-1
 
 - **SCG Format:** [SCG_FORMAT_SPEC.md](SCG_FORMAT_SPEC.md)
 - **Orchestrator Pattern:** [../orchestrator.md](../orchestrator.md)
-- **Parallel Features:** [../features/PARALLEL_FEATURES.md](../features/PARALLEL_FEATURES.md)
 
 **Happy building!**

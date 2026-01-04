@@ -50,7 +50,7 @@ export OPENROUTER_API_KEY=sk-or-your-key
 
 ## Configuration File
 
-The configuration is stored in `.taskmaster/config.toml`:
+The configuration is stored in `.scud/config.toml`:
 
 ```toml
 [llm]
@@ -63,9 +63,14 @@ max_tokens = 4096
 
 To change providers after initialization:
 
-1. Edit `.taskmaster/config.toml`
+1. Edit `.scud/config.toml`
 2. Update the `provider` and `model` fields
 3. Set the appropriate API key environment variable
+
+Or use the CLI:
+```bash
+scud config set-provider <provider> --model <model>
+```
 
 ## Interactive Mode
 
