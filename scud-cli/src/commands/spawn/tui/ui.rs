@@ -38,7 +38,7 @@ const STATUS_COMPLETED: Color = Color::Rgb(96, 165, 250); // Blue
 const STATUS_FAILED: Color = Color::Rgb(248, 113, 113);   // Soft red
 
 /// Main render function
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
 
     // Fill background
@@ -59,7 +59,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 }
 
-fn render_split_view(frame: &mut Frame, area: Rect, app: &App) {
+fn render_split_view(frame: &mut Frame, area: Rect, app: &mut App) {
     // Main layout: header, three panels, footer
     let [header_area, content_area, footer_area] = Layout::vertical([
         Constraint::Length(3),
@@ -209,7 +209,7 @@ fn render_fullscreen_header(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(header, area);
 }
 
-fn render_three_panel_content(frame: &mut Frame, area: Rect, app: &App) {
+fn render_three_panel_content(frame: &mut Frame, area: Rect, app: &mut App) {
     // Three vertical panels: waves (top), agents (middle), output (bottom)
     // Dynamic sizing based on content
     let has_agents = !app.agents().is_empty();
@@ -369,14 +369,38 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(list, area);
 }
 
-fn render_agents_panel(frame: &mut Frame, area: Rect, app: &App) {
+fn render_agents_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     let is_focused = app.focused_panel == FocusedPanel::Agents;
     let border_color = if is_focused { BORDER_ACTIVE } else { BORDER_DEFAULT };
     let title_color = if is_focused { ACCENT } else { TEXT_MUTED };
 
+    // Get counts first before borrowing agents slice
+    let total = app.agents().len();
+    let running = app.agents().iter().filter(|a| a.status == AgentStatus::Running).count();
+    let selected = app.selected;
+
+    // Calculate visible height for scroll
+    let inner_height = area.height.saturating_sub(3) as usize; // borders + padding
+
+    // Auto-adjust scroll to keep selected visible
+    if selected < app.agents_scroll_offset {
+        app.agents_scroll_offset = selected;
+    } else if total > 0 && inner_height > 0 && selected >= app.agents_scroll_offset + inner_height {
+        app.agents_scroll_offset = selected.saturating_sub(inner_height - 1);
+    }
+
+    let scroll_offset = app.agents_scroll_offset;
+
+    // Show scroll indicator if there are more agents than visible
+    let title = if total > inner_height && inner_height > 0 {
+        let visible_end = (scroll_offset + inner_height).min(total);
+        format!(" Agents ({} running / {} total) [{}-{}] ", running, total, scroll_offset + 1, visible_end)
+    } else {
+        format!(" Agents ({} running / {} total) ", running, total)
+    };
+
+    // Now borrow agents for rendering
     let agents = app.agents();
-    let running = agents.iter().filter(|a| a.status == AgentStatus::Running).count();
-    let title = format!(" Agents ({} running / {} total) ", running, agents.len());
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -394,16 +418,13 @@ fn render_agents_panel(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Calculate visible area (accounting for borders and padding)
-    let inner_height = area.height.saturating_sub(3) as usize; // borders + padding
-
     let items: Vec<ListItem> = agents
         .iter()
         .enumerate()
-        .skip(app.agents_scroll_offset)
+        .skip(scroll_offset)
         .take(inner_height.max(1))
         .map(|(i, agent)| {
-            let is_selected = i == app.selected && is_focused;
+            let is_selected = i == selected && is_focused;
 
             let status_icon = match agent.status {
                 AgentStatus::Starting => ("◐", STATUS_STARTING),
