@@ -1147,25 +1147,27 @@ impl App {
 RALPH LOOP MODE - Autonomous Task Completion
 ═══════════════════════════════════════════════════════════
 
+CRITICAL: Your task ID is **{task_id}** (NOT any parent task!)
+
 You are in a Ralph loop. Keep working until the task is COMPLETE.
 
 After EACH attempt:
-1. Run: scud set-status {} done
+1. Run EXACTLY: scud set-status {task_id} done
+   ⚠️  Use task ID "{task_id}" - do NOT use any other task ID!
 2. Verify the task is truly done (tests pass, code works)
 3. If something failed, fix it and try again
 
-The loop will continue until you successfully complete the task.
+The loop will continue until task {task_id} is marked done.
 Do NOT give up. Keep iterating until success.
 
-When you have genuinely completed the task, output:
-<promise>TASK {} COMPLETE</promise>
+When you have genuinely completed task {task_id}, output:
+<promise>TASK {task_id} COMPLETE</promise>
 
-DO NOT output this promise unless the task is TRULY complete!
+DO NOT output this promise unless task {task_id} is TRULY complete!
 ═══════════════════════════════════════════════════════════
 "#,
             base_prompt,
-            task_id,
-            task_id
+            task_id = task_id
         );
 
         // Spawn in tmux with Ralph loop wrapper
