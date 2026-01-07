@@ -279,6 +279,165 @@ fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &st
     Ok(())
 }
 
+/// Spawn a new terminal window/pane with Ralph loop enabled
+/// The agent will keep running until the completion promise is detected
+pub fn spawn_terminal_ralph(
+    terminal: &Terminal,
+    task_id: &str,
+    prompt: &str,
+    working_dir: &Path,
+    session_name: &str,
+    completion_promise: &str,
+) -> Result<()> {
+    match terminal {
+        Terminal::Tmux => spawn_tmux_ralph(task_id, prompt, working_dir, session_name, completion_promise),
+        // For other terminals, fall back to regular spawn
+        // Ralph loop requires bash scripting that's easier in tmux
+        _ => spawn_terminal(terminal, task_id, prompt, working_dir, session_name),
+    }
+}
+
+/// Spawn in tmux session with Ralph loop wrapper
+fn spawn_tmux_ralph(
+    task_id: &str,
+    prompt: &str,
+    working_dir: &Path,
+    session_name: &str,
+    completion_promise: &str,
+) -> Result<()> {
+    let window_name = format!("ralph-{}", task_id);
+
+    // Check if session exists
+    let session_exists = Command::new("tmux")
+        .args(["has-session", "-t", session_name])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if !session_exists {
+        // Create new session with control window
+        Command::new("tmux")
+            .args(["new-session", "-d", "-s", session_name, "-n", "ctrl"])
+            .arg("-c")
+            .arg(working_dir)
+            .status()
+            .context("Failed to create tmux session")?;
+    }
+
+    // Create new window for this task
+    let new_window_output = Command::new("tmux")
+        .args([
+            "new-window",
+            "-t", session_name,
+            "-n", &window_name,
+            "-P",
+            "-F", "#{window_index}",
+        ])
+        .arg("-c")
+        .arg(working_dir)
+        .output()
+        .context("Failed to create tmux window")?;
+
+    if !new_window_output.status.success() {
+        anyhow::bail!(
+            "Failed to create window: {}",
+            String::from_utf8_lossy(&new_window_output.stderr)
+        );
+    }
+
+    let window_index = String::from_utf8_lossy(&new_window_output.stdout)
+        .trim()
+        .to_string();
+
+    // Write prompt to temp file
+    let prompt_file = std::env::temp_dir().join(format!("scud-ralph-{}.txt", task_id));
+    std::fs::write(&prompt_file, prompt)?;
+
+    // Create a Ralph loop script that:
+    // 1. Runs Claude with the prompt
+    // 2. Checks if the task was marked done (via scud show)
+    // 3. If not done, loops back and runs Claude again with the same prompt
+    // 4. Continues until task is done or max iterations
+    let ralph_script = format!(
+        r#"
+export SCUD_TASK_ID='{task_id}'
+export RALPH_PROMISE='{promise}'
+export RALPH_MAX_ITER=50
+export RALPH_ITER=0
+
+echo "🔄 Ralph loop starting for task {task_id}"
+echo "   Completion promise: {promise}"
+echo "   Max iterations: $RALPH_MAX_ITER"
+echo ""
+
+while true; do
+    RALPH_ITER=$((RALPH_ITER + 1))
+    echo ""
+    echo "═══════════════════════════════════════════════════════════"
+    echo "🔄 RALPH ITERATION $RALPH_ITER / $RALPH_MAX_ITER"
+    echo "═══════════════════════════════════════════════════════════"
+    echo ""
+
+    # Run Claude with the prompt
+    claude "$(cat '{prompt_file}')" --dangerously-skip-permissions
+
+    # Check if task is done
+    TASK_STATUS=$(scud show {task_id} 2>/dev/null | grep -i "status:" | awk '{{print $2}}')
+
+    if [ "$TASK_STATUS" = "done" ]; then
+        echo ""
+        echo "✅ Task {task_id} completed successfully after $RALPH_ITER iterations!"
+        rm -f '{prompt_file}'
+        break
+    fi
+
+    # Check max iterations
+    if [ $RALPH_ITER -ge $RALPH_MAX_ITER ]; then
+        echo ""
+        echo "⚠️  Ralph loop: Max iterations ($RALPH_MAX_ITER) reached for task {task_id}"
+        echo "   Task status: $TASK_STATUS"
+        rm -f '{prompt_file}'
+        break
+    fi
+
+    # Small delay before next iteration
+    echo ""
+    echo "🔄 Task not yet complete (status: $TASK_STATUS). Continuing loop..."
+    sleep 2
+done
+"#,
+        task_id = task_id,
+        promise = completion_promise,
+        prompt_file = prompt_file.display(),
+    );
+
+    // Write the Ralph script to a temp file
+    let script_file = std::env::temp_dir().join(format!("scud-ralph-script-{}.sh", task_id));
+    std::fs::write(&script_file, &ralph_script)?;
+
+    // Make it executable and run it
+    let cmd = format!(
+        "chmod +x '{}' && '{}'",
+        script_file.display(),
+        script_file.display()
+    );
+
+    let target = format!("{}:{}", session_name, window_index);
+    let send_result = Command::new("tmux")
+        .args(["send-keys", "-t", &target, &cmd, "Enter"])
+        .output()
+        .context("Failed to send command to tmux window")?;
+
+    if !send_result.status.success() {
+        anyhow::bail!(
+            "Failed to send keys: {}",
+            String::from_utf8_lossy(&send_result.stderr)
+        );
+    }
+
+    Ok(())
+}
+
 /// Check if a tmux session exists
 pub fn tmux_session_exists(session_name: &str) -> bool {
     Command::new("tmux")

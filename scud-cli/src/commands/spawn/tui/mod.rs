@@ -202,6 +202,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     // Help
                     (_, KeyCode::Char('?')) => app.toggle_help(),
 
+                    // R: Toggle Ralph mode (autonomous wave execution)
+                    (KeyModifiers::SHIFT, KeyCode::Char('R')) | (_, KeyCode::Char('R')) => {
+                        app.toggle_ralph_mode();
+                    }
+
                     _ => {}
                 }
             }

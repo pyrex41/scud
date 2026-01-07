@@ -120,6 +120,14 @@ pub struct App {
     pub active_tag: Option<String>,
     /// All phases data (cached)
     phases: HashMap<String, Phase>,
+
+    // === Ralph Mode (autonomous wave execution) ===
+    /// Whether Ralph mode is enabled (auto-spawn ready tasks)
+    pub ralph_mode: bool,
+    /// Maximum parallel agents in Ralph mode
+    pub ralph_max_parallel: usize,
+    /// Last time we checked for new tasks to spawn in Ralph mode
+    last_ralph_check: Instant,
 }
 
 impl App {
@@ -155,6 +163,10 @@ impl App {
             agents_scroll_offset: 0,
             active_tag,
             phases,
+            // Ralph mode
+            ralph_mode: false,
+            ralph_max_parallel: 5,
+            last_ralph_check: Instant::now(),
         };
         app.refresh()?;
         app.refresh_waves();
@@ -316,7 +328,62 @@ impl App {
             self.refresh_live_output();
         }
 
+        // Ralph mode: auto-spawn ready tasks
+        if self.ralph_mode && self.last_ralph_check.elapsed() >= Duration::from_secs(5) {
+            self.ralph_auto_spawn();
+            self.last_ralph_check = Instant::now();
+        }
+
         Ok(())
+    }
+
+    /// Toggle Ralph mode (autonomous wave execution)
+    pub fn toggle_ralph_mode(&mut self) {
+        self.ralph_mode = !self.ralph_mode;
+        if self.ralph_mode {
+            // Immediately check for tasks to spawn
+            self.ralph_auto_spawn();
+        }
+    }
+
+    /// Auto-spawn ready tasks in Ralph mode
+    fn ralph_auto_spawn(&mut self) {
+        // Count running agents
+        let running_count = self.agents().iter()
+            .filter(|a| a.status == AgentStatus::Running || a.status == AgentStatus::Starting)
+            .count();
+
+        if running_count >= self.ralph_max_parallel {
+            return; // Already at max parallel
+        }
+
+        // Find ready tasks to spawn
+        let slots_available = self.ralph_max_parallel - running_count;
+        let mut tasks_to_spawn: Vec<String> = Vec::new();
+
+        for wave in &self.waves {
+            for task in &wave.tasks {
+                if task.state == WaveTaskState::Ready && !self.selected_tasks.contains(&task.id) {
+                    // Check if already have an agent for this task
+                    let already_spawned = self.agents().iter()
+                        .any(|a| a.task_id == task.id);
+                    if !already_spawned {
+                        tasks_to_spawn.push(task.id.clone());
+                        if tasks_to_spawn.len() >= slots_available {
+                            break;
+                        }
+                    }
+                }
+            }
+            if tasks_to_spawn.len() >= slots_available {
+                break;
+            }
+        }
+
+        // Spawn the tasks with Ralph loop enabled
+        for task_id in tasks_to_spawn {
+            let _ = self.spawn_task_with_ralph(&task_id);
+        }
     }
 
     /// Get agents list
@@ -1023,5 +1090,124 @@ impl App {
         }
 
         Ok(spawned_count)
+    }
+
+    /// Spawn a single task with Ralph loop enabled
+    /// The agent will keep trying until the task is marked done
+    fn spawn_task_with_ralph(&mut self, task_id: &str) -> Result<()> {
+        use crate::commands::spawn::{agent, terminal};
+
+        // Find the task in waves
+        let task_info = self.waves.iter()
+            .flat_map(|w| w.tasks.iter())
+            .find(|t| t.id == task_id)
+            .map(|t| (t.id.clone(), t.title.clone(), t.tag.clone()));
+
+        let (task_id, task_title, tag) = match task_info {
+            Some(info) => info,
+            None => return Ok(()),
+        };
+
+        // Get working directory
+        let working_dir = self
+            .project_root
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        // Get session info
+        let session = match &self.session {
+            Some(s) => s,
+            None => {
+                self.error = Some("No session loaded".to_string());
+                return Ok(());
+            }
+        };
+
+        let session_name = session.session_name.clone();
+
+        // Load phase to get full task data
+        let storage = Storage::new(self.project_root.clone());
+
+        let phase = match self.phases.get(&tag) {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+
+        let task = match phase.get_task(&task_id) {
+            Some(t) => t,
+            None => return Ok(()),
+        };
+
+        // Generate prompt with Ralph loop instructions
+        let base_prompt = agent::generate_prompt(task, &tag);
+        let ralph_prompt = format!(
+            r#"{}
+
+═══════════════════════════════════════════════════════════
+RALPH LOOP MODE - Autonomous Task Completion
+═══════════════════════════════════════════════════════════
+
+You are in a Ralph loop. Keep working until the task is COMPLETE.
+
+After EACH attempt:
+1. Run: scud set-status {} done
+2. Verify the task is truly done (tests pass, code works)
+3. If something failed, fix it and try again
+
+The loop will continue until you successfully complete the task.
+Do NOT give up. Keep iterating until success.
+
+When you have genuinely completed the task, output:
+<promise>TASK {} COMPLETE</promise>
+
+DO NOT output this promise unless the task is TRULY complete!
+═══════════════════════════════════════════════════════════
+"#,
+            base_prompt,
+            task_id,
+            task_id
+        );
+
+        // Spawn in tmux with Ralph loop wrapper
+        match terminal::spawn_terminal_ralph(
+            &terminal::Terminal::Tmux,
+            &task_id,
+            &ralph_prompt,
+            &working_dir,
+            &session_name,
+            &format!("TASK {} COMPLETE", task_id),
+        ) {
+            Ok(()) => {
+                // Add to session agents
+                if let Some(ref mut session) = self.session {
+                    session.add_agent(&task_id, &task_title, &tag);
+                }
+
+                // Mark task as in-progress
+                if let Ok(mut phase) = storage.load_group(&tag) {
+                    if let Some(task) = phase.get_task_mut(&task_id) {
+                        task.set_status(TaskStatus::InProgress);
+                        let _ = storage.update_group(&tag, &phase);
+                    }
+                }
+
+                // Save session
+                if let Some(ref session) = self.session {
+                    let _ = crate::commands::spawn::monitor::save_session(
+                        self.project_root.as_ref(),
+                        session,
+                    );
+                }
+
+                // Refresh
+                let _ = self.refresh();
+                self.refresh_waves();
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to spawn Ralph agent for {}: {}", task_id, e));
+            }
+        }
+
+        Ok(())
     }
 }

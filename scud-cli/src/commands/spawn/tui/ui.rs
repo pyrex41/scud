@@ -138,10 +138,23 @@ fn render_input_footer(frame: &mut Frame, area: Rect) {
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let (starting, running, completed, failed) = app.status_counts();
 
+    // Ralph mode indicator
+    let ralph_indicator = if app.ralph_mode {
+        vec![
+            Span::styled("  🔄 ", Style::default()),
+            Span::styled("RALPH ", Style::default().fg(Color::Rgb(255, 165, 0)).bold()),
+        ]
+    } else {
+        vec![]
+    };
+
     // Status line with legend labels
-    let status_line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(" ", Style::default()),
         Span::styled(&app.session_name, Style::default().fg(ACCENT).bold()),
+    ];
+    spans.extend(ralph_indicator);
+    spans.extend(vec![
         Span::styled("    ", Style::default()),
         // Gray = Starting/Waiting
         Span::styled("◉ ", Style::default().fg(STATUS_STARTING)),
@@ -160,6 +173,7 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("Failed ", Style::default().fg(TEXT_MUTED).dim()),
         Span::styled(format!("{}", failed), Style::default().fg(STATUS_FAILED)),
     ]);
+    let status_line = Line::from(spans);
 
     let header = Paragraph::new(status_line)
         .block(
@@ -506,10 +520,11 @@ fn render_terminal_output(frame: &mut Frame, area: Rect, app: &App, fullscreen: 
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     // Context-sensitive help based on focused panel
+    let ralph_hint = if app.ralph_mode { "R Ralph OFF" } else { "R Ralph" };
     let help_text = match app.focused_panel {
-        FocusedPanel::Waves => " Tab Panel  ·  j/k Navigate  ·  Space Select  ·  a All  ·  s Spawn  ·  ? Help  ·  q Quit ",
-        FocusedPanel::Agents => " Tab Panel  ·  j/k Navigate  ·  Enter View  ·  i Input  ·  x Stop  ·  ? Help  ·  q Quit ",
-        FocusedPanel::Output => " Tab Panel  ·  ↑↓ Scroll  ·  G Bottom  ·  Enter Fullscreen  ·  ? Help  ·  q Quit ",
+        FocusedPanel::Waves => format!(" Tab Panel  ·  j/k Navigate  ·  Space Select  ·  a All  ·  s Spawn  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
+        FocusedPanel::Agents => format!(" Tab Panel  ·  j/k Navigate  ·  Enter View  ·  i Input  ·  x Stop  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
+        FocusedPanel::Output => format!(" Tab Panel  ·  ↑↓ Scroll  ·  G Bottom  ·  Enter Fullscreen  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
     };
 
     let mut line = Line::from(vec![
