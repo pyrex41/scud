@@ -380,9 +380,14 @@ fn render_agents_panel(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
+    // Calculate visible area (accounting for borders and padding)
+    let inner_height = area.height.saturating_sub(3) as usize; // borders + padding
+
     let items: Vec<ListItem> = agents
         .iter()
         .enumerate()
+        .skip(app.agents_scroll_offset)
+        .take(inner_height.max(1))
         .map(|(i, agent)| {
             let is_selected = i == app.selected && is_focused;
 

@@ -114,6 +114,8 @@ pub struct App {
     pub wave_task_index: usize,
     /// Scroll offset for waves panel (first visible line)
     pub wave_scroll_offset: usize,
+    /// Scroll offset for agents panel (first visible line)
+    pub agents_scroll_offset: usize,
     /// Active tag for loading waves
     pub active_tag: Option<String>,
     /// All phases data (cached)
@@ -150,6 +152,7 @@ impl App {
             selected_tasks: HashSet::new(),
             wave_task_index: 0,
             wave_scroll_offset: 0,
+            agents_scroll_offset: 0,
             active_tag,
             phases,
         };
@@ -329,6 +332,7 @@ impl App {
         let len = self.agents().len();
         if len > 0 {
             self.selected = (self.selected + 1) % len;
+            self.adjust_agents_scroll();
             self.reset_scroll();
             self.refresh_live_output();
         }
@@ -343,8 +347,24 @@ impl App {
             } else {
                 len - 1
             };
+            self.adjust_agents_scroll();
             self.reset_scroll();
             self.refresh_live_output();
+        }
+    }
+
+    /// Adjust agents scroll offset to keep selected agent visible
+    /// Assumes roughly 8 visible lines in the agents panel
+    pub fn adjust_agents_scroll(&mut self) {
+        const VISIBLE_LINES: usize = 8;
+
+        // Scroll up if selected is above visible area
+        if self.selected < self.agents_scroll_offset {
+            self.agents_scroll_offset = self.selected;
+        }
+        // Scroll down if selected is below visible area
+        else if self.selected >= self.agents_scroll_offset + VISIBLE_LINES {
+            self.agents_scroll_offset = self.selected.saturating_sub(VISIBLE_LINES - 1);
         }
     }
 
@@ -581,6 +601,11 @@ impl App {
                 || task.status == TaskStatus::Expanded
                 || task.status == TaskStatus::Cancelled
             {
+                continue;
+            }
+
+            // Skip parent tasks that have subtasks - only subtasks should be spawned
+            if !task.subtasks.is_empty() {
                 continue;
             }
 
