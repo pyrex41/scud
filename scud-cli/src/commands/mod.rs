@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod check_deps;
 pub mod clean;
+pub mod fix_deps;
 pub mod commit;
 pub mod config;
 pub mod convert;

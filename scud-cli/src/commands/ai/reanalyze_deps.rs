@@ -23,6 +23,7 @@ pub async fn run(
     all_tags: bool,
     apply: bool,
     dry_run: bool,
+    model: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -82,7 +83,7 @@ pub async fn run(
 
     // Generate analysis prompt and call LLM
     let prompt = Prompts::reanalyze_dependencies(&task_context, &phases_to_analyze);
-    let suggestions: Vec<DependencySuggestion> = client.complete_json(&prompt).await?;
+    let suggestions: Vec<DependencySuggestion> = client.complete_json_with_model(&prompt, model).await?;
 
     spinner.finish_and_clear();
 

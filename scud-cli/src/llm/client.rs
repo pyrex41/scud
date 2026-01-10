@@ -233,7 +233,18 @@ impl LLMClient {
     where
         T: serde::de::DeserializeOwned,
     {
-        let response_text = self.complete(prompt).await?;
+        self.complete_json_with_model(prompt, None).await
+    }
+
+    pub async fn complete_json_with_model<T>(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response_text = self.complete_with_model(prompt, model_override).await?;
 
         // Try to find JSON in the response (LLM might include markdown or explanations)
         let json_str = Self::extract_json(&response_text);

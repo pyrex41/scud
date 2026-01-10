@@ -90,6 +90,7 @@ pub async fn run(
     tag: Option<&str>,
     all_tags: bool,
     prd_file: Option<&Path>,
+    model: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -183,7 +184,7 @@ pub async fn run(
 
         // Call LLM to validate
         let prompt = Prompts::validate_tasks_against_prd(&prd_content, &tasks_json);
-        let validation: PrdValidationResult = client.complete_json(&prompt).await?;
+        let validation: PrdValidationResult = client.complete_json_with_model(&prompt, model).await?;
 
         spinner.finish_and_clear();
 
@@ -223,7 +224,7 @@ fn build_tasks_json(
     serde_json::to_string_pretty(&tasks_list).unwrap_or_else(|_| "[]".to_string())
 }
 
-fn validate_phase(
+pub fn validate_phase(
     tag: &str,
     phase: &Phase,
     all_task_ids: &HashSet<String>,

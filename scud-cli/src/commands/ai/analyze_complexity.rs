@@ -31,9 +31,11 @@ pub async fn run(
     project_root: Option<PathBuf>,
     task_id: Option<&str>,
     tag: Option<&str>,
+    model: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
     let group_tag = crate::commands::helpers::resolve_group_tag(&storage, tag, true)?;
+    let model_str = model.map(|s| s.to_string());
 
     let mut all_tasks = storage.load_tasks()?;
     let group = all_tasks
@@ -97,12 +99,14 @@ pub async fn run(
     );
 
     // Process tasks in parallel with bounded concurrency
+    let model_arc = Arc::new(model_str);
     let results: Vec<Result<TaskAnalysisResult, (String, anyhow::Error)>> =
         stream::iter(tasks_to_analyze)
             .map(|(id, title, description, details)| {
                 let client = Arc::clone(&client);
                 let mp = multi_progress.clone();
                 let overall = overall_progress.clone();
+                let model_ref = Arc::clone(&model_arc);
 
                 async move {
                     let spinner = mp.add(ProgressBar::new_spinner());
@@ -120,7 +124,7 @@ pub async fn run(
                     // Retry logic
                     let mut last_error = None;
                     for attempt in 1..=3 {
-                        match client.complete_json::<ComplexityAnalysis>(&prompt).await {
+                        match client.complete_json_with_model::<ComplexityAnalysis>(&prompt, model_ref.as_deref()).await {
                             Ok(analysis) => {
                                 spinner.finish_and_clear();
                                 overall.inc(1);

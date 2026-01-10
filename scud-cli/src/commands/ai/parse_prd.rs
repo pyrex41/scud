@@ -27,6 +27,7 @@ pub async fn run(
     append: bool,
     no_guidance: bool,
     id_format: &str,
+    model: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -73,7 +74,7 @@ pub async fn run(
 
     // Call LLM to parse the PRD
     let prompt = Prompts::parse_prd(&prd_content, num_tasks, guidance.as_deref());
-    let parsed_tasks: Vec<ParsedTask> = client.complete_json(&prompt).await?;
+    let parsed_tasks: Vec<ParsedTask> = client.complete_json_with_model(&prompt, model).await?;
 
     spinner.finish_with_message(format!(
         "{} Parsed {} tasks",
