@@ -25,10 +25,10 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         let provider = provider_name.to_lowercase();
         if !matches!(
             provider.as_str(),
-            "xai" | "anthropic" | "openai" | "openrouter" | "claude-cli"
+            "xai" | "anthropic" | "openai" | "openrouter" | "claude-cli" | "codex"
         ) {
             anyhow::bail!(
-                "Invalid provider: {}. Valid options: claude-cli, xai, anthropic, openai, openrouter",
+                "Invalid provider: {}. Valid options: claude-cli, codex, xai, anthropic, openai, openrouter",
                 provider
             );
         }
@@ -38,9 +38,10 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         // Interactive mode - prompt for LLM provider
         let providers = vec![
             "Claude Code (recommended - no API key needed)",
+            "OpenAI Codex CLI (no API key needed)",
             "xAI (Grok)",
             "Anthropic (Claude API)",
-            "OpenAI (GPT)",
+            "OpenAI (GPT API)",
             "OpenRouter",
         ];
         let provider_selection = Select::new()
@@ -51,10 +52,11 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
 
         let provider = match provider_selection {
             0 => "claude-cli",
-            1 => "xai",
-            2 => "anthropic",
-            3 => "openai",
-            4 => "openrouter",
+            1 => "codex",
+            2 => "xai",
+            3 => "anthropic",
+            4 => "openai",
+            5 => "openrouter",
             _ => "claude-cli",
         };
 
@@ -89,6 +91,7 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     // Determine smart/fast models based on provider
     let (smart_model, fast_model) = match provider.as_str() {
         "claude-cli" => ("opus".to_string(), "sonnet".to_string()),
+        "codex" => ("gpt-5.2-high".to_string(), "gpt-5.1-mini".to_string()),
         "anthropic" => (
             "claude-opus-4-5-20251101".to_string(),
             "claude-sonnet-4-5-20250929".to_string(),

@@ -74,12 +74,13 @@ impl Config {
             "openai" => "OPENAI_API_KEY",
             "openrouter" => "OPENROUTER_API_KEY",
             "claude-cli" => "NONE", // Claude CLI doesn't need API key
+            "codex" => "NONE",      // Codex CLI doesn't need API key
             _ => "API_KEY",
         }
     }
 
     pub fn requires_api_key(&self) -> bool {
-        self.llm.provider != "claude-cli"
+        !matches!(self.llm.provider.as_str(), "claude-cli" | "codex")
     }
 
     pub fn api_endpoint(&self) -> &str {
@@ -99,6 +100,7 @@ impl Config {
             "openai" => "o3-mini",
             "openrouter" => "anthropic/claude-sonnet-4.5",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
+            "codex" => "gpt-5.1",     // Codex CLI default model
             _ => "grok-code-fast-1",
         }
     }
@@ -138,6 +140,13 @@ impl Config {
                 "opus",   // Claude Opus 4.5 - smart/reasoning
                 "sonnet", // Claude Sonnet - fast/capable
                 "haiku",  // Claude Haiku - fastest
+            ],
+            "codex" => vec![
+                "gpt-5.2-high", // Smart/reasoning model
+                "gpt-5.1",      // Capable model
+                "gpt-5.1-mini", // Fast model
+                "o3",           // Reasoning model
+                "o3-mini",      // Fast reasoning
             ],
             _ => vec![],
         }
