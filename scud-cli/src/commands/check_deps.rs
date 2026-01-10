@@ -1,8 +1,11 @@
 use anyhow::Result;
 use colored::Colorize;
+use indicatif::{ProgressBar, ProgressStyle};
+use serde::Deserialize;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use crate::llm::{LLMClient, Prompts};
 use crate::models::{Phase, TaskStatus};
 use crate::storage::Storage;
 
@@ -31,12 +34,64 @@ impl DepCheckResults {
     }
 }
 
-pub fn run(
+/// PRD validation result structures
+#[derive(Debug, Deserialize)]
+pub struct PrdValidationResult {
+    pub coverage_score: u32,
+    #[serde(default)]
+    pub missing_requirements: Vec<MissingRequirement>,
+    #[serde(default)]
+    pub incomplete_coverage: Vec<IncompleteCoverage>,
+    #[serde(default)]
+    pub misaligned_tasks: Vec<MisalignedTask>,
+    #[serde(default)]
+    pub extra_tasks: Vec<ExtraTask>,
+    #[serde(default)]
+    pub dependency_suggestions: Vec<DependencySuggestion>,
+    pub summary: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MissingRequirement {
+    pub requirement: String,
+    pub prd_section: String,
+    pub suggested_task: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IncompleteCoverage {
+    pub requirement: String,
+    pub existing_tasks: Vec<String>,
+    pub gap: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MisalignedTask {
+    pub task_id: String,
+    pub issue: String,
+    pub suggestion: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExtraTask {
+    pub task_id: String,
+    pub note: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DependencySuggestion {
+    pub task_id: String,
+    pub should_depend_on: Vec<String>,
+    pub reasoning: String,
+}
+
+pub async fn run(
     project_root: Option<PathBuf>,
     tag: Option<&str>,
     all_tags: bool,
+    prd_file: Option<&Path>,
 ) -> Result<()> {
-    let storage = Storage::new(project_root);
+    let storage = Storage::new(project_root.clone());
 
     if !storage.is_initialized() {
         anyhow::bail!("SCUD not initialized. Run: scud init");
@@ -91,14 +146,81 @@ pub fn run(
         }
     }
 
-    // Print results
-    print_results(&results);
+    // Print dependency results
+    print_dep_results(&results);
 
-    if results.has_issues() {
+    let mut has_prd_issues = false;
+
+    // PRD validation if file provided
+    if let Some(prd_path) = prd_file {
+        println!();
+        println!("{}", "━".repeat(50).blue());
+        println!("{}", "PRD Coverage Validation".blue().bold());
+        println!("{}", "━".repeat(50).blue());
+        println!();
+
+        // Read PRD file
+        let prd_content = storage.read_file(prd_path)?;
+
+        // Build tasks JSON for LLM
+        let tasks_json = build_tasks_json(&all_phases, &phases_to_check);
+
+        // Create LLM client
+        let client = match project_root {
+            Some(root) => LLMClient::new_with_project_root(root)?,
+            None => LLMClient::new()?,
+        };
+
+        // Show progress
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.blue} {msg}")
+                .unwrap(),
+        );
+        spinner.set_message("Validating tasks against PRD with AI...");
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+
+        // Call LLM to validate
+        let prompt = Prompts::validate_tasks_against_prd(&prd_content, &tasks_json);
+        let validation: PrdValidationResult = client.complete_json(&prompt).await?;
+
+        spinner.finish_and_clear();
+
+        // Print PRD validation results
+        has_prd_issues = print_prd_results(&validation);
+    }
+
+    if results.has_issues() || has_prd_issues {
         std::process::exit(1);
     }
 
     Ok(())
+}
+
+fn build_tasks_json(
+    all_phases: &std::collections::HashMap<String, Phase>,
+    phases_to_check: &[String],
+) -> String {
+    let mut tasks_list = Vec::new();
+
+    for tag in phases_to_check {
+        if let Some(phase) = all_phases.get(tag) {
+            for task in &phase.tasks {
+                tasks_list.push(serde_json::json!({
+                    "id": format!("{}:{}", tag, task.id),
+                    "title": task.title,
+                    "description": task.description,
+                    "status": format!("{:?}", task.status),
+                    "priority": format!("{:?}", task.priority),
+                    "complexity": task.complexity,
+                    "dependencies": task.dependencies,
+                }));
+            }
+        }
+    }
+
+    serde_json::to_string_pretty(&tasks_list).unwrap_or_else(|_| "[]".to_string())
 }
 
 fn validate_phase(
@@ -156,7 +278,7 @@ fn validate_phase(
     }
 }
 
-fn print_results(results: &DepCheckResults) {
+fn print_dep_results(results: &DepCheckResults) {
     if !results.has_issues() {
         println!("{}", "✓ No dependency issues found!".green().bold());
         return;
@@ -234,7 +356,7 @@ fn print_results(results: &DepCheckResults) {
     }
 
     // Summary
-    println!("{}", "Summary".blue().bold());
+    println!("{}", "Dependency Summary".blue().bold());
     println!("{}", "-".repeat(40).blue());
     println!(
         "  Total issues: {}",
@@ -244,6 +366,111 @@ fn print_results(results: &DepCheckResults) {
     println!("{}", "To fix issues:".blue());
     println!("  - Edit .scud/<tag>.scg directly");
     println!("  - Or run: scud reanalyze-deps --apply");
+}
+
+fn print_prd_results(validation: &PrdValidationResult) -> bool {
+    // Coverage score with color coding
+    let score_color = if validation.coverage_score >= 90 {
+        validation.coverage_score.to_string().green()
+    } else if validation.coverage_score >= 70 {
+        validation.coverage_score.to_string().yellow()
+    } else {
+        validation.coverage_score.to_string().red()
+    };
+
+    println!(
+        "{} {}%",
+        "Coverage Score:".blue().bold(),
+        score_color.bold()
+    );
+    println!();
+
+    let has_issues = !validation.missing_requirements.is_empty()
+        || !validation.incomplete_coverage.is_empty()
+        || !validation.misaligned_tasks.is_empty();
+
+    if !validation.missing_requirements.is_empty() {
+        println!("{}", "Missing Requirements".red().bold());
+        println!("{}", "-".repeat(40).red());
+        for req in &validation.missing_requirements {
+            println!("  {} {}", "✗".red(), req.requirement.white());
+            println!("    {} {}", "Section:".dimmed(), req.prd_section.dimmed());
+            println!(
+                "    {} {}",
+                "Suggested task:".cyan(),
+                req.suggested_task.cyan()
+            );
+        }
+        println!();
+    }
+
+    if !validation.incomplete_coverage.is_empty() {
+        println!("{}", "Incomplete Coverage".yellow().bold());
+        println!("{}", "-".repeat(40).yellow());
+        for cov in &validation.incomplete_coverage {
+            println!("  {} {}", "⚠".yellow(), cov.requirement.white());
+            println!(
+                "    {} {}",
+                "Covered by:".dimmed(),
+                cov.existing_tasks.join(", ").dimmed()
+            );
+            println!("    {} {}", "Gap:".cyan(), cov.gap.cyan());
+        }
+        println!();
+    }
+
+    if !validation.misaligned_tasks.is_empty() {
+        println!("{}", "Misaligned Tasks".red().bold());
+        println!("{}", "-".repeat(40).red());
+        for task in &validation.misaligned_tasks {
+            println!("  {} Task {}", "✗".red(), task.task_id.cyan());
+            println!("    {} {}", "Issue:".dimmed(), task.issue.white());
+            println!("    {} {}", "Fix:".green(), task.suggestion.green());
+        }
+        println!();
+    }
+
+    if !validation.extra_tasks.is_empty() {
+        println!("{}", "Extra Tasks (beyond PRD scope)".blue().bold());
+        println!("{}", "-".repeat(40).blue());
+        for task in &validation.extra_tasks {
+            println!("  {} Task {}", "ℹ".blue(), task.task_id.cyan());
+            println!("    {}", task.note.dimmed());
+        }
+        println!();
+    }
+
+    if !validation.dependency_suggestions.is_empty() {
+        println!("{}", "Suggested Dependencies (from PRD context)".cyan().bold());
+        println!("{}", "-".repeat(40).cyan());
+        for dep in &validation.dependency_suggestions {
+            println!(
+                "  {} Task {} should depend on {}",
+                "→".cyan(),
+                dep.task_id.cyan(),
+                dep.should_depend_on.join(", ").yellow()
+            );
+            println!("    {}", dep.reasoning.dimmed());
+        }
+        println!();
+    }
+
+    // Summary
+    println!("{}", "PRD Validation Summary".blue().bold());
+    println!("{}", "-".repeat(40).blue());
+    println!("  {}", validation.summary);
+    println!();
+
+    if !has_issues && validation.coverage_score >= 90 {
+        println!("{}", "✓ Tasks adequately cover the PRD!".green().bold());
+    } else if has_issues {
+        println!(
+            "{}",
+            "✗ PRD coverage issues found. Consider updating tasks.".red()
+        );
+    }
+
+    has_issues || validation.coverage_score < 70
 }
 
 #[cfg(test)]

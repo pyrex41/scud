@@ -232,4 +232,97 @@ Phases to analyze: {phases:?}
             phases = phases
         )
     }
+
+    pub fn validate_tasks_against_prd(prd_content: &str, tasks_json: &str) -> String {
+        format!(
+            r#"You are a QA engineer validating that extracted tasks accurately reflect the original PRD.
+
+## Original PRD/Requirements Document
+
+{prd_content}
+
+## Current Tasks (JSON)
+
+{tasks_json}
+
+## Your Task
+
+Compare the tasks against the PRD and identify:
+
+1. **Missing Requirements**: Features or requirements in the PRD that have NO corresponding task
+2. **Incomplete Coverage**: Requirements that are only partially covered by existing tasks
+3. **Misaligned Tasks**: Tasks that don't accurately reflect what the PRD specifies
+4. **Extra Tasks**: Tasks that go beyond what the PRD requires (not necessarily bad, but note them)
+5. **Dependency Issues**: Tasks that should logically depend on others based on PRD context
+
+## Analysis Guidelines
+
+- Be thorough - check every requirement in the PRD has corresponding task(s)
+- Consider implicit requirements (e.g., if PRD mentions "user authentication", tasks should cover login, logout, session management, etc.)
+- Check that task descriptions accurately capture the PRD's intent
+- Verify task priorities align with PRD emphasis
+- Look for edge cases mentioned in PRD but missing from tasks
+
+## Response Format
+
+Return a JSON object:
+```json
+{{
+  "coverage_score": <0-100>,
+  "missing_requirements": [
+    {{
+      "requirement": "Description of missing requirement from PRD",
+      "prd_section": "Where in PRD this appears",
+      "suggested_task": "Brief description of task that should be added"
+    }}
+  ],
+  "incomplete_coverage": [
+    {{
+      "requirement": "Description of partially covered requirement",
+      "existing_tasks": ["task_id1", "task_id2"],
+      "gap": "What aspect is missing"
+    }}
+  ],
+  "misaligned_tasks": [
+    {{
+      "task_id": "ID of misaligned task",
+      "issue": "How the task doesn't match PRD",
+      "suggestion": "How to fix"
+    }}
+  ],
+  "extra_tasks": [
+    {{
+      "task_id": "ID of extra task",
+      "note": "Why this may be beyond PRD scope"
+    }}
+  ],
+  "dependency_suggestions": [
+    {{
+      "task_id": "ID of task",
+      "should_depend_on": ["task_id1"],
+      "reasoning": "Why based on PRD context"
+    }}
+  ],
+  "summary": "Brief overall assessment"
+}}
+```
+
+If tasks perfectly cover the PRD, return:
+```json
+{{
+  "coverage_score": 100,
+  "missing_requirements": [],
+  "incomplete_coverage": [],
+  "misaligned_tasks": [],
+  "extra_tasks": [],
+  "dependency_suggestions": [],
+  "summary": "Tasks fully cover all PRD requirements"
+}}
+```
+
+Return ONLY the JSON object, no additional explanation."#,
+            prd_content = prd_content,
+            tasks_json = tasks_json
+        )
+    }
 }

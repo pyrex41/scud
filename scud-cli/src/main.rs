@@ -318,7 +318,7 @@ enum Commands {
         fix: bool,
     },
 
-    /// Check dependency validity without AI
+    /// Check dependency validity and optionally validate against PRD
     CheckDeps {
         /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
@@ -327,6 +327,10 @@ enum Commands {
         /// Check across all phases
         #[arg(long)]
         all_tags: bool,
+
+        /// Path to PRD file to validate task coverage (AI-powered)
+        #[arg(long)]
+        prd: Option<PathBuf>,
     },
 
     /// Generate Mermaid diagram of task graph
@@ -467,8 +471,8 @@ async fn main() -> Result<()> {
             stale_hours,
             fix,
         } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
-        Commands::CheckDeps { tag, all_tags } => {
-            commands::check_deps::run(cli.project, tag.as_deref(), all_tags)
+        Commands::CheckDeps { tag, all_tags, prd } => {
+            commands::check_deps::run(cli.project, tag.as_deref(), all_tags, prd.as_deref()).await
         }
         Commands::Mermaid { tag, all_tags } => {
             commands::mermaid::run(cli.project, tag.as_deref(), all_tags)
