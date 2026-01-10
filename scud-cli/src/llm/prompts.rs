@@ -33,7 +33,7 @@ Parse this phase into approximately {} discrete, actionable tasks. Return a JSON
     "description": "What needs to be done (2-3 sentences)",
     "priority": "high|medium|low",
     "complexity": <1|2|3|5|8|13|21>,
-    "dependencies": []
+    "dependencies": []  // Use 1-indexed task references, e.g., ["1", "2"]. NEVER use "0" - indices start at 1.
   }}
 ]
 
@@ -48,6 +48,8 @@ Guidelines:
   * 8 = Very Complex (4-8h, e.g., build feature with multiple components)
   * 13 = Extremely Complex (1 day, SHOULD BE SPLIT)
   * 21 = Too Large (MUST BE SPLIT - only use if absolutely necessary)
+- Dependencies use 1-indexed task references (first task is "1", NOT "0")
+- NEVER reference task "0" - it does not exist
 - Identify dependencies where tasks must be done in specific order (use task indices, e.g., ["1", "2"])
 - Order tasks logically (foundational work first)
 - Each task should have clear success criteria
@@ -154,7 +156,7 @@ Return a JSON array of subtasks:
     "title": "Subtask name",
     "description": "What needs to be done",
     "priority": "high|medium|low",
-    "dependencies": []  // Array of strings: ["1", "2", "3"] for subtask dependencies, or ["TASK-123"] for external dependencies
+    "dependencies": []  // 1-indexed subtask refs: ["1", "2"]. NEVER use "0". External deps: ["TASK-123"]
   }}
 ]
 
@@ -164,7 +166,7 @@ Guidelines:
 - Then add UI/API layers
 - Finally add tests and documentation
 - Each subtask should be independently completable
-- Use dependencies to enforce correct order (e.g., ["1"] means depends on first subtask)
+- Use 1-indexed dependencies (e.g., ["1"] = first subtask). "0" is INVALID.
 - Dependency values MUST be strings, not numbers
 - Aim for {} subtasks total (can vary by 1-2 if needed for logical breakdown)
 - DO NOT include "complexity" field - subtasks are all assumed to be small and manageable
@@ -201,6 +203,8 @@ Review the tasks above and suggest dependency changes that would improve executi
 ## Rules
 
 - Use full task IDs with phase prefix (e.g., "auth:1", "api:3")
+- Task IDs are 1-indexed. NEVER suggest dependencies on task "0" or any ID ending in ":0"
+- Valid examples: "auth:1", "api:3", "main:10" - Invalid: "auth:0", "0"
 - Only suggest changes for tasks that are PENDING or IN PROGRESS
 - Don't modify DONE, EXPANDED, or SKIPPED tasks
 - Consider that some tasks may intentionally have no dependencies

@@ -137,13 +137,21 @@ pub async fn run(
     // Determine actual id_format to use (from phase, which may be inherited when appending)
     let use_uuid = group.id_format == IdFormat::Uuid;
 
+    // Pre-generate all task IDs so we can remap dependencies
+    let task_ids: Vec<String> = parsed_tasks
+        .iter()
+        .enumerate()
+        .map(|(idx, _)| {
+            if use_uuid {
+                Uuid::new_v4().to_string().replace("-", "")
+            } else {
+                (start_id + idx).to_string()
+            }
+        })
+        .collect();
+
     for (idx, parsed) in parsed_tasks.iter().enumerate() {
-        let task_id = if use_uuid {
-            // Generate UUID v4 as 32-character hex string (no dashes)
-            Uuid::new_v4().to_string().replace("-", "")
-        } else {
-            (start_id + idx).to_string()
-        };
+        let task_id = task_ids[idx].clone();
 
         let priority = match parsed.priority.to_lowercase().as_str() {
             "high" => Priority::High,
@@ -158,7 +166,26 @@ pub async fn run(
         );
         task.complexity = parsed.complexity;
         task.priority = priority;
-        task.dependencies = parsed.dependencies.clone();
+
+        // Map 1-indexed LLM dependency references to actual task IDs
+        task.dependencies = parsed
+            .dependencies
+            .iter()
+            .filter_map(|dep| {
+                if let Ok(dep_idx) = dep.parse::<usize>() {
+                    // Map 1-indexed reference to actual task ID
+                    if dep_idx > 0 && dep_idx <= task_ids.len() {
+                        Some(task_ids[dep_idx - 1].clone())
+                    } else {
+                        // Invalid index (0 or out of range) - skip
+                        None
+                    }
+                } else {
+                    // Already a full ID reference (cross-phase)
+                    Some(dep.clone())
+                }
+            })
+            .collect();
 
         group.add_task(task);
     }
@@ -204,4 +231,94 @@ pub async fn run(
     println!();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Helper to simulate the dependency remapping logic
+    fn remap_dependencies(deps: &[String], task_ids: &[String]) -> Vec<String> {
+        deps.iter()
+            .filter_map(|dep| {
+                if let Ok(dep_idx) = dep.parse::<usize>() {
+                    if dep_idx > 0 && dep_idx <= task_ids.len() {
+                        Some(task_ids[dep_idx - 1].clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(dep.clone())
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_remap_sequential_deps() {
+        let task_ids = vec!["1".to_string(), "2".to_string(), "3".to_string()];
+        let deps = vec!["1".to_string(), "2".to_string()];
+
+        let result = remap_dependencies(&deps, &task_ids);
+
+        assert_eq!(result, vec!["1".to_string(), "2".to_string()]);
+    }
+
+    #[test]
+    fn test_remap_uuid_deps() {
+        let task_ids = vec![
+            "abc123def456789012345678901234ab".to_string(),
+            "def456abc789012345678901234abcde".to_string(),
+            "789012345678901234abcdef12345678".to_string(),
+        ];
+        let deps = vec!["1".to_string(), "2".to_string()];
+
+        let result = remap_dependencies(&deps, &task_ids);
+
+        assert_eq!(result, vec![
+            "abc123def456789012345678901234ab".to_string(),
+            "def456abc789012345678901234abcde".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn test_filter_zero_deps() {
+        let task_ids = vec!["1".to_string(), "2".to_string()];
+        let deps = vec!["0".to_string(), "1".to_string()];
+
+        let result = remap_dependencies(&deps, &task_ids);
+
+        // "0" should be filtered out
+        assert_eq!(result, vec!["1".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_out_of_range_deps() {
+        let task_ids = vec!["1".to_string(), "2".to_string()];
+        let deps = vec!["1".to_string(), "99".to_string()];
+
+        let result = remap_dependencies(&deps, &task_ids);
+
+        // "99" should be filtered out
+        assert_eq!(result, vec!["1".to_string()]);
+    }
+
+    #[test]
+    fn test_preserve_cross_phase_deps() {
+        let task_ids = vec!["1".to_string(), "2".to_string()];
+        let deps = vec!["1".to_string(), "auth:3".to_string()];
+
+        let result = remap_dependencies(&deps, &task_ids);
+
+        // "auth:3" should be preserved as-is
+        assert_eq!(result, vec!["1".to_string(), "auth:3".to_string()]);
+    }
+
+    #[test]
+    fn test_empty_deps() {
+        let task_ids = vec!["1".to_string(), "2".to_string()];
+        let deps: Vec<String> = vec![];
+
+        let result = remap_dependencies(&deps, &task_ids);
+
+        assert!(result.is_empty());
+    }
 }

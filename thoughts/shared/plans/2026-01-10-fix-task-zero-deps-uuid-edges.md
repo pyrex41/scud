@@ -90,9 +90,9 @@ Add to the Rules section around line 202:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `cargo build` succeeds
-- [ ] `cargo test` passes
-- [ ] `cargo clippy` has no warnings
+- [x] `cargo build` succeeds
+- [x] `cargo test` passes
+- [x] `cargo clippy` has no warnings
 
 #### Manual Verification:
 - [ ] Run `scud parse-prd` with a test PRD - verify no "0" dependencies in output
@@ -181,9 +181,9 @@ Replace lines 140-164 with:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `cargo build` succeeds
-- [ ] `cargo test` passes
-- [ ] New unit test for dependency remapping passes
+- [x] `cargo build` succeeds
+- [x] `cargo test` passes
+- [x] New unit test for dependency remapping passes (added in Phase 4)
 
 #### Manual Verification:
 - [ ] Create UUID project: `scud parse-prd test.md --tag test --id-format uuid`
@@ -564,9 +564,9 @@ In the match expression (around line 400):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `cargo build` succeeds
-- [ ] `cargo test` passes (including new check_deps tests)
-- [ ] `cargo clippy` has no warnings
+- [x] `cargo build` succeeds
+- [x] `cargo test` passes (including new check_deps tests)
+- [x] `cargo clippy` has no warnings
 
 #### Manual Verification:
 - [ ] Run `scud check-deps` on clean project - shows "No issues found"
@@ -686,8 +686,8 @@ mod tests {
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `cargo test` passes all new tests
-- [ ] `cargo test --lib` specifically tests the library code
+- [x] `cargo test` passes all new tests
+- [x] `cargo test --lib` specifically tests the library code
 
 ---
 

@@ -318,6 +318,17 @@ enum Commands {
         fix: bool,
     },
 
+    /// Check dependency validity without AI
+    CheckDeps {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Check across all phases
+        #[arg(long)]
+        all_tags: bool,
+    },
+
     /// Generate Mermaid diagram of task graph
     Mermaid {
         /// Phase tag (uses active phase if not provided)
@@ -456,6 +467,9 @@ async fn main() -> Result<()> {
             stale_hours,
             fix,
         } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
+        Commands::CheckDeps { tag, all_tags } => {
+            commands::check_deps::run(cli.project, tag.as_deref(), all_tags)
+        }
         Commands::Mermaid { tag, all_tags } => {
             commands::mermaid::run(cli.project, tag.as_deref(), all_tags)
         }
