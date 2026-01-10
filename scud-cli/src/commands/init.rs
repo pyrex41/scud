@@ -25,10 +25,10 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         let provider = provider_name.to_lowercase();
         if !matches!(
             provider.as_str(),
-            "xai" | "anthropic" | "openai" | "openrouter"
+            "xai" | "anthropic" | "openai" | "openrouter" | "claude-cli"
         ) {
             anyhow::bail!(
-                "Invalid provider: {}. Valid options: xai, anthropic, openai, openrouter",
+                "Invalid provider: {}. Valid options: claude-cli, xai, anthropic, openai, openrouter",
                 provider
             );
         }
@@ -37,8 +37,9 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     } else if is_interactive() {
         // Interactive mode - prompt for LLM provider
         let providers = vec![
+            "Claude Code (recommended - no API key needed)",
             "xAI (Grok)",
-            "Anthropic (Claude)",
+            "Anthropic (Claude API)",
             "OpenAI (GPT)",
             "OpenRouter",
         ];
@@ -49,11 +50,12 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             .interact()?;
 
         let provider = match provider_selection {
-            0 => "xai",
-            1 => "anthropic",
-            2 => "openai",
-            3 => "openrouter",
-            _ => "anthropic",
+            0 => "claude-cli",
+            1 => "xai",
+            2 => "anthropic",
+            3 => "openai",
+            4 => "openrouter",
+            _ => "claude-cli",
         };
 
         // Build model options: suggested models + "Custom" option
@@ -78,17 +80,38 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
 
         (provider.to_string(), model)
     } else {
-        // Non-interactive without provider arg: use default (anthropic)
-        let provider = "anthropic";
+        // Non-interactive without provider arg: use default (claude-cli)
+        let provider = "claude-cli";
         let model = Config::default_model_for_provider(provider);
         (provider.to_string(), model.to_string())
+    };
+
+    // Determine smart/fast models based on provider
+    let (smart_model, fast_model) = match provider.as_str() {
+        "claude-cli" => ("opus".to_string(), "sonnet".to_string()),
+        "anthropic" => (
+            "claude-opus-4-5-20251101".to_string(),
+            "claude-sonnet-4-5-20250929".to_string(),
+        ),
+        "xai" => (
+            "grok-4-1-fast-reasoning".to_string(),
+            "grok-code-fast-1".to_string(),
+        ),
+        "openai" => ("o3".to_string(), "gpt-5.1-mini".to_string()),
+        "openrouter" => (
+            "anthropic/claude-opus-4.5".to_string(),
+            "anthropic/claude-sonnet-4.5".to_string(),
+        ),
+        _ => ("opus".to_string(), "sonnet".to_string()),
     };
 
     let config = Config {
         llm: LLMConfig {
             provider,
             model,
-            max_tokens: 4096,
+            smart_model,
+            fast_model,
+            max_tokens: 16000,
         },
     };
 

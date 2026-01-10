@@ -72,9 +72,9 @@ pub async fn run(
     spinner.set_message("Parsing PRD with AI...");
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    // Call LLM to parse the PRD
+    // Call LLM to parse the PRD (use fast model for generation tasks)
     let prompt = Prompts::parse_prd(&prd_content, num_tasks, guidance.as_deref());
-    let parsed_tasks: Vec<ParsedTask> = client.complete_json_with_model(&prompt, model).await?;
+    let parsed_tasks: Vec<ParsedTask> = client.complete_json_fast(&prompt, model).await?;
 
     spinner.finish_with_message(format!(
         "{} Parsed {} tasks",

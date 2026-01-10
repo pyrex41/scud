@@ -182,9 +182,9 @@ pub async fn run(
         spinner.set_message("Validating tasks against PRD with AI...");
         spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-        // Call LLM to validate
+        // Call LLM to validate (use smart model for validation tasks)
         let prompt = Prompts::validate_tasks_against_prd(&prd_content, &tasks_json);
-        let validation: PrdValidationResult = client.complete_json_with_model(&prompt, model).await?;
+        let validation: PrdValidationResult = client.complete_json_smart(&prompt, model).await?;
 
         spinner.finish_and_clear();
 

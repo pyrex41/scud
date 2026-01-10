@@ -208,9 +208,9 @@ pub async fn run(
     spinner.set_message("Analyzing dependencies with AI...");
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    // Call LLM to suggest fixes
+    // Call LLM to suggest fixes (use smart model for analysis tasks)
     let prompt = Prompts::reanalyze_dependencies(&task_context, &phases_to_check);
-    let suggestions: Vec<DepFix> = client.complete_json_with_model(&prompt, model).await?;
+    let suggestions: Vec<DepFix> = client.complete_json_smart(&prompt, model).await?;
 
     spinner.finish_and_clear();
 

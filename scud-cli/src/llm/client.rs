@@ -108,6 +108,20 @@ impl LLMClient {
         self.complete_with_model(prompt, None).await
     }
 
+    /// Complete using the smart model (for validation/analysis tasks with large context)
+    /// Use user override if provided, otherwise fall back to configured smart_model
+    pub async fn complete_smart(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+        let model = model_override.unwrap_or(self.config.smart_model());
+        self.complete_with_model(prompt, Some(model)).await
+    }
+
+    /// Complete using the fast model (for generation tasks)
+    /// Use user override if provided, otherwise fall back to configured fast_model
+    pub async fn complete_fast(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+        let model = model_override.unwrap_or(self.config.fast_model());
+        self.complete_with_model(prompt, Some(model)).await
+    }
+
     pub async fn complete_with_model(
         &self,
         prompt: &str,
@@ -236,6 +250,24 @@ impl LLMClient {
         self.complete_json_with_model(prompt, None).await
     }
 
+    /// Complete JSON using the smart model (for validation/analysis tasks)
+    pub async fn complete_json_smart<T>(&self, prompt: &str, model_override: Option<&str>) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response_text = self.complete_smart(prompt, model_override).await?;
+        Self::parse_json_response(&response_text)
+    }
+
+    /// Complete JSON using the fast model (for generation tasks)
+    pub async fn complete_json_fast<T>(&self, prompt: &str, model_override: Option<&str>) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response_text = self.complete_fast(prompt, model_override).await?;
+        Self::parse_json_response(&response_text)
+    }
+
     pub async fn complete_json_with_model<T>(
         &self,
         prompt: &str,
@@ -245,9 +277,15 @@ impl LLMClient {
         T: serde::de::DeserializeOwned,
     {
         let response_text = self.complete_with_model(prompt, model_override).await?;
+        Self::parse_json_response(&response_text)
+    }
 
+    fn parse_json_response<T>(response_text: &str) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
         // Try to find JSON in the response (LLM might include markdown or explanations)
-        let json_str = Self::extract_json(&response_text);
+        let json_str = Self::extract_json(response_text);
 
         serde_json::from_str(json_str).with_context(|| {
             // Provide helpful error context
