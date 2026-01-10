@@ -1,10 +1,42 @@
 use super::task::Task;
 use serde::{Deserialize, Serialize};
 
+/// ID format for task generation
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum IdFormat {
+    /// Sequential numeric IDs: "1", "2", "3", subtasks: "1.1", "1.2"
+    #[default]
+    Sequential,
+    /// UUID v4 IDs: 32-character hex strings
+    Uuid,
+}
+
+impl IdFormat {
+    /// Convert to string representation for SCG format
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IdFormat::Sequential => "sequential",
+            IdFormat::Uuid => "uuid",
+        }
+    }
+
+    /// Parse from string representation
+    pub fn parse(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "uuid" => IdFormat::Uuid,
+            _ => IdFormat::Sequential,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Phase {
     pub name: String,
     pub tasks: Vec<Task>,
+    /// ID format used for this phase (default: Sequential for backwards compatibility)
+    #[serde(default)]
+    pub id_format: IdFormat,
 }
 
 impl Phase {
@@ -12,6 +44,7 @@ impl Phase {
         Phase {
             name,
             tasks: Vec::new(),
+            id_format: IdFormat::default(),
         }
     }
 

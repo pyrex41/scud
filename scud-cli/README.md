@@ -17,21 +17,20 @@ This is a high-performance Rust rewrite of the SCUD task management system. It r
 scud (Rust Binary)
 ├── Core Commands (No AI - Instant)
 │   ├── init               # Initialize .scud/ and install agents
-│   ├── tags               # List tags
-│   ├── use-tag            # Switch active tag
+│   ├── tags               # List tags or set active tag
 │   ├── list               # List tasks with filters
 │   ├── view               # Open interactive HTML viewer in browser
 │   ├── show               # Show task details
 │   ├── set-status         # Update task status
-│   ├── next               # Find next available task (--claim for dynamic-wave)
+│   ├── next               # Find next available task
 │   ├── stats              # Show statistics
 │   └── doctor             # [EXPERIMENTAL] Diagnose stuck states
 │
-├── AI Commands (Direct Anthropic API)
+├── AI Commands (Direct LLM API)
 │   ├── parse-prd          # Parse PRD markdown into tasks
 │   ├── analyze-complexity # Analyze task complexity
 │   ├── expand             # Break down complex tasks
-│   └── research           # AI-powered research
+│   └── reanalyze-deps     # Analyze cross-tag dependencies
 │
 └── Storage (SCG)
     └── .scud/tasks/tasks.scg
@@ -96,7 +95,7 @@ scud init
 scud tags
 
 # Switch to a tag
-scud use-tag auth
+scud tags auth
 
 # List tasks
 scud list
@@ -117,20 +116,6 @@ scud stats
 # Open interactive task viewer in browser
 scud view
 ```
-
-### [EXPERIMENTAL] Dynamic-Wave Mode
-
-Dynamic-wave mode allows agents to auto-claim tasks and maintain workflow health:
-
-```bash
-# Find and auto-claim the next available task
-scud next --claim --name agent-1
-
-# Release all tasks claimed by an agent
-scud next --release --name agent-1
-```
-
-**IMPORTANT:** When using `--claim`, agents MUST run `scud set-status <id> done` when finishing a task. This ensures dependent tasks become unblocked.
 
 ### [EXPERIMENTAL] Doctor Command
 
@@ -170,9 +155,27 @@ scud analyze-complexity --task 5       # Specific task
 scud expand 7                          # Specific task
 scud expand --all                      # All tasks >13 complexity
 
-# Research a topic
-scud research "OAuth 2.0 best practices"
+# Reanalyze cross-tag dependencies
+scud reanalyze-deps --all-tags
 ```
+
+### UUID Task IDs
+
+For integration with external tools that expect UUID task IDs (like Descartes):
+
+```bash
+# Generate tasks with UUID IDs instead of sequential numbers
+scud parse requirements.md --tag myproject --id-format uuid
+```
+
+This generates tasks with 32-character UUID identifiers (e.g., `a1b2c3d4e5f6789012345678901234ab`) instead of sequential numbers (`1`, `2`, `3`).
+
+**Key behaviors:**
+- Sequential IDs remain the default for backwards compatibility
+- The ID format is stored in the phase metadata and inherited during expansion
+- Subtasks also get UUID IDs when the parent phase uses UUID format
+- Long UUIDs are truncated in CLI output (`a1b2c3d4...`) for readability
+- The `scud show` command displays the full UUID
 
 ## Performance Comparison
 
@@ -249,6 +252,7 @@ struct Task {
 struct Phase {
     name: String,
     tasks: Vec<Task>,
+    id_format: IdFormat,  // sequential (default) or uuid
 }
 ```
 
@@ -274,7 +278,7 @@ Located in `src/llm/prompts.rs`:
 - `parse_prd()` - Converts markdown to structured tasks
 - `analyze_complexity()` - Scores task difficulty
 - `expand_task()` - Breaks down complex tasks
-- `research_topic()` - AI research assistant
+- `reanalyze_dependencies()` - Cross-tag dependency analysis
 
 ## Integration with SCUD
 
@@ -303,7 +307,7 @@ scud-cli/
 │   │       ├── parse_prd.rs
 │   │       ├── analyze_complexity.rs
 │   │       ├── expand.rs
-│   │       └── research.rs
+│   │       └── reanalyze_deps.rs
 │   ├── models/
 │   │   ├── task.rs
 │   │   └── phase.rs

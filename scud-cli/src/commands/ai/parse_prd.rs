@@ -3,9 +3,10 @@ use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 use crate::llm::{LLMClient, Prompts};
-use crate::models::{Phase, Priority, Task};
+use crate::models::{IdFormat, Phase, Priority, Task};
 use crate::storage::Storage;
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +26,7 @@ pub async fn run(
     num_tasks: u32,
     append: bool,
     no_guidance: bool,
+    id_format: &str,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -85,7 +87,15 @@ pub async fn run(
     // Check if other phases exist for cross-tag dependency hint
     let other_phases: Vec<_> = all_tasks.keys().filter(|k| *k != tag).cloned().collect();
 
-    // Determine starting ID based on append mode
+    // Parse ID format from CLI argument
+    let use_uuid = id_format == "uuid";
+    let parsed_id_format = if use_uuid {
+        IdFormat::Uuid
+    } else {
+        IdFormat::Sequential
+    };
+
+    // Determine starting ID based on append mode (only used for sequential format)
     let start_id = if append && all_tasks.contains_key(tag) {
         let existing = all_tasks.get(tag).unwrap();
         existing.tasks.len() + 1
@@ -99,7 +109,19 @@ pub async fn run(
             "{}",
             format!("📎 Appending to existing task group '{}'...", tag).cyan()
         );
-        all_tasks.get(tag).unwrap().clone()
+        let existing = all_tasks.get(tag).unwrap().clone();
+        // When appending, warn if id_format doesn't match existing
+        if existing.id_format != parsed_id_format {
+            println!(
+                "{}",
+                format!(
+                    "⚠ Ignoring --id-format: existing phase uses {} format",
+                    existing.id_format.as_str()
+                )
+                .yellow()
+            );
+        }
+        existing
     } else {
         if all_tasks.contains_key(tag) {
             println!(
@@ -107,11 +129,21 @@ pub async fn run(
                 format!("⚠ Task group '{}' already exists. Replacing...", tag).yellow()
             );
         }
-        Phase::new(tag.to_string())
+        let mut new_phase = Phase::new(tag.to_string());
+        new_phase.id_format = parsed_id_format;
+        new_phase
     };
 
+    // Determine actual id_format to use (from phase, which may be inherited when appending)
+    let use_uuid = group.id_format == IdFormat::Uuid;
+
     for (idx, parsed) in parsed_tasks.iter().enumerate() {
-        let task_id = (start_id + idx).to_string();
+        let task_id = if use_uuid {
+            // Generate UUID v4 as 32-character hex string (no dashes)
+            Uuid::new_v4().to_string().replace("-", "")
+        } else {
+            (start_id + idx).to_string()
+        };
 
         let priority = match parsed.priority.to_lowercase().as_str() {
             "high" => Priority::High,

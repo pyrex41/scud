@@ -190,6 +190,10 @@ enum Commands {
         /// Skip loading guidance from .scud/guidance/
         #[arg(long)]
         no_guidance: bool,
+
+        /// Task ID format: sequential (default) or uuid
+        #[arg(long, default_value = "sequential")]
+        id_format: String,
     },
 
     /// Clear all tasks (with confirmation)
@@ -416,7 +420,8 @@ async fn main() -> Result<()> {
             num_tasks,
             append,
             no_guidance,
-        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append, no_guidance).await,
+            id_format,
+        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append, no_guidance, &id_format).await,
         Commands::Clean { force, tag } => commands::clean::run(cli.project, force, tag.as_deref()),
         Commands::AnalyzeComplexity { task, tag } => {
             commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())

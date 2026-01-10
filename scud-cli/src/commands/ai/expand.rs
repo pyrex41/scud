@@ -7,9 +7,10 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::llm::{LLMClient, Prompts};
-use crate::models::{Priority, Task, TaskStatus};
+use crate::models::{IdFormat, Priority, Task, TaskStatus};
 use crate::storage::Storage;
 
 #[derive(Debug, Deserialize)]
@@ -289,10 +290,29 @@ pub async fn run(
                     .get_mut(tag)
                     .expect("Tag should exist since task came from it");
 
+                // Check if this phase uses UUID format
+                let use_uuid = epic.id_format == IdFormat::Uuid;
+
                 // Create subtasks
+                // For UUID format, pre-generate all IDs so we can map dependencies
+                let subtask_ids: Vec<String> = if use_uuid {
+                    expansion
+                        .expanded_tasks
+                        .iter()
+                        .map(|_| Uuid::new_v4().to_string().replace("-", ""))
+                        .collect()
+                } else {
+                    expansion
+                        .expanded_tasks
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, _)| format!("{}.{}", parent_id, idx + 1))
+                        .collect()
+                };
+
                 let mut new_subtask_ids = Vec::new();
                 for (idx, expanded) in expansion.expanded_tasks.iter().enumerate() {
-                    let new_id = format!("{}.{}", parent_id, idx + 1);
+                    let new_id = subtask_ids[idx].clone();
 
                     let priority = if !expanded.priority.is_empty() {
                         match expanded.priority.to_lowercase().as_str() {
@@ -313,18 +333,21 @@ pub async fn run(
                     new_task.complexity = 0;
                     new_task.parent_id = Some(parent_id.clone());
 
-                    // Map dependency references to nested IDs
+                    // Map dependency references to actual subtask IDs
+                    // LLM returns dependencies as 1-indexed references to other subtasks
                     new_task.dependencies = expanded
                         .dependencies
                         .iter()
                         .filter_map(|dep| {
                             if let Ok(dep_idx) = dep.parse::<usize>() {
+                                // Map 1-indexed reference to actual subtask ID
                                 if dep_idx > 0 && dep_idx <= idx + 1 {
-                                    Some(format!("{}.{}", parent_id, dep_idx))
+                                    Some(subtask_ids[dep_idx - 1].clone())
                                 } else {
                                     None
                                 }
                             } else {
+                                // Already a full ID reference
                                 Some(dep.clone())
                             }
                         })
