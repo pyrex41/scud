@@ -119,6 +119,7 @@ impl Config {
                 "claude-opus-4-1-20250805",
             ],
             "openai" => vec![
+                "gpt-5.2-high",
                 "gpt-5.1",
                 "gpt-5.1-mini",
                 "o3-mini",

@@ -97,7 +97,7 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             "grok-4-1-fast-reasoning".to_string(),
             "grok-code-fast-1".to_string(),
         ),
-        "openai" => ("o3".to_string(), "gpt-5.1-mini".to_string()),
+        "openai" => ("gpt-5.2-high".to_string(), "gpt-5.1-mini".to_string()),
         "openrouter" => (
             "anthropic/claude-opus-4.5".to_string(),
             "anthropic/claude-sonnet-4.5".to_string(),
