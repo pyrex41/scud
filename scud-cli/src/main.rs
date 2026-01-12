@@ -66,6 +66,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Build and install SCUD binary (replaces npm install)
+    Install,
+
     /// Initialize SCUD in current directory
     Init {
         /// LLM provider to use (xai, anthropic, openai, openrouter)
@@ -483,6 +486,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Install => commands::install::run(),
         Commands::Init { provider } => commands::init::run(cli.project, provider),
         Commands::Tags { tag } => commands::tags::run(cli.project, tag.as_deref()),
         Commands::List {

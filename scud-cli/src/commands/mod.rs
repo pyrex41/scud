@@ -8,6 +8,7 @@ pub mod convert;
 pub mod doctor;
 pub mod helpers;
 pub mod init;
+pub mod install;
 pub mod list;
 pub mod log;
 pub mod mermaid;

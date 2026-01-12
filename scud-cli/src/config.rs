@@ -13,9 +13,15 @@ pub struct LLMConfig {
     pub provider: String,
     /// Default model (used when no tier specified)
     pub model: String,
+    /// Smart provider for validation/analysis tasks
+    #[serde(default = "default_smart_provider")]
+    pub smart_provider: String,
     /// Smart model for validation/analysis tasks (large context)
     #[serde(default = "default_smart_model")]
     pub smart_model: String,
+    /// Fast provider for generation tasks
+    #[serde(default = "default_fast_provider")]
+    pub fast_provider: String,
     /// Fast model for generation tasks
     #[serde(default = "default_fast_model")]
     pub fast_model: String,
@@ -23,12 +29,20 @@ pub struct LLMConfig {
     pub max_tokens: u32,
 }
 
+fn default_smart_provider() -> String {
+    "claude-cli".to_string()
+}
+
 fn default_smart_model() -> String {
     "opus".to_string()
 }
 
+fn default_fast_provider() -> String {
+    "xai".to_string()
+}
+
 fn default_fast_model() -> String {
-    "sonnet".to_string()
+    "grok-code-fast-1".to_string()
 }
 
 impl Default for Config {
@@ -37,8 +51,10 @@ impl Default for Config {
             llm: LLMConfig {
                 provider: "claude-cli".to_string(),
                 model: "sonnet".to_string(),
+                smart_provider: "claude-cli".to_string(),
                 smart_model: "opus".to_string(),
-                fast_model: "sonnet".to_string(),
+                fast_provider: "xai".to_string(),
+                fast_model: "grok-code-fast-1".to_string(),
                 max_tokens: 16000,
             },
         }
@@ -68,7 +84,11 @@ impl Config {
     }
 
     pub fn api_key_env_var(&self) -> &str {
-        match self.llm.provider.as_str() {
+        Self::api_key_env_var_for_provider(&self.llm.provider)
+    }
+
+    pub fn api_key_env_var_for_provider(provider: &str) -> &str {
+        match provider {
             "anthropic" => "ANTHROPIC_API_KEY",
             "xai" => "XAI_API_KEY",
             "openai" => "OPENAI_API_KEY",
@@ -80,7 +100,8 @@ impl Config {
     }
 
     pub fn requires_api_key(&self) -> bool {
-        !matches!(self.llm.provider.as_str(), "claude-cli" | "codex")
+        let providers = [&self.llm.provider, &self.llm.smart_provider, &self.llm.fast_provider];
+        providers.iter().any(|p| !matches!(p.as_str(), "claude-cli" | "codex"))
     }
 
     pub fn api_endpoint(&self) -> &str {
@@ -152,9 +173,19 @@ impl Config {
         }
     }
 
+    /// Get the smart provider (for validation/analysis tasks with large context)
+    pub fn smart_provider(&self) -> &str {
+        &self.llm.smart_provider
+    }
+
     /// Get the smart model (for validation/analysis tasks with large context)
     pub fn smart_model(&self) -> &str {
         &self.llm.smart_model
+    }
+
+    /// Get the fast provider (for generation tasks)
+    pub fn fast_provider(&self) -> &str {
+        &self.llm.fast_provider
     }
 
     /// Get the fast model (for generation tasks)
@@ -173,16 +204,20 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.llm.provider, "claude-cli");
         assert_eq!(config.llm.model, "sonnet");
+        assert_eq!(config.llm.smart_provider, "claude-cli");
         assert_eq!(config.llm.smart_model, "opus");
-        assert_eq!(config.llm.fast_model, "sonnet");
+        assert_eq!(config.llm.fast_provider, "xai");
+        assert_eq!(config.llm.fast_model, "grok-code-fast-1");
         assert_eq!(config.llm.max_tokens, 16000);
     }
 
     #[test]
     fn test_model_tiers() {
         let config = Config::default();
+        assert_eq!(config.smart_provider(), "claude-cli");
         assert_eq!(config.smart_model(), "opus");
-        assert_eq!(config.fast_model(), "sonnet");
+        assert_eq!(config.fast_provider(), "xai");
+        assert_eq!(config.fast_model(), "grok-code-fast-1");
     }
 
     #[test]
@@ -234,7 +269,9 @@ mod tests {
             llm: LLMConfig {
                 provider: "claude-cli".to_string(),
                 model: "sonnet".to_string(),
+                smart_provider: "claude-cli".to_string(),
                 smart_model: "opus".to_string(),
+                fast_provider: "xai".to_string(),
                 fast_model: "haiku".to_string(),
                 max_tokens: 8192,
             },
@@ -246,7 +283,9 @@ mod tests {
         let loaded = Config::load(&config_path).unwrap();
         assert_eq!(loaded.llm.provider, "claude-cli");
         assert_eq!(loaded.llm.model, "sonnet");
+        assert_eq!(loaded.llm.smart_provider, "claude-cli");
         assert_eq!(loaded.llm.smart_model, "opus");
+        assert_eq!(loaded.llm.fast_provider, "xai");
         assert_eq!(loaded.llm.fast_model, "haiku");
         assert_eq!(loaded.llm.max_tokens, 8192);
     }
@@ -286,7 +325,9 @@ max_tokens = 4096
         assert_eq!(loaded.llm.provider, "xai");
         assert_eq!(loaded.llm.model, "grok-code-fast-1");
         // Should use defaults for missing fields
+        assert_eq!(loaded.llm.smart_provider, "claude-cli");
         assert_eq!(loaded.llm.smart_model, "opus");
-        assert_eq!(loaded.llm.fast_model, "sonnet");
+        assert_eq!(loaded.llm.fast_provider, "xai");
+        assert_eq!(loaded.llm.fast_model, "grok-code-fast-1");
     }
 }

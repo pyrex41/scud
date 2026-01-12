@@ -105,29 +105,33 @@ impl LLMClient {
     }
 
     pub async fn complete(&self, prompt: &str) -> Result<String> {
-        self.complete_with_model(prompt, None).await
+        self.complete_with_model(prompt, None, None).await
     }
 
     /// Complete using the smart model (for validation/analysis tasks with large context)
     /// Use user override if provided, otherwise fall back to configured smart_model
     pub async fn complete_smart(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
         let model = model_override.unwrap_or(self.config.smart_model());
-        self.complete_with_model(prompt, Some(model)).await
+        let provider = self.config.smart_provider();
+        self.complete_with_model(prompt, Some(model), Some(provider)).await
     }
 
     /// Complete using the fast model (for generation tasks)
     /// Use user override if provided, otherwise fall back to configured fast_model
     pub async fn complete_fast(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
         let model = model_override.unwrap_or(self.config.fast_model());
-        self.complete_with_model(prompt, Some(model)).await
+        let provider = self.config.fast_provider();
+        self.complete_with_model(prompt, Some(model), Some(provider)).await
     }
 
     pub async fn complete_with_model(
         &self,
         prompt: &str,
         model_override: Option<&str>,
+        provider_override: Option<&str>,
     ) -> Result<String> {
-        match self.config.llm.provider.as_str() {
+        let provider = provider_override.unwrap_or(&self.config.llm.provider);
+        match provider.as_ref() {
             "claude-cli" => self.complete_claude_cli(prompt, model_override).await,
             "codex" => self.complete_codex_cli(prompt, model_override).await,
             "anthropic" => {
@@ -277,7 +281,7 @@ impl LLMClient {
     where
         T: serde::de::DeserializeOwned,
     {
-        let response_text = self.complete_with_model(prompt, model_override).await?;
+        let response_text = self.complete_with_model(prompt, model_override, None).await?;
         Self::parse_json_response(&response_text)
     }
 

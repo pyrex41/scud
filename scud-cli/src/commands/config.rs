@@ -6,7 +6,25 @@ use std::path::PathBuf;
 use crate::config::Config;
 use crate::storage::Storage;
 
-/// SCUD agent definitions
+/// Embedded SCUD command definitions
+/// Each command has a filename and content
+/// Commands are stored in .claude/commands/scud/<filename>.md
+const EMBEDDED_SCUD_COMMANDS: &[(&str, &str)] = &[
+    ("stats", include_str!("../../../.claude/commands/scud/stats.md")),
+    ("next", include_str!("../../../.claude/commands/scud/next.md")),
+    ("show", include_str!("../../../.claude/commands/scud/show.md")),
+    ("list", include_str!("../../../.claude/commands/scud/list.md")),
+    ("waves", include_str!("../../../.claude/commands/scud/waves.md")),
+    ("status", include_str!("../../../.claude/commands/scud/status.md")),
+];
+
+/// Embedded SCUD skill definitions
+/// Skills are stored in .claude/skills/<skill-name>/SKILL.md
+const EMBEDDED_SCUD_SKILLS: &[(&str, &str)] = &[
+    ("scud-tasks", include_str!("../../../.claude/skills/scud-tasks/SKILL.md")),
+];
+
+/// SCUD agent definitions (legacy - keeping for compatibility)
 /// Each agent has a filename, aliases for CLI, and description
 /// Agents are stored in .claude/commands/scud/<filename>.md
 const SCUD_AGENTS: &[(&str, &[&str], &str)] = &[
@@ -257,55 +275,7 @@ fn get_opencode_skills_dir(project_root: Option<PathBuf>) -> PathBuf {
     base.join(".opencode").join("skills")
 }
 
-/// Get the package root directory (contains .claude/commands/scud/ and .claude/skills/)
-fn get_package_root_dir() -> Option<PathBuf> {
-    // Try to find the scud-task npm package directory
-    // The package is identified by having bin/install.js (the npm package's install script)
-    // This handles both development (repo root) and installed (node_modules) scenarios
-    let current_exe = std::env::current_exe().ok()?;
-
-    // Search up from the executable location
-    let mut search_dir = current_exe.parent()?;
-
-    // Search up the directory tree for the npm package root
-    for _ in 0..10 {
-        let install_script = search_dir.join("bin").join("install.js");
-        let scud_dir = search_dir.join(".claude").join("commands").join("scud");
-
-        // Found the scud-task npm package (has bin/install.js and scud agents)
-        if install_script.exists() && scud_dir.exists() && scud_dir.join("pm.md").exists() {
-            return Some(search_dir.to_path_buf());
-        }
-        search_dir = search_dir.parent()?;
-    }
-
-    None
-}
-
-/// Get the package's agent source directory (.claude/commands/scud/)
-fn get_package_agents_dir() -> Option<PathBuf> {
-    get_package_root_dir().map(|root| root.join(".claude").join("commands").join("scud"))
-}
-
-/// Get the package's skills source directory (.claude/skills/)
-fn get_package_skills_dir() -> Option<PathBuf> {
-    get_package_root_dir().map(|root| root.join(".claude").join("skills"))
-}
-
-/// Get the package's OpenCode command source directory (.opencode/command/)
-fn get_package_opencode_command_dir() -> Option<PathBuf> {
-    get_package_root_dir().map(|root| root.join(".opencode").join("command"))
-}
-
-/// Get the package's OpenCode hook source directory (.opencode/hook/)
-fn get_package_opencode_hook_dir() -> Option<PathBuf> {
-    get_package_root_dir().map(|root| root.join(".opencode").join("hook"))
-}
-
-/// Get the package's OpenCode tool source directory (.opencode/tool/)
-fn get_package_opencode_tool_dir() -> Option<PathBuf> {
-    get_package_root_dir().map(|root| root.join(".opencode").join("tool"))
-}
+// Package directory functions removed - now using embedded files
 
 /// List installed SCUD agents
 pub fn agents_list(project_root: Option<PathBuf>) -> Result<()> {
@@ -486,17 +456,7 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
         anyhow::bail!("Please specify an agent/skill name or use --all to add all");
     }
 
-    let package_agents_dir = get_package_agents_dir().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Could not find SCUD package agent files. Make sure scud-task is installed."
-        )
-    })?;
-
-    let package_skills_dir = get_package_skills_dir();
-    let package_opencode_cmd_dir = get_package_opencode_command_dir();
-    let package_opencode_hook_dir = get_package_opencode_hook_dir();
-    let package_opencode_tool_dir = get_package_opencode_tool_dir();
-
+    // No longer need package directories - using embedded files
     let scud_dir = get_scud_commands_dir(project_root.clone());
     let skills_dir = get_skills_dir(project_root.clone());
     let opencode_cmd_dir = get_opencode_command_dir(project_root.clone());
@@ -518,32 +478,30 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
     // Determine what to add
     let (agents_to_add, skills_to_add): (Vec<&str>, Vec<&str>) = if all {
         (
-            SCUD_AGENTS
-                .iter()
-                .map(|(filename, _, _)| *filename)
-                .collect(),
-            SCUD_SKILLS.iter().map(|(dirname, _, _)| *dirname).collect(),
+            EMBEDDED_SCUD_COMMANDS.iter().map(|(name, _)| *name).collect(),
+            EMBEDDED_SCUD_SKILLS.iter().map(|(name, _)| *name).collect(),
         )
     } else {
         let name_ref = name.as_ref().unwrap();
         // Try agent first, then skill
-        if let Some(agent) = normalize_agent_name(name_ref) {
-            (vec![agent], vec![])
-        } else if let Some(skill) = normalize_skill_name(name_ref) {
-            (vec![], vec![skill])
+        if EMBEDDED_SCUD_COMMANDS.iter().any(|(n, _)| *n == name_ref) {
+            (vec![name_ref], vec![])
+        } else if EMBEDDED_SCUD_SKILLS.iter().any(|(n, _)| *n == name_ref) {
+            (vec![], vec![name_ref])
         } else {
             anyhow::bail!(
-                "Unknown agent/skill: '{}'. Valid agents: pm, sm, architect, dev, retrospective, status. Valid skills: scud-tasks",
-                name_ref
+                "Unknown agent/skill: '{}'. Valid agents: {}. Valid skills: {}",
+                name_ref,
+                EMBEDDED_SCUD_COMMANDS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", "),
+                EMBEDDED_SCUD_SKILLS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
             );
         }
     };
 
-    // Add agents
+    // Add agents (using embedded content)
     if !agents_to_add.is_empty() {
         println!("{}", "Agents:".blue().bold());
         for agent_name in &agents_to_add {
-            let source = package_agents_dir.join(format!("{}.md", agent_name));
             let dest = scud_dir.join(format!("{}.md", agent_name));
 
             if dest.exists() {
@@ -552,56 +510,51 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
                 continue;
             }
 
-            if !source.exists() {
-                println!("  {} {} (source not found)", "✗".red(), agent_name);
-                continue;
+            // Find embedded content
+            if let Some((_, content)) = EMBEDDED_SCUD_COMMANDS.iter().find(|(n, _)| *n == *agent_name) {
+                fs::write(&dest, content)?;
+                agents_added += 1;
+                println!("  {} {}", "✓".green(), agent_name.green());
+            } else {
+                println!("  {} {} (embedded content not found)", "✗".red(), agent_name);
             }
-
-            fs::copy(&source, &dest)?;
-            agents_added += 1;
-            println!("  {} {}", "✓".green(), agent_name.green());
         }
     }
 
-    // Add skills
+    // Add skills (using embedded content)
     if !skills_to_add.is_empty() {
-        if let Some(ref pkg_skills) = package_skills_dir {
-            println!("{}", "Skills:".blue().bold());
-            for skill_name in &skills_to_add {
-                let source = pkg_skills.join(skill_name);
-                let dest = skills_dir.join(skill_name);
+        println!("{}", "Skills:".blue().bold());
+        for skill_name in &skills_to_add {
+            let dest = skills_dir.join(skill_name);
+            let skill_file = dest.join("SKILL.md");
 
-                if dest.join("SKILL.md").exists() {
-                    skills_already_exist += 1;
-                    println!("  {} {} (already installed)", "·".yellow(), skill_name);
-                    continue;
-                }
+            if skill_file.exists() {
+                skills_already_exist += 1;
+                println!("  {} {} (already installed)", "·".yellow(), skill_name);
+                continue;
+            }
 
-                if !source.exists() || !source.join("SKILL.md").exists() {
-                    println!("  {} {} (source not found)", "✗".red(), skill_name);
-                    continue;
-                }
-
-                copy_dir_recursive(&source, &dest)?;
+            // Find embedded content
+            if let Some((_, content)) = EMBEDDED_SCUD_SKILLS.iter().find(|(n, _)| *n == *skill_name) {
+                fs::create_dir_all(&dest)?;
+                fs::write(&skill_file, content)?;
                 skills_added += 1;
                 println!("  {} {}", "✓".green(), skill_name.green());
 
                 // Also copy skill to OpenCode skills directory
                 let opencode_dest = opencode_skills_dir.join(skill_name);
-                if !opencode_dest.join("SKILL.md").exists() {
-                    fs::create_dir_all(&opencode_skills_dir)?;
-                    copy_dir_recursive(&source, &opencode_dest)?;
+                let opencode_skill_file = opencode_dest.join("SKILL.md");
+                if !opencode_skill_file.exists() {
+                    fs::create_dir_all(&opencode_dest)?;
+                    fs::write(&opencode_skill_file, content)?;
                 }
+            } else {
+                println!("  {} {} (embedded content not found)", "✗".red(), skill_name);
             }
-        } else if !skills_to_add.is_empty() {
-            println!(
-                "{}",
-                "Skills directory not found in package".yellow().dimmed()
-            );
         }
     }
 
-    // Add OpenCode integration (only when --all)
+    // Add OpenCode integration (only when --all) - using embedded SCUD commands
     if all {
         println!("{}", "OpenCode:".blue().bold());
 
@@ -610,58 +563,98 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
         fs::create_dir_all(&opencode_hook_dir)?;
         fs::create_dir_all(&opencode_tool_dir)?;
 
-        // Add commands
-        if let Some(ref pkg_cmd_dir) = package_opencode_cmd_dir {
-            for cmd in OPENCODE_COMMANDS {
-                let source = pkg_cmd_dir.join(format!("{}.md", cmd));
-                let dest = opencode_cmd_dir.join(format!("{}.md", cmd));
+        // Add commands (using embedded SCUD commands)
+        for cmd in OPENCODE_COMMANDS {
+            let dest = opencode_cmd_dir.join(format!("{}.md", cmd));
 
-                if dest.exists() {
-                    opencode_already_exist += 1;
-                    continue;
-                }
+            if dest.exists() {
+                opencode_already_exist += 1;
+                continue;
+            }
 
-                if source.exists() {
-                    fs::copy(&source, &dest)?;
-                    opencode_added += 1;
-                }
+            // Map OpenCode command names to embedded SCUD commands
+            let embedded_name = match *cmd {
+                "task-list" => "list",
+                "task-next" => "next",
+                "task-show" => "show",
+                "task-status" => "status",
+                "task-claim" => "status", // closest match
+                "task-release" => "status", // closest match
+                "task-waves" => "waves",
+                "task-stats" => "stats",
+                "task-whois" => "status", // closest match
+                "task-tags" => "status", // closest match
+                "task-doctor" => "status", // closest match
+                _ => continue,
+            };
+
+            if let Some((_, content)) = EMBEDDED_SCUD_COMMANDS.iter().find(|(n, _)| *n == embedded_name) {
+                fs::write(&dest, content)?;
+                opencode_added += 1;
             }
         }
 
-        // Add hooks
-        if let Some(ref pkg_hook_dir) = package_opencode_hook_dir {
-            for hook in OPENCODE_HOOKS {
-                let source = pkg_hook_dir.join(format!("{}.md", hook));
-                let dest = opencode_hook_dir.join(format!("{}.md", hook));
+        // Add hooks (simplified - just create empty hook files for now)
+        for hook in OPENCODE_HOOKS {
+            let dest = opencode_hook_dir.join(format!("{}.md", hook));
 
-                if dest.exists() {
-                    opencode_already_exist += 1;
-                    continue;
-                }
-
-                if source.exists() {
-                    fs::copy(&source, &dest)?;
-                    opencode_added += 1;
-                }
+            if dest.exists() {
+                opencode_already_exist += 1;
+                continue;
             }
+
+            // Create basic hook content
+            let hook_content = format!("# Session Start Hook\n\nThis hook runs when an OpenCode session starts.\n\n```bash\nscud warmup\n```");
+            fs::write(&dest, hook_content)?;
+            opencode_added += 1;
         }
 
-        // Add tools
-        if let Some(ref pkg_tool_dir) = package_opencode_tool_dir {
-            for tool in OPENCODE_TOOLS {
-                let source = pkg_tool_dir.join(format!("{}.json", tool));
-                let dest = opencode_tool_dir.join(format!("{}.json", tool));
+        // Add tools (create basic tool definitions)
+        for tool in OPENCODE_TOOLS {
+            let dest = opencode_tool_dir.join(format!("{}.json", tool));
 
-                if dest.exists() {
-                    opencode_already_exist += 1;
-                    continue;
-                }
-
-                if source.exists() {
-                    fs::copy(&source, &dest)?;
-                    opencode_added += 1;
-                }
+            if dest.exists() {
+                opencode_already_exist += 1;
+                continue;
             }
+
+            // Create basic tool definitions
+            let tool_content = match *tool {
+                "find_skills" => r#"{
+  "name": "find_skills",
+  "description": "Find available skills in the codebase",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query for skills"
+      }
+    }
+  }
+}"#,
+                "use_skill" => r#"{
+  "name": "use_skill",
+  "description": "Use a specific skill",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "skill_name": {
+        "type": "string",
+        "description": "Name of the skill to use"
+      },
+      "parameters": {
+        "type": "object",
+        "description": "Parameters for the skill"
+      }
+    }
+  }
+}"#,
+                _ => continue,
+            };
+
+            fs::write(&dest, tool_content)?;
+            opencode_added += 1;
         }
 
         if opencode_added > 0 {
