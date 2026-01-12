@@ -21,7 +21,7 @@ const EMBEDDED_SCUD_COMMANDS: &[(&str, &str)] = &[
 /// Embedded SCUD skill definitions
 /// Skills are stored in .claude/skills/<skill-name>/SKILL.md
 const EMBEDDED_SCUD_SKILLS: &[(&str, &str)] = &[
-    ("scud-tasks", include_str!("../../assets/skills/scud-tasks/SKILL.md")),
+    ("scud-tasks", include_str!("../../assets/skills/scud-tasks/SKILL.md")),\n    ("scud", include_str!("../../assets/skills/scud/SKILL.md")),
 ];
 
 /// SCUD agent definitions (legacy - keeping for compatibility)
@@ -60,10 +60,7 @@ const SCUD_AGENTS: &[(&str, &[&str], &str)] = &[
 /// Each skill is a directory containing SKILL.md and supporting files
 /// Skills are stored in .claude/skills/<skill-name>/
 const SCUD_SKILLS: &[(&str, &[&str], &str)] = &[(
-    "scud-tasks",
-    &["scud-tasks", "tasks"],
-    "Task management - view, update, claim, and track tasks",
-)];
+    "scud-tasks",\n    &["scud-tasks", "tasks"],\n    "Task management - view, update, claim, and track tasks",\n),\n    (\n        "scud",\n        &["scud", "guide"],\n        "SCUD CLI usage guide - list, waves, tags, next, log, etc",\n    )];
 
 /// SCUD task command definitions (Claude Code slash commands)
 /// These wrap the CLI for common task operations
