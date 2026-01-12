@@ -77,6 +77,28 @@ pub fn run(
         return Ok(());
     }
 
+    // Check for ID collisions when using --all-tags
+    if all_tags {
+        let collisions = detect_id_collisions(&actionable);
+        if !collisions.is_empty() {
+            println!(
+                "{}",
+                "Warning: ID collisions detected across tags!".yellow().bold()
+            );
+            println!("The following local IDs exist in multiple tags:");
+            for (local_id, tags) in &collisions {
+                println!("  {} -> {}", local_id.cyan(), tags.join(", ").dimmed());
+            }
+            println!();
+            println!(
+                "{}",
+                "Tasks will be shown with full namespaced IDs (tag:id) to avoid confusion."
+                    .dimmed()
+            );
+            println!();
+        }
+    }
+
     // Build dependency graph and compute waves
     let waves = compute_waves(&actionable, max_parallel);
 
@@ -275,4 +297,37 @@ fn compute_waves(tasks: &[&Task], _max_parallel: usize) -> Vec<Wave> {
     }
 
     waves
+}
+
+/// Detect ID collisions when merging tasks from multiple phases
+/// Returns a list of (local_id, Vec<tag>) for IDs that appear in multiple tags
+fn detect_id_collisions(tasks: &[&Task]) -> Vec<(String, Vec<String>)> {
+    let mut id_to_tags: HashMap<String, Vec<String>> = HashMap::new();
+
+    for task in tasks {
+        let local_id = task.local_id().to_string();
+        let tag = task.epic_tag().unwrap_or("unknown").to_string();
+
+        id_to_tags.entry(local_id).or_default().push(tag);
+    }
+
+    // Filter to only those with collisions (same local ID in multiple tags)
+    let mut collisions: Vec<(String, Vec<String>)> = id_to_tags
+        .into_iter()
+        .filter(|(_, tags)| {
+            // Dedupe tags and check if more than one unique tag
+            let mut unique_tags: Vec<_> = tags.iter().cloned().collect();
+            unique_tags.sort();
+            unique_tags.dedup();
+            unique_tags.len() > 1
+        })
+        .map(|(id, mut tags)| {
+            tags.sort();
+            tags.dedup();
+            (id, tags)
+        })
+        .collect();
+
+    collisions.sort_by(|a, b| a.0.cmp(&b.0));
+    collisions
 }

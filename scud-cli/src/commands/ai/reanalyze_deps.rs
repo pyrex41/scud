@@ -274,7 +274,7 @@ fn parse_task_id(task_id: &str) -> (String, String) {
         let local = task_id[colon_pos + 1..].to_string();
         (phase, local)
     } else {
-        // This shouldn't happen with our prompts, but handle gracefully
+        // No namespace - return empty tag
         (String::new(), task_id.to_string())
     }
 }

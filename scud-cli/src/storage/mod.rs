@@ -13,7 +13,7 @@ use crate::models::Phase;
 
 pub struct Storage {
     project_root: PathBuf,
-    /// Cache for active group to avoid repeated workflow state loads
+    /// Cache for active group to avoid repeated file reads
     /// Option<Option<String>> represents: None = not cached, Some(None) = no active group, Some(Some(tag)) = cached tag
     /// Uses RwLock for thread safety (useful for tests and potential daemon mode)
     active_group_cache: RwLock<Option<Option<String>>>,
@@ -346,7 +346,7 @@ impl Storage {
     }
 
     /// Clear the active group cache
-    /// Useful when workflow state is modified externally or for testing
+    /// Useful when active-tag file is modified externally or for testing
     pub fn clear_cache(&self) {
         *self.active_group_cache.write().unwrap() = None;
     }

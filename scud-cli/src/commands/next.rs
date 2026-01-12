@@ -45,20 +45,39 @@ pub fn find_next_available<'a>(
     NextTaskResult::Available(deps_met[0])
 }
 
-pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, spawn: bool) -> Result<()> {
+pub fn run(
+    project_root: Option<PathBuf>,
+    tag: Option<&str>,
+    spawn: bool,
+    all_tags: bool,
+) -> Result<()> {
     let storage = Storage::new(project_root);
-    let phase_tag = resolve_group_tag(&storage, tag, true)?;
-
-    // Standard next task behavior (read-only)
     let tasks = storage.load_tasks()?;
     let all_tasks_flat = flatten_all_tasks(&tasks);
-    let phase = tasks
-        .get(&phase_tag)
-        .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
 
+    if all_tags {
+        // Search across ALL phases for the next available task
+        run_all_tags(&tasks, &all_tasks_flat, spawn)
+    } else {
+        // Standard single-phase behavior
+        let phase_tag = resolve_group_tag(&storage, tag, true)?;
+        let phase = tasks
+            .get(&phase_tag)
+            .ok_or_else(|| anyhow::anyhow!("Phase '{}' not found", phase_tag))?;
+
+        run_single_phase(phase, &phase_tag, &all_tasks_flat, spawn)
+    }
+}
+
+fn run_single_phase(
+    phase: &crate::models::phase::Phase,
+    phase_tag: &str,
+    all_tasks_flat: &[&Task],
+    spawn: bool,
+) -> Result<()> {
     // Handle --spawn mode (machine-readable JSON output)
     if spawn {
-        match find_next_available(phase, &all_tasks_flat) {
+        match find_next_available(phase, all_tasks_flat) {
             NextTaskResult::Available(task) => {
                 let output = serde_json::json!({
                     "task_id": task.id,
@@ -75,7 +94,7 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, spawn: bool) -> Res
         return Ok(());
     }
 
-    match find_next_available(phase, &all_tasks_flat) {
+    match find_next_available(phase, all_tasks_flat) {
         NextTaskResult::Available(task) => {
             print_task_details(task);
             print_standard_instructions(&task.id);
@@ -91,6 +110,87 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, spawn: bool) -> Res
             );
             println!("Run: scud list --status pending");
             println!("Run: scud doctor  # to diagnose stuck states");
+        }
+    }
+
+    Ok(())
+}
+
+fn run_all_tags(
+    all_phases: &std::collections::HashMap<String, crate::models::phase::Phase>,
+    all_tasks_flat: &[&Task],
+    spawn: bool,
+) -> Result<()> {
+    // Collect pending tasks from ALL phases, filtering for actionable ones
+    let mut pending_tasks: Vec<(&Task, &str)> = Vec::new();
+
+    for (tag, phase) in all_phases {
+        for task in &phase.tasks {
+            // Only include pending, non-expanded tasks
+            if task.status == TaskStatus::Pending {
+                // If it's a subtask, only include if parent is expanded
+                if let Some(ref parent_id) = task.parent_id {
+                    let parent_expanded = phase
+                        .get_task(parent_id)
+                        .map(|p| p.is_expanded())
+                        .unwrap_or(false);
+                    if parent_expanded {
+                        pending_tasks.push((task, tag.as_str()));
+                    }
+                } else if !task.is_expanded() {
+                    // Top-level task that's not expanded
+                    pending_tasks.push((task, tag.as_str()));
+                }
+            }
+        }
+    }
+
+    // Find first task with all dependencies met (including cross-tag and inherited)
+    let available = pending_tasks
+        .iter()
+        .find(|(task, _)| task.has_dependencies_met_refs(all_tasks_flat));
+
+    if spawn {
+        match available {
+            Some((task, tag)) => {
+                let output = serde_json::json!({
+                    "task_id": task.id,
+                    "title": task.title,
+                    "tag": tag,
+                    "complexity": task.complexity,
+                });
+                println!("{}", serde_json::to_string(&output)?);
+            }
+            None => {
+                println!("null");
+            }
+        }
+        return Ok(());
+    }
+
+    match available {
+        Some((task, tag)) => {
+            println!(
+                "{} {}",
+                "Phase:".dimmed(),
+                tag.cyan()
+            );
+            print_task_details(task);
+            print_standard_instructions(&task.id);
+        }
+        None => {
+            if pending_tasks.is_empty() {
+                println!("{}", "All tasks completed or in progress!".green().bold());
+                println!("Run: scud list --status in-progress");
+            } else {
+                println!(
+                    "{}",
+                    "No available tasks - all pending tasks blocked by dependencies".yellow()
+                );
+                println!("Pending tasks exist in {} phase(s), but all are blocked.", pending_tasks.len());
+                println!("Run: scud waves --all-tags  # to see dependency graph");
+                println!("Run: scud doctor  # to diagnose stuck states");
+            }
         }
     }
 

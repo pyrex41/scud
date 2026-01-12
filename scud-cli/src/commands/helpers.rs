@@ -24,7 +24,7 @@ pub fn is_interactive() -> bool {
 ///
 /// Priority:
 /// 1. Explicit --tag argument
-/// 2. Active group (from workflow-state.json)
+/// 2. Active group (from .scud/active-tag)
 /// 3. Interactive selection (if TTY available)
 /// 4. Error with helpful message
 pub fn resolve_group_tag(

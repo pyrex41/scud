@@ -200,7 +200,7 @@ scud config set-provider xai --model grok-code-fast-1
 | Task too complex | `scud expand <id>` |
 | No API key | `export XAI_API_KEY=xai-...` |
 | Stale locks | `scud doctor --fix` |
-| Stuck workflow | `scud doctor` to diagnose |
+| Stuck tasks | `scud doctor` to diagnose |
 
 ---
 
