@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["SCUD Team"]
 description = "Fast, simple task master for AI-driven development"
 license = "MIT"
+include = ["src/**/*", "assets/**/*", "Cargo.toml", "README.md"]
 
 [lib]
 name = "scud"

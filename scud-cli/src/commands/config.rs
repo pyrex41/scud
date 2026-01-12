@@ -10,18 +10,18 @@ use crate::storage::Storage;
 /// Each command has a filename and content
 /// Commands are stored in .claude/commands/scud/<filename>.md
 const EMBEDDED_SCUD_COMMANDS: &[(&str, &str)] = &[
-    ("stats", include_str!("../../../.claude/commands/scud/stats.md")),
-    ("next", include_str!("../../../.claude/commands/scud/next.md")),
-    ("show", include_str!("../../../.claude/commands/scud/show.md")),
-    ("list", include_str!("../../../.claude/commands/scud/list.md")),
-    ("waves", include_str!("../../../.claude/commands/scud/waves.md")),
-    ("status", include_str!("../../../.claude/commands/scud/status.md")),
+    ("stats", include_str!("../../assets/commands/scud/stats.md")),
+    ("next", include_str!("../../assets/commands/scud/next.md")),
+    ("show", include_str!("../../assets/commands/scud/show.md")),
+    ("list", include_str!("../../assets/commands/scud/list.md")),
+    ("waves", include_str!("../../assets/commands/scud/waves.md")),
+    ("status", include_str!("../../assets/commands/scud/status.md")),
 ];
 
 /// Embedded SCUD skill definitions
 /// Skills are stored in .claude/skills/<skill-name>/SKILL.md
 const EMBEDDED_SCUD_SKILLS: &[(&str, &str)] = &[
-    ("scud-tasks", include_str!("../../../.claude/skills/scud-tasks/SKILL.md")),
+    ("scud-tasks", include_str!("../../assets/skills/scud-tasks/SKILL.md")),
 ];
 
 /// SCUD agent definitions (legacy - keeping for compatibility)
