@@ -234,6 +234,8 @@ mod tests {
         assert_eq!(config.api_key_env_var(), "OPENAI_API_KEY");
 
         config.llm.provider = "claude-cli".to_string();
+        config.llm.smart_provider = "claude-cli".to_string();
+        config.llm.fast_provider = "claude-cli".to_string();
         assert!(!config.requires_api_key());
     }
 
