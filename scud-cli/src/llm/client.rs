@@ -108,6 +108,20 @@ impl LLMClient {
         self.complete_with_model(prompt, None).await
     }
 
+    /// Complete using the smart model (for validation/analysis tasks with large context)
+    /// Use user override if provided, otherwise fall back to configured smart_model
+    pub async fn complete_smart(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+        let model = model_override.unwrap_or(self.config.smart_model());
+        self.complete_with_model(prompt, Some(model)).await
+    }
+
+    /// Complete using the fast model (for generation tasks)
+    /// Use user override if provided, otherwise fall back to configured fast_model
+    pub async fn complete_fast(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+        let model = model_override.unwrap_or(self.config.fast_model());
+        self.complete_with_model(prompt, Some(model)).await
+    }
+
     pub async fn complete_with_model(
         &self,
         prompt: &str,
@@ -115,6 +129,7 @@ impl LLMClient {
     ) -> Result<String> {
         match self.config.llm.provider.as_str() {
             "claude-cli" => self.complete_claude_cli(prompt, model_override).await,
+            "codex" => self.complete_codex_cli(prompt, model_override).await,
             "anthropic" => {
                 self.complete_anthropic_with_model(prompt, model_override)
                     .await
@@ -233,10 +248,45 @@ impl LLMClient {
     where
         T: serde::de::DeserializeOwned,
     {
-        let response_text = self.complete(prompt).await?;
+        self.complete_json_with_model(prompt, None).await
+    }
 
+    /// Complete JSON using the smart model (for validation/analysis tasks)
+    pub async fn complete_json_smart<T>(&self, prompt: &str, model_override: Option<&str>) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response_text = self.complete_smart(prompt, model_override).await?;
+        Self::parse_json_response(&response_text)
+    }
+
+    /// Complete JSON using the fast model (for generation tasks)
+    pub async fn complete_json_fast<T>(&self, prompt: &str, model_override: Option<&str>) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response_text = self.complete_fast(prompt, model_override).await?;
+        Self::parse_json_response(&response_text)
+    }
+
+    pub async fn complete_json_with_model<T>(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let response_text = self.complete_with_model(prompt, model_override).await?;
+        Self::parse_json_response(&response_text)
+    }
+
+    fn parse_json_response<T>(response_text: &str) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
         // Try to find JSON in the response (LLM might include markdown or explanations)
-        let json_str = Self::extract_json(&response_text);
+        let json_str = Self::extract_json(response_text);
 
         serde_json::from_str(json_str).with_context(|| {
             // Provide helpful error context
@@ -352,6 +402,68 @@ impl LLMClient {
 
         let response: ClaudeCliResponse =
             serde_json::from_str(&stdout).context("Failed to parse Claude CLI JSON response")?;
+
+        Ok(response.result)
+    }
+
+    async fn complete_codex_cli(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
+        use std::process::Stdio;
+        use tokio::io::AsyncWriteExt;
+        use tokio::process::Command;
+
+        let model = model_override.unwrap_or(&self.config.llm.model);
+
+        // Build the codex command
+        // Codex CLI uses similar headless mode to Claude Code
+        let mut cmd = Command::new("codex");
+        cmd.arg("-p") // Prompt mode (headless/non-interactive)
+            .arg("--model")
+            .arg(model)
+            .arg("--output-format")
+            .arg("json")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // Spawn the process
+        let mut child = cmd.spawn().context("Failed to spawn 'codex' command. Make sure OpenAI Codex CLI is installed and 'codex' is in your PATH")?;
+
+        // Write prompt to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(prompt.as_bytes())
+                .await
+                .context("Failed to write prompt to codex stdin")?;
+            drop(stdin); // Close stdin
+        }
+
+        // Wait for completion
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for codex command")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Codex CLI error: {}", stderr);
+        }
+
+        // Parse JSON output
+        let stdout =
+            String::from_utf8(output.stdout).context("Codex CLI output is not valid UTF-8")?;
+
+        // Codex outputs JSON with a result field similar to Claude CLI
+        #[derive(Deserialize)]
+        struct CodexCliResponse {
+            result: String,
+        }
+
+        let response: CodexCliResponse =
+            serde_json::from_str(&stdout).context("Failed to parse Codex CLI JSON response")?;
 
         Ok(response.result)
     }

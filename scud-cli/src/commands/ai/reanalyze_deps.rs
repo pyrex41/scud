@@ -23,6 +23,7 @@ pub async fn run(
     all_tags: bool,
     apply: bool,
     dry_run: bool,
+    model: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -80,9 +81,9 @@ pub async fn run(
     ));
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    // Generate analysis prompt and call LLM
+    // Generate analysis prompt and call LLM (use smart model for analysis tasks)
     let prompt = Prompts::reanalyze_dependencies(&task_context, &phases_to_analyze);
-    let suggestions: Vec<DependencySuggestion> = client.complete_json(&prompt).await?;
+    let suggestions: Vec<DependencySuggestion> = client.complete_json_smart(&prompt, model).await?;
 
     spinner.finish_and_clear();
 
