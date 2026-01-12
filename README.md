@@ -14,18 +14,25 @@ A fast, AI-powered task management system. Parse PRDs into tasks, track dependen
 
 ### Install
 
-**Using pnpm (recommended):**
+**Pure Rust CLI (no npm required):**
 ```bash
-pnpm add -g scud-task
-cd your-project
-scud init
+# Clone the repository
+git clone https://github.com/pyrex41/scud.git
+cd scud
+
+# Build the CLI
+cargo build --release
+
+# Install globally (optional)
+./target/release/scud install
+
+# Or use directly
+./target/release/scud init
 ```
 
-**Using npm:**
+**Quick install script:**
 ```bash
-npm install -g scud-task
-cd your-project
-scud init
+curl -fsSL https://raw.githubusercontent.com/pyrex41/scud/main/install.sh | bash
 ```
 
 ### Basic Usage
@@ -90,10 +97,11 @@ Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each
 
 ## Key Features
 
-### Fast Rust CLI
+### Pure Rust CLI
 - **50x faster** than JavaScript alternatives
 - **42x fewer tokens** (500 vs 21k)
-- **Single binary** - no dependencies
+- **Single binary** - zero runtime dependencies
+- **Self-contained** - embedded assets, no external files
 
 ### DAG-Driven Execution
 - **Dependency graphs** - tasks ready when deps complete
@@ -247,7 +255,7 @@ See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns
 
 ## Requirements
 
-- **Node.js 16+** (for pnpm/npm package wrapper)
+- **Rust toolchain** (for building from source)
 - **xAI API key** (for AI features only; core commands work offline)
 
 ```bash
@@ -300,8 +308,11 @@ All `.md` files in this folder are automatically loaded when running `scud parse
 cd scud-cli
 cargo build --release
 
-# The binary will be at:
-# scud-cli/target/release/scud
+# Install globally
+./target/release/scud install
+
+# Or use directly from build directory
+./target/release/scud init
 ```
 
 ---
