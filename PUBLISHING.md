@@ -16,6 +16,15 @@ SCUD uses GitHub Actions for automatic publishing to [crates.io](https://crates.
    - Add a new repository secret named `CARGO_REGISTRY_TOKEN`
    - Paste your crates.io API token as the value
 
+## ⚠️ IMPORTANT: Secret Setup Required
+
+**The CI/CD will fail if `CARGO_REGISTRY_TOKEN` is not configured!**
+
+To check if the secret is set:
+- Go to: `https://github.com/[username]/[repo]/settings/secrets/actions`
+- Look for `CARGO_REGISTRY_TOKEN`
+- If missing, add it as described above
+
 ## Publishing Process
 
 1. **Update version in `scud-cli/Cargo.toml`:**
@@ -40,14 +49,31 @@ SCUD uses GitHub Actions for automatic publishing to [crates.io](https://crates.
    - Build and test the crate
    - Publish to crates.io
 
-## Manual Publishing (if needed)
+## Manual Publishing (Fallback)
 
-If you need to publish manually:
+If CI/CD fails or you need to publish manually:
 
 ```bash
 cd scud-cli
 cargo publish --token YOUR_API_TOKEN
 ```
+
+## Checking CI/CD Status
+
+To see if the workflow ran:
+
+1. **Go to GitHub Actions:**
+   - Visit: `https://github.com/[username]/[repo]/actions`
+   - Look for workflow runs on tags
+
+2. **Check workflow logs:**
+   - Click on the failed/successful run
+   - Review the "Publish to crates.io" job logs
+
+3. **Common issues:**
+   - ❌ `CARGO_REGISTRY_TOKEN` secret not set → **Add the secret**
+   - ❌ Version mismatch → **Ensure tag matches Cargo.toml**
+   - ❌ Build/test failures → **Fix issues locally first**
 
 ## Version Format
 
