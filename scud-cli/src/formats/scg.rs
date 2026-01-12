@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 
-use crate::models::{Phase, Priority, Task, TaskStatus};
+use crate::models::{IdFormat, Phase, Priority, Task, TaskStatus};
 
 const FORMAT_VERSION: &str = "v1";
 const HEADER_PREFIX: &str = "# SCUD Graph";
@@ -203,9 +203,18 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
                 // Parse "key value" pairs
                 if let Some((key, value)) = trimmed.split_once(char::is_whitespace) {
                     let value = value.trim();
-                    // Meta fields are informational, phase name is already set
-                    if key == "name" && phase.name != value {
-                        phase = Phase::new(value.to_string());
+                    match key {
+                        "name" => {
+                            if phase.name != value {
+                                phase = Phase::new(value.to_string());
+                            }
+                        }
+                        "id_format" => {
+                            phase.id_format = IdFormat::parse(value);
+                        }
+                        _ => {
+                            // Ignore other meta fields (e.g., "updated")
+                        }
                     }
                 }
             }
@@ -340,26 +349,38 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
     Ok(phase)
 }
 
-/// Natural sort for task IDs: "1" < "2" < "10", "1.1" < "1.2" < "1.10"
-fn natural_sort_ids(a: &str, b: &str) -> std::cmp::Ordering {
-    let a_parts: Vec<&str> = a.split('.').collect();
-    let b_parts: Vec<&str> = b.split('.').collect();
+/// Natural sort for task IDs with UUID fallback
+/// Numeric IDs: "1" < "2" < "10", "1.1" < "1.2" < "1.10"
+/// UUIDs: Lexicographic comparison
+pub fn natural_sort_ids(a: &str, b: &str) -> std::cmp::Ordering {
+    // Check if both look like numeric IDs (contain only digits and dots)
+    let a_is_numeric = a.chars().all(|c| c.is_ascii_digit() || c == '.');
+    let b_is_numeric = b.chars().all(|c| c.is_ascii_digit() || c == '.');
 
-    for (ap, bp) in a_parts.iter().zip(b_parts.iter()) {
-        match (ap.parse::<u32>(), bp.parse::<u32>()) {
-            (Ok(an), Ok(bn)) => {
-                if an != bn {
-                    return an.cmp(&bn);
+    if a_is_numeric && b_is_numeric {
+        // Existing numeric sort logic
+        let a_parts: Vec<&str> = a.split('.').collect();
+        let b_parts: Vec<&str> = b.split('.').collect();
+
+        for (ap, bp) in a_parts.iter().zip(b_parts.iter()) {
+            match (ap.parse::<u32>(), bp.parse::<u32>()) {
+                (Ok(an), Ok(bn)) => {
+                    if an != bn {
+                        return an.cmp(&bn);
+                    }
                 }
-            }
-            _ => {
-                if ap != bp {
-                    return ap.cmp(bp);
+                _ => {
+                    if ap != bp {
+                        return ap.cmp(bp);
+                    }
                 }
             }
         }
+        a_parts.len().cmp(&b_parts.len())
+    } else {
+        // UUID or mixed: fall back to lexicographic
+        a.cmp(b)
     }
-    a_parts.len().cmp(&b_parts.len())
 }
 
 /// Helper to flush current detail
@@ -391,6 +412,7 @@ pub fn serialize_scg(phase: &Phase) -> String {
     let now = chrono::Utc::now().to_rfc3339();
     output.push_str("@meta {\n");
     output.push_str(&format!("  name {}\n", phase.name));
+    output.push_str(&format!("  id_format {}\n", phase.id_format.as_str()));
     output.push_str(&format!("  updated {}\n", now));
     output.push_str("}\n\n");
 
@@ -531,6 +553,47 @@ mod tests {
         assert_eq!(escape_text("line1\nline2"), "line1\\nline2");
         assert_eq!(unescape_text("hello\\|world"), "hello|world");
         assert_eq!(unescape_text("line1\\nline2"), "line1\nline2");
+    }
+
+    #[test]
+    fn test_id_format_round_trip() {
+        use crate::models::IdFormat;
+
+        // Test UUID format persists through SCG round-trip
+        let mut phase = Phase::new("uuid-phase".to_string());
+        phase.id_format = IdFormat::Uuid;
+
+        let task = Task::new(
+            "a1b2c3d4e5f6789012345678901234ab".to_string(),
+            "UUID Task".to_string(),
+            "Description".to_string(),
+        );
+        phase.add_task(task);
+
+        let scg = serialize_scg(&phase);
+        let parsed = parse_scg(&scg).unwrap();
+
+        assert_eq!(parsed.id_format, IdFormat::Uuid);
+        assert_eq!(parsed.name, "uuid-phase");
+    }
+
+    #[test]
+    fn test_id_format_default_sequential() {
+        // Test that phases without id_format default to Sequential
+        let content = r#"# SCUD Graph v1
+# Phase: old-phase
+
+@meta {
+  name old-phase
+  updated 2025-01-01T00:00:00Z
+}
+
+@nodes
+# id | title | status | complexity | priority
+1 | Task | P | 0 | M
+"#;
+        let phase = parse_scg(content).unwrap();
+        assert_eq!(phase.id_format, IdFormat::Sequential);
     }
 
     #[test]
@@ -693,6 +756,38 @@ mod tests {
 
         let ids: Vec<&str> = parsed.tasks.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, vec!["1", "1.1", "1.2", "1.10", "2", "10"]);
+    }
+
+    #[test]
+    fn test_natural_sort_uuids() {
+        // Test UUID sorting falls back to lexicographic
+        use super::natural_sort_ids;
+
+        // UUIDs should sort lexicographically
+        let uuid_a = "a1b2c3d4e5f6789012345678901234ab";
+        let uuid_b = "b1b2c3d4e5f6789012345678901234ab";
+        let uuid_c = "c1b2c3d4e5f6789012345678901234ab";
+
+        assert_eq!(natural_sort_ids(uuid_a, uuid_b), std::cmp::Ordering::Less);
+        assert_eq!(natural_sort_ids(uuid_b, uuid_c), std::cmp::Ordering::Less);
+        assert_eq!(natural_sort_ids(uuid_a, uuid_a), std::cmp::Ordering::Equal);
+
+        // Mixed UUIDs should also sort lexicographically
+        let mut ids = vec![uuid_c, uuid_a, uuid_b];
+        ids.sort_by(|a, b| natural_sort_ids(a, b));
+        assert_eq!(ids, vec![uuid_a, uuid_b, uuid_c]);
+    }
+
+    #[test]
+    fn test_natural_sort_mixed_numeric_uuid() {
+        // When mixing numeric and UUID IDs, fall back to lexicographic
+        use super::natural_sort_ids;
+
+        let numeric = "123";
+        let uuid = "a1b2c3d4e5f6789012345678901234ab";
+
+        // "123" < "a1b2..." lexicographically
+        assert_eq!(natural_sort_ids(numeric, uuid), std::cmp::Ordering::Less);
     }
 
     #[test]

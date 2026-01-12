@@ -194,6 +194,14 @@ enum Commands {
         /// Skip loading guidance from .scud/guidance/
         #[arg(long)]
         no_guidance: bool,
+
+        /// Task ID format: sequential (default) or uuid
+        #[arg(long, default_value = "sequential")]
+        id_format: String,
+
+        /// Model to use for task generation (overrides config)
+        #[arg(long)]
+        model: Option<String>,
     },
 
     /// Clear all tasks (with confirmation)
@@ -216,6 +224,10 @@ enum Commands {
         /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
+
+        /// Model to use for complexity analysis (overrides config)
+        #[arg(long)]
+        model: Option<String>,
     },
 
     /// Expand complex task into subtasks (AI-powered)
@@ -235,6 +247,10 @@ enum Commands {
         /// Skip loading guidance from .scud/guidance/
         #[arg(long)]
         no_guidance: bool,
+
+        /// Model to use for subtask generation (overrides config)
+        #[arg(long)]
+        model: Option<String>,
     },
 
     /// Re-analyze and suggest cross-tag dependencies (AI-powered)
@@ -254,6 +270,10 @@ enum Commands {
         /// Show suggestions without applying
         #[arg(long)]
         dry_run: bool,
+
+        /// Model to use for dependency analysis (overrides config)
+        #[arg(long)]
+        model: Option<String>,
     },
 
     // Task Assignment commands
@@ -320,6 +340,44 @@ enum Commands {
         /// Attempt auto-fix for recoverable issues
         #[arg(long)]
         fix: bool,
+    },
+
+    /// Check dependency validity and optionally validate against PRD
+    CheckDeps {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Check across all phases
+        #[arg(long)]
+        all_tags: bool,
+
+        /// Path to PRD file to validate task coverage (AI-powered)
+        #[arg(long)]
+        prd: Option<PathBuf>,
+
+        /// Model to use for PRD validation (overrides config)
+        #[arg(long)]
+        model: Option<String>,
+    },
+
+    /// Fix dependency issues automatically (AI-powered)
+    FixDeps {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Fix across all phases
+        #[arg(long)]
+        all_tags: bool,
+
+        /// Show what would be fixed without making changes
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Model to use for dependency analysis (overrides config)
+        #[arg(long)]
+        model: Option<String>,
     },
 
     /// Generate Mermaid diagram of task graph
@@ -479,22 +537,25 @@ async fn main() -> Result<()> {
             num_tasks,
             append,
             no_guidance,
-        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append, no_guidance).await,
+            id_format,
+            model,
+        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append, no_guidance, &id_format, model.as_deref()).await,
         Commands::Clean { force, tag } => commands::clean::run(cli.project, force, tag.as_deref()),
-        Commands::AnalyzeComplexity { task, tag } => {
-            commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref())
+        Commands::AnalyzeComplexity { task, tag, model } => {
+            commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref(), model.as_deref())
                 .await
         }
-        Commands::Expand { task, all, tag, no_guidance } => {
-            commands::ai::expand::run(cli.project, task.as_deref(), all, tag.as_deref(), no_guidance).await
+        Commands::Expand { task, all, tag, no_guidance, model } => {
+            commands::ai::expand::run(cli.project, task.as_deref(), all, tag.as_deref(), no_guidance, model.as_deref()).await
         }
         Commands::ReanalyzeDeps {
             tag,
             all_tags,
             apply,
             dry_run,
+            model,
         } => {
-            commands::ai::reanalyze_deps::run(cli.project, tag.as_deref(), all_tags, apply, dry_run)
+            commands::ai::reanalyze_deps::run(cli.project, tag.as_deref(), all_tags, apply, dry_run, model.as_deref())
                 .await
         }
         Commands::Assign {
@@ -514,6 +575,12 @@ async fn main() -> Result<()> {
             stale_hours,
             fix,
         } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
+        Commands::CheckDeps { tag, all_tags, prd, model } => {
+            commands::check_deps::run(cli.project, tag.as_deref(), all_tags, prd.as_deref(), model.as_deref()).await
+        }
+        Commands::FixDeps { tag, all_tags, dry_run, model } => {
+            commands::fix_deps::run(cli.project, tag.as_deref(), all_tags, dry_run, model.as_deref()).await
+        }
         Commands::Mermaid { tag, all_tags } => {
             commands::mermaid::run(cli.project, tag.as_deref(), all_tags)
         }

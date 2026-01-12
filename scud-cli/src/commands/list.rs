@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::commands::helpers::resolve_group_tag;
-use crate::formats::serialize_scg;
+use crate::formats::{natural_sort_ids, serialize_scg};
 use crate::models::{Phase, Priority, TaskStatus};
 use crate::storage::Storage;
 
@@ -31,6 +31,16 @@ fn format_priority(priority: &Priority) -> String {
     }
 }
 
+/// Truncate long task IDs for display (e.g., UUIDs)
+/// Shows first 8 chars with "..." for IDs longer than 12 chars
+fn format_task_id(id: &str) -> String {
+    if id.len() > 12 {
+        format!("{}...", &id[..8])
+    } else {
+        id.to_string()
+    }
+}
+
 /// Print human-readable task list
 fn print_human_readable(phase: &Phase, phase_tag: &str) {
     println!("{} {}\n", "Phase:".blue().bold(), phase_tag.cyan());
@@ -40,9 +50,9 @@ fn print_human_readable(phase: &Phase, phase_tag: &str) {
         return;
     }
 
-    // Header
+    // Header - use 11 char width for ID column to fit "8chars..." format
     println!(
-        "{:>4}  {:<8} {:<40} {:<14} {:>4}  {}",
+        "{:>4}  {:<11} {:<38} {:<14} {:>4}  {}",
         "#".dimmed(),
         "ID".dimmed(),
         "Title".dimmed(),
@@ -50,23 +60,23 @@ fn print_human_readable(phase: &Phase, phase_tag: &str) {
         "Cplx".dimmed(),
         "Pri".dimmed()
     );
-    println!("{}", "─".repeat(80).dimmed());
+    println!("{}", "─".repeat(82).dimmed());
 
     // Sort tasks by ID for display
     let mut sorted_tasks = phase.tasks.clone();
     sorted_tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
 
     for (idx, task) in sorted_tasks.iter().enumerate() {
-        let title = if task.title.len() > 38 {
-            format!("{}...", &task.title[..35])
+        let title = if task.title.len() > 36 {
+            format!("{}...", &task.title[..33])
         } else {
             task.title.clone()
         };
 
         println!(
-            "{:>4}  {:<8} {:<40} {:<14} {:>4}  {}",
+            "{:>4}  {:<11} {:<38} {:<14} {:>4}  {}",
             (idx + 1).to_string().dimmed(),
-            task.id.cyan(),
+            format_task_id(&task.id).cyan(),
             title,
             format_status(&task.status),
             task.complexity,
@@ -76,28 +86,6 @@ fn print_human_readable(phase: &Phase, phase_tag: &str) {
 
     println!();
     println!("{} {} tasks", "Total:".dimmed(), phase.tasks.len());
-}
-
-/// Natural sort for task IDs
-fn natural_sort_ids(a: &str, b: &str) -> std::cmp::Ordering {
-    let a_parts: Vec<&str> = a.split('.').collect();
-    let b_parts: Vec<&str> = b.split('.').collect();
-
-    for (ap, bp) in a_parts.iter().zip(b_parts.iter()) {
-        match (ap.parse::<u32>(), bp.parse::<u32>()) {
-            (Ok(an), Ok(bn)) => {
-                if an != bn {
-                    return an.cmp(&bn);
-                }
-            }
-            _ => {
-                if ap != bp {
-                    return ap.cmp(bp);
-                }
-            }
-        }
-    }
-    a_parts.len().cmp(&b_parts.len())
 }
 
 pub fn run(

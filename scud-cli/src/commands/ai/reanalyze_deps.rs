@@ -23,6 +23,7 @@ pub async fn run(
     all_tags: bool,
     apply: bool,
     dry_run: bool,
+    model: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -80,9 +81,9 @@ pub async fn run(
     ));
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    // Generate analysis prompt and call LLM
+    // Generate analysis prompt and call LLM (use smart model for analysis tasks)
     let prompt = Prompts::reanalyze_dependencies(&task_context, &phases_to_analyze);
-    let suggestions: Vec<DependencySuggestion> = client.complete_json(&prompt).await?;
+    let suggestions: Vec<DependencySuggestion> = client.complete_json_smart(&prompt, model).await?;
 
     spinner.finish_and_clear();
 
@@ -265,12 +266,13 @@ fn apply_suggestions(
 /// Parse a task ID into (phase_tag, local_id)
 /// Examples:
 ///   "auth:1" -> ("auth", "1")
-///   "1" -> ("", "1")
+///   "main:9.1" -> ("main", "9.1")
+///   "1" -> ("", "1")  -- no phase prefix
 fn parse_task_id(task_id: &str) -> (String, String) {
     if let Some(colon_pos) = task_id.find(':') {
         let phase = task_id[..colon_pos].to_string();
-        let local_id = task_id[colon_pos + 1..].to_string();
-        (phase, local_id)
+        let local = task_id[colon_pos + 1..].to_string();
+        (phase, local)
     } else {
         // No namespace - return empty tag
         (String::new(), task_id.to_string())
@@ -287,6 +289,20 @@ mod tests {
         let (phase, local) = parse_task_id("auth:1");
         assert_eq!(phase, "auth");
         assert_eq!(local, "1");
+    }
+
+    #[test]
+    fn test_parse_task_id_with_subtask() {
+        let (phase, local) = parse_task_id("main:9.1");
+        assert_eq!(phase, "main");
+        assert_eq!(local, "9.1");
+    }
+
+    #[test]
+    fn test_parse_task_id_with_nested_subtask() {
+        let (phase, local) = parse_task_id("api:2.3.1");
+        assert_eq!(phase, "api");
+        assert_eq!(local, "2.3.1");
     }
 
     #[test]

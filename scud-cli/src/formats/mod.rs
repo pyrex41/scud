@@ -5,7 +5,7 @@
 
 mod scg;
 
-pub use scg::{parse_scg, serialize_scg};
+pub use scg::{natural_sort_ids, parse_scg, serialize_scg};
 
 /// Supported file formats
 #[derive(Debug, Clone, Copy, PartialEq)]
