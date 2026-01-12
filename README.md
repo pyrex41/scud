@@ -14,7 +14,13 @@ A fast, AI-powered task management system. Parse PRDs into tasks, track dependen
 
 ### Install
 
-**Pure Rust CLI (no npm required):**
+**From crates.io (recommended):**
+```bash
+cargo install scud-cli
+scud init
+```
+
+**From source:**
 ```bash
 # Clone the repository
 git clone https://github.com/pyrex41/scud.git
@@ -314,6 +320,8 @@ cargo build --release
 # Or use directly from build directory
 ./target/release/scud init
 ```
+
+**Publishing:** See [PUBLISHING.md](PUBLISHING.md) for CI/CD setup and release process.
 
 ---
 
