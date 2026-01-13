@@ -30,5 +30,5 @@ pub mod whois;
 // Parallel execution
 pub mod spawn;
 
-// Ralph Wiggum mode (wave-based execution with review)
-pub mod ralph;
+// Swarm mode (wave-based parallel execution with backpressure)
+pub mod swarm;

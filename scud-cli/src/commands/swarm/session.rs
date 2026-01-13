@@ -1,17 +1,59 @@
-//! Ralph session state tracking
+//! Swarm session state tracking
 //!
-//! Tracks the state of a Ralph Wiggum execution session, including:
+//! Tracks the state of a swarm execution session, including:
 //! - Waves executed
 //! - Rounds within waves
 //! - Task completion status
-//! - Review results
+//! - Validation results
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use super::review::ReviewResult;
+use super::backpressure::ValidationResult;
+
+/// Brief summary of what was done in a wave
+/// This is NOT accumulated context - just a simple summary for the next wave
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WaveSummary {
+    /// Wave number
+    pub wave_number: usize,
+    /// Tasks that were completed
+    pub tasks_completed: Vec<String>,
+    /// Files that were changed
+    pub files_changed: Vec<String>,
+}
+
+impl WaveSummary {
+    /// Generate a brief text summary
+    pub fn to_text(&self) -> String {
+        let mut lines = Vec::new();
+
+        lines.push(format!("Wave {} completed {} task(s):",
+            self.wave_number,
+            self.tasks_completed.len()
+        ));
+
+        for task_id in &self.tasks_completed {
+            lines.push(format!("  - {}", task_id));
+        }
+
+        if !self.files_changed.is_empty() {
+            let file_summary = if self.files_changed.len() <= 5 {
+                self.files_changed.join(", ")
+            } else {
+                format!("{} and {} more",
+                    self.files_changed[..5].join(", "),
+                    self.files_changed.len() - 5
+                )
+            };
+            lines.push(format!("Files changed: {}", file_summary));
+        }
+
+        lines.join("\n")
+    }
+}
 
 /// State of a single round within a wave
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +96,10 @@ pub struct WaveState {
     pub wave_number: usize,
     /// Rounds executed in this wave
     pub rounds: Vec<RoundState>,
+    /// Validation result (if validation was run)
+    pub validation: Option<ValidationResult>,
+    /// Summary of what was done
+    pub summary: Option<WaveSummary>,
     /// Start time
     pub started_at: String,
     /// End time (set when complete)
@@ -65,6 +111,8 @@ impl WaveState {
         Self {
             wave_number,
             rounds: Vec::new(),
+            validation: None,
+            summary: None,
             started_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
         }
@@ -96,9 +144,9 @@ impl WaveState {
     }
 }
 
-/// Full Ralph session state
+/// Full swarm session state
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RalphSession {
+pub struct SwarmSession {
     /// Session name
     pub session_name: String,
     /// Tag being executed
@@ -109,26 +157,21 @@ pub struct RalphSession {
     pub working_dir: String,
     /// Round size (max tasks per round)
     pub round_size: usize,
-    /// Whether review mode is enabled
-    pub review_enabled: bool,
     /// Waves executed
     pub waves: Vec<WaveState>,
-    /// Review results (one per wave when review_enabled)
-    pub reviews: Vec<ReviewResult>,
     /// Session start time
     pub started_at: String,
     /// Session end time
     pub completed_at: Option<String>,
 }
 
-impl RalphSession {
+impl SwarmSession {
     pub fn new(
         session_name: &str,
         tag: &str,
         terminal: &str,
         working_dir: &str,
         round_size: usize,
-        review_enabled: bool,
     ) -> Self {
         Self {
             session_name: session_name.to_string(),
@@ -136,9 +179,7 @@ impl RalphSession {
             terminal: terminal.to_string(),
             working_dir: working_dir.to_string(),
             round_size,
-            review_enabled,
             waves: Vec::new(),
-            reviews: Vec::new(),
             started_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
         }
@@ -165,24 +206,32 @@ impl RalphSession {
             .map(|r| r.failures.len())
             .sum()
     }
+
+    /// Get brief summary of the previous wave (if any)
+    /// This is just "what was done", not accumulated context
+    pub fn get_previous_summary(&self) -> Option<String> {
+        self.waves.last().and_then(|w| {
+            w.summary.as_ref().map(|s| s.to_text())
+        })
+    }
 }
 
-/// Get the ralph session directory
-pub fn ralph_dir(project_root: Option<&PathBuf>) -> PathBuf {
+/// Get the swarm session directory
+pub fn swarm_dir(project_root: Option<&PathBuf>) -> PathBuf {
     let root = project_root
         .cloned()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    root.join(".scud").join("ralph")
+    root.join(".scud").join("swarm")
 }
 
 /// Get the path to a session's state file
 pub fn session_file(project_root: Option<&PathBuf>, session_name: &str) -> PathBuf {
-    ralph_dir(project_root).join(format!("{}.json", session_name))
+    swarm_dir(project_root).join(format!("{}.json", session_name))
 }
 
-/// Save ralph session state
-pub fn save_session(project_root: Option<&PathBuf>, session: &RalphSession) -> Result<()> {
-    let dir = ralph_dir(project_root);
+/// Save swarm session state
+pub fn save_session(project_root: Option<&PathBuf>, session: &SwarmSession) -> Result<()> {
+    let dir = swarm_dir(project_root);
     fs::create_dir_all(&dir)?;
 
     let file = session_file(project_root, &session.session_name);
@@ -192,17 +241,17 @@ pub fn save_session(project_root: Option<&PathBuf>, session: &RalphSession) -> R
     Ok(())
 }
 
-/// Load ralph session state
-pub fn load_session(project_root: Option<&PathBuf>, session_name: &str) -> Result<RalphSession> {
+/// Load swarm session state
+pub fn load_session(project_root: Option<&PathBuf>, session_name: &str) -> Result<SwarmSession> {
     let file = session_file(project_root, session_name);
     let json = fs::read_to_string(&file)?;
-    let session: RalphSession = serde_json::from_str(&json)?;
+    let session: SwarmSession = serde_json::from_str(&json)?;
     Ok(session)
 }
 
-/// List all ralph sessions
+/// List all swarm sessions
 pub fn list_sessions(project_root: Option<&PathBuf>) -> Result<Vec<String>> {
-    let dir = ralph_dir(project_root);
+    let dir = swarm_dir(project_root);
     if !dir.exists() {
         return Ok(Vec::new());
     }
@@ -213,11 +262,7 @@ pub fn list_sessions(project_root: Option<&PathBuf>) -> Result<Vec<String>> {
         let path = entry.path();
         if path.extension().map(|e| e == "json").unwrap_or(false) {
             if let Some(stem) = path.file_stem() {
-                let name = stem.to_string_lossy().to_string();
-                // Exclude handoff files
-                if !name.ends_with("-handoff") {
-                    sessions.push(name);
-                }
+                sessions.push(stem.to_string_lossy().to_string());
             }
         }
     }
@@ -258,14 +303,13 @@ mod tests {
     }
 
     #[test]
-    fn test_ralph_session_total_tasks() {
-        let mut session = RalphSession::new(
+    fn test_swarm_session_total_tasks() {
+        let mut session = SwarmSession::new(
             "test-session",
             "test-tag",
             "tmux",
             "/test/path",
             5,
-            true,
         );
 
         let mut wave = WaveState::new(1);
@@ -275,5 +319,40 @@ mod tests {
         session.waves.push(wave);
 
         assert_eq!(session.total_tasks(), 2);
+    }
+
+    #[test]
+    fn test_wave_summary_to_text() {
+        let summary = WaveSummary {
+            wave_number: 1,
+            tasks_completed: vec!["task:1".to_string(), "task:2".to_string()],
+            files_changed: vec!["src/main.rs".to_string()],
+        };
+
+        let text = summary.to_text();
+        assert!(text.contains("Wave 1"));
+        assert!(text.contains("task:1"));
+        assert!(text.contains("src/main.rs"));
+    }
+
+    #[test]
+    fn test_get_previous_summary() {
+        let mut session = SwarmSession::new("test", "tag", "tmux", "/path", 5);
+
+        // No waves yet
+        assert!(session.get_previous_summary().is_none());
+
+        // Add wave with summary
+        let mut wave = WaveState::new(1);
+        wave.summary = Some(WaveSummary {
+            wave_number: 1,
+            tasks_completed: vec!["task:1".to_string()],
+            files_changed: vec![],
+        });
+        session.waves.push(wave);
+
+        let summary = session.get_previous_summary();
+        assert!(summary.is_some());
+        assert!(summary.unwrap().contains("task:1"));
     }
 }

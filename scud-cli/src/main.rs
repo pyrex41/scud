@@ -480,8 +480,8 @@ enum Commands {
         verbose: bool,
     },
 
-    /// Run Ralph Wiggum mode - wave-based execution with optional smart review
-    Ralph {
+    /// Run swarm mode - wave-based parallel execution with backpressure
+    Swarm {
         /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
@@ -489,10 +489,6 @@ enum Commands {
         /// Maximum tasks per round (default: 5)
         #[arg(short = 'n', long, default_value = "5")]
         round_size: usize,
-
-        /// Enable smart model review after each wave
-        #[arg(short, long)]
-        review: bool,
 
         /// Execute across all phases
         #[arg(long)]
@@ -506,13 +502,17 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
 
-        /// Session name (default: ralph-<tag>)
+        /// Session name (default: swarm-<tag>)
         #[arg(long)]
         session: Option<String>,
 
-        /// Model override for smart review (default: config smart_model)
+        /// Skip research phase (use existing tasks as-is)
         #[arg(long)]
-        model: Option<String>,
+        no_research: bool,
+
+        /// Skip backpressure validation after wave
+        #[arg(long)]
+        no_validate: bool,
     },
 }
 
@@ -657,25 +657,25 @@ async fn main() -> Result<()> {
         ),
         Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
-        Commands::Ralph {
+        Commands::Swarm {
             tag,
             round_size,
-            review,
             all_tags,
             terminal,
             dry_run,
             session,
-            model,
-        } => commands::ralph::run(
+            no_research,
+            no_validate,
+        } => commands::swarm::run(
             cli.project,
             tag.as_deref(),
             round_size,
-            review,
             all_tags,
             &terminal,
             dry_run,
             session,
-            model.as_deref(),
+            no_research,
+            no_validate,
         ),
     }
 }
