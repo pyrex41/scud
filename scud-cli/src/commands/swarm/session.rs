@@ -10,8 +10,24 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 use super::backpressure::ValidationResult;
+
+/// Get the current git commit SHA
+pub fn get_current_commit() -> Option<String> {
+    Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+}
 
 /// Brief summary of what was done in a wave
 /// This is NOT accumulated context - just a simple summary for the next wave
@@ -102,6 +118,9 @@ pub struct WaveState {
     pub validation: Option<ValidationResult>,
     /// Summary of what was done
     pub summary: Option<WaveSummary>,
+    /// Git commit SHA at wave start (for tracking changes)
+    #[serde(default)]
+    pub start_commit: Option<String>,
     /// Start time
     pub started_at: String,
     /// End time (set when complete)
@@ -115,6 +134,7 @@ impl WaveState {
             rounds: Vec::new(),
             validation: None,
             summary: None,
+            start_commit: get_current_commit(),
             started_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
         }
@@ -224,6 +244,75 @@ pub fn swarm_dir(project_root: Option<&PathBuf>) -> PathBuf {
         .cloned()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     root.join(".scud").join("swarm")
+}
+
+/// Get the path to the session lock file for a given tag
+pub fn lock_file_path(project_root: Option<&PathBuf>, tag: &str) -> PathBuf {
+    swarm_dir(project_root).join(format!("{}.lock", tag))
+}
+
+/// A session lock that prevents concurrent swarm sessions on the same tag.
+/// The lock is automatically released when this struct is dropped.
+pub struct SessionLock {
+    _file: fs::File,
+    path: PathBuf,
+}
+
+impl SessionLock {
+    /// Get the path to the lock file
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+}
+
+impl Drop for SessionLock {
+    fn drop(&mut self) {
+        // Lock is released automatically when file is dropped
+        // Optionally remove the lock file
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+/// Acquire an exclusive session lock for a tag.
+/// Returns a SessionLock that will be released when dropped.
+/// Returns an error if another session already holds the lock.
+pub fn acquire_session_lock(project_root: Option<&PathBuf>, tag: &str) -> Result<SessionLock> {
+    use fs2::FileExt;
+
+    let dir = swarm_dir(project_root);
+    fs::create_dir_all(&dir)?;
+
+    let lock_path = lock_file_path(project_root, tag);
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&lock_path)?;
+
+    // Try to acquire exclusive lock (non-blocking)
+    file.try_lock_exclusive().map_err(|_| {
+        anyhow::anyhow!(
+            "Another swarm session is already running for tag '{}'. \
+             If this is incorrect, remove the lock file: {}",
+            tag,
+            lock_path.display()
+        )
+    })?;
+
+    // Write PID and timestamp to lock file for debugging
+    use std::io::Write;
+    let mut file = file;
+    writeln!(
+        file,
+        "pid={}\nstarted={}",
+        std::process::id(),
+        chrono::Utc::now().to_rfc3339()
+    )?;
+
+    Ok(SessionLock {
+        _file: file,
+        path: lock_path,
+    })
 }
 
 /// Get the path to a session's state file
@@ -350,5 +439,59 @@ mod tests {
         let summary = session.get_previous_summary();
         assert!(summary.is_some());
         assert!(summary.unwrap().contains("task:1"));
+    }
+
+    #[test]
+    fn test_session_lock_contention() {
+        use tempfile::TempDir;
+
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().to_path_buf();
+
+        // Acquire first lock
+        let _lock1 = acquire_session_lock(Some(&project_root), "test-tag")
+            .expect("First lock should succeed");
+
+        // Try to acquire second lock for same tag while first is held
+        let result = acquire_session_lock(Some(&project_root), "test-tag");
+
+        // Verify the second attempt fails and error message mentions "already running"
+        match result {
+            Ok(_) => panic!("Second lock should fail"),
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("already running"),
+                    "Error message should mention 'already running', got: {}",
+                    error_msg
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_current_commit() {
+        let result = get_current_commit();
+
+        // Should return Some(sha) since we're in a git repo
+        assert!(result.is_some(), "Expected Some(sha) in a git repository");
+
+        let sha = result.unwrap();
+
+        // Verify the SHA is 40 characters long (full SHA)
+        assert_eq!(
+            sha.len(),
+            40,
+            "Expected SHA to be 40 characters long, got {}",
+            sha.len()
+        );
+
+        // Verify the SHA contains only hex characters (0-9, a-f)
+        assert!(
+            sha.chars().all(|c| c.is_ascii_hexdigit()),
+            "Expected SHA to contain only hex characters, got: {}",
+            sha
+        );
     }
 }

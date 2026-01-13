@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use crate::commands::helpers::{flatten_all_tasks, resolve_group_tag};
+use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
 use crate::commands::spawn::hooks;
 use crate::commands::spawn::terminal::{self, parse_terminal, Terminal};
@@ -33,7 +33,7 @@ use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
 use self::backpressure::BackpressureConfig;
-use self::session::{RoundState, SwarmSession, WaveState, WaveSummary};
+use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, WaveSummary};
 
 /// Main entry point for the swarm command
 pub fn run(
@@ -62,6 +62,14 @@ pub fn run(
         "all".to_string()
     } else {
         resolve_group_tag(&storage, tag, true)?
+    };
+
+    // Acquire session lock to prevent concurrent swarm runs on same tag
+    // Lock is held for the duration of the function and released on drop
+    let _session_lock = if !dry_run {
+        Some(acquire_session_lock(project_root.as_ref(), &phase_tag)?)
+    } else {
+        None
     };
 
     // Detect terminal
@@ -149,10 +157,9 @@ pub fn run(
     loop {
         // Load fresh task state
         let all_phases = storage.load_tasks()?;
-        let all_tasks_flat = flatten_all_tasks(&all_phases);
 
         // Compute waves from current state
-        let waves = compute_waves_from_tasks(&all_phases, &all_tasks_flat, &phase_tag, all_tags)?;
+        let waves = compute_waves_from_tasks(&all_phases, &phase_tag, all_tags)?;
 
         if waves.is_empty() {
             println!();
@@ -272,7 +279,8 @@ pub fn run(
         let summary = WaveSummary {
             wave_number,
             tasks_completed: wave_state.all_task_ids(),
-            files_changed: collect_changed_files(&working_dir).unwrap_or_default(),
+            files_changed: collect_changed_files(&working_dir, wave_state.start_commit.as_deref())
+                .unwrap_or_default(),
         };
         wave_state.summary = Some(summary);
 
@@ -313,7 +321,6 @@ struct TaskInfo<'a> {
 /// Compute execution waves from current task state
 fn compute_waves_from_tasks<'a>(
     all_phases: &'a HashMap<String, Phase>,
-    _all_tasks_flat: &[&Task],
     phase_tag: &str,
     all_tags: bool,
 ) -> Result<Vec<Vec<TaskInfo<'a>>>> {
@@ -522,12 +529,21 @@ fn wait_for_round_completion(storage: &Storage, tasks: &[TaskInfo]) -> Result<()
     Ok(())
 }
 
-fn collect_changed_files(working_dir: &std::path::Path) -> Result<Vec<String>> {
+fn collect_changed_files(
+    working_dir: &std::path::Path,
+    start_commit: Option<&str>,
+) -> Result<Vec<String>> {
     use std::process::Command;
+
+    // Construct the commit range: start_commit..HEAD or fallback to HEAD~1..HEAD
+    let range = match start_commit {
+        Some(commit) => format!("{}..HEAD", commit),
+        None => "HEAD~1..HEAD".to_string(),
+    };
 
     let output = Command::new("git")
         .current_dir(working_dir)
-        .args(["diff", "--name-only", "HEAD~1..HEAD"])
+        .args(["diff", "--name-only", &range])
         .output()?;
 
     let files: Vec<String> = String::from_utf8_lossy(&output.stdout)
@@ -546,9 +562,8 @@ fn run_dry_run(
 ) -> Result<()> {
     let storage = Storage::new(project_root);
     let all_phases = storage.load_tasks()?;
-    let all_tasks_flat = flatten_all_tasks(&all_phases);
 
-    let waves = compute_waves_from_tasks(&all_phases, &all_tasks_flat, phase_tag, all_tags)?;
+    let waves = compute_waves_from_tasks(&all_phases, phase_tag, all_tags)?;
 
     println!("{}", "Execution Plan (dry-run)".yellow().bold());
     println!("{}", "═".repeat(50).yellow());

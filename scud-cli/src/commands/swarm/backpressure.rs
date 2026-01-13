@@ -207,28 +207,67 @@ pub fn run_validation(working_dir: &Path, config: &BackpressureConfig) -> Result
     })
 }
 
-/// Run a single command
+/// Run a single command using sh -c for proper shell execution with timeout
 fn run_command(
     working_dir: &Path,
     cmd_str: &str,
-    _timeout_secs: u64,
+    timeout_secs: u64,
 ) -> Result<(i32, String, String)> {
-    // Parse command (simple split on spaces, handles basic cases)
-    let parts: Vec<&str> = cmd_str.split_whitespace().collect();
-    if parts.is_empty() {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    if cmd_str.trim().is_empty() {
         anyhow::bail!("Empty command");
     }
 
-    let output = Command::new(parts[0])
-        .args(&parts[1..])
+    // Use sh -c to properly handle complex commands with pipes, redirections, etc.
+    let mut child = Command::new("sh")
+        .arg("-c")
+        .arg(cmd_str)
         .current_dir(working_dir)
-        .output()?;
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
 
-    let exit_code = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let timeout = Duration::from_secs(timeout_secs);
+    let start = Instant::now();
+    let poll_interval = Duration::from_millis(100);
 
-    Ok((exit_code, stdout, stderr))
+    // Poll for completion with timeout
+    loop {
+        match child.try_wait()? {
+            Some(status) => {
+                // Process completed - read output
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+
+                if let Some(mut stdout_pipe) = child.stdout.take() {
+                    let _ = stdout_pipe.read_to_string(&mut stdout);
+                }
+                if let Some(mut stderr_pipe) = child.stderr.take() {
+                    let _ = stderr_pipe.read_to_string(&mut stderr);
+                }
+
+                let exit_code = status.code().unwrap_or(-1);
+                return Ok((exit_code, stdout, stderr));
+            }
+            None => {
+                // Process still running - check timeout
+                if start.elapsed() > timeout {
+                    // Kill the process
+                    let _ = child.kill();
+                    let _ = child.wait(); // Reap the zombie
+                    anyhow::bail!(
+                        "Command timed out after {} seconds: {}",
+                        timeout_secs,
+                        cmd_str
+                    );
+                }
+                std::thread::sleep(poll_interval);
+            }
+        }
+    }
 }
 
 /// Truncate output to max length
@@ -270,5 +309,58 @@ mod tests {
         let truncated = truncate_output(&long, 50);
         assert!(truncated.contains("truncated"));
         assert!(truncated.len() < 200);
+    }
+
+    #[test]
+    fn test_run_command_simple() {
+        let tmp = TempDir::new().unwrap();
+        let result = run_command(tmp.path(), "echo hello", 60);
+        assert!(result.is_ok());
+        let (exit_code, stdout, _stderr) = result.unwrap();
+        assert_eq!(exit_code, 0);
+        assert!(stdout.contains("hello"));
+    }
+
+    #[test]
+    fn test_run_command_with_quotes() {
+        let tmp = TempDir::new().unwrap();
+        let result = run_command(tmp.path(), "echo 'hello world'", 60);
+        assert!(result.is_ok());
+        let (exit_code, stdout, _stderr) = result.unwrap();
+        assert_eq!(exit_code, 0);
+        assert!(stdout.contains("hello world"));
+    }
+
+    #[test]
+    fn test_run_command_with_pipe() {
+        let tmp = TempDir::new().unwrap();
+        let result = run_command(tmp.path(), "echo hello | cat", 60);
+        assert!(result.is_ok());
+        let (exit_code, stdout, _stderr) = result.unwrap();
+        assert_eq!(exit_code, 0);
+        assert!(stdout.contains("hello"));
+    }
+
+    #[test]
+    fn test_run_command_empty() {
+        let tmp = TempDir::new().unwrap();
+        let result = run_command(tmp.path(), "", 60);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_command_whitespace_only() {
+        let tmp = TempDir::new().unwrap();
+        let result = run_command(tmp.path(), "   ", 60);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_command_timeout() {
+        let tmp = TempDir::new().unwrap();
+        let result = run_command(tmp.path(), "sleep 5", 1);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("timed out"));
     }
 }
