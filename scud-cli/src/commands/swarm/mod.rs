@@ -192,17 +192,14 @@ pub fn run(
                 round_tasks.len()
             );
 
-            // Get brief summary of previous wave (not accumulated context)
-            let previous_summary = swarm_session.get_previous_summary();
-
             // Spawn agents for this round
+            // Note: Agents self-orient using scud CLI commands (scud list, scud show, etc.)
             let round_state = execute_round(
                 &storage,
                 round_tasks,
                 &terminal,
                 &working_dir,
                 &session_name,
-                &previous_summary,
                 round_idx,
             )?;
 
@@ -228,7 +225,23 @@ pub fn run(
                 for failure in &validation_result.failures {
                     println!("      - {}", failure.red());
                 }
-                // TODO: Smart model could fix issues here
+
+                // Mark all tasks from this wave as Failed
+                // Next wave can see them via: scud list --status failed
+                let task_tags = wave_state.task_tags();
+                for (task_id, tag) in &task_tags {
+                    if let Ok(mut phase) = storage.load_group(tag) {
+                        if let Some(task) = phase.get_task_mut(task_id) {
+                            task.set_status(TaskStatus::Failed);
+                            let _ = storage.update_group(tag, &phase);
+                        }
+                    }
+                }
+                println!(
+                    "    {} Marked {} task(s) as failed",
+                    "!".yellow(),
+                    task_tags.len()
+                );
             }
 
             wave_state.validation = Some(validation_result);
@@ -409,21 +422,13 @@ fn execute_round(
     terminal: &Terminal,
     working_dir: &std::path::Path,
     session_name: &str,
-    previous_summary: &Option<String>,
     round_idx: usize,
 ) -> Result<RoundState> {
     let mut round_state = RoundState::new(round_idx);
 
     for info in tasks.iter() {
-        let mut prompt = agent::generate_prompt(info.task, &info.tag);
-
-        // Add brief summary of what was done (not accumulated context)
-        if let Some(summary) = previous_summary {
-            prompt = format!(
-                "{}\n\n## Previous Wave Summary\n{}\n",
-                prompt, summary
-            );
-        }
+        // Generate prompt - agents self-orient using scud CLI commands
+        let prompt = agent::generate_prompt(info.task, &info.tag);
 
         match terminal::spawn_terminal(terminal, &info.task.id, &prompt, working_dir, session_name) {
             Ok(()) => {

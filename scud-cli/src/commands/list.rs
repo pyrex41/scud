@@ -18,6 +18,7 @@ fn format_status(status: &TaskStatus) -> String {
         TaskStatus::Deferred => "◌ Deferred".dimmed().to_string(),
         TaskStatus::Cancelled => "⊘ Cancelled".dimmed().to_string(),
         TaskStatus::Expanded => "◈ Expanded".blue().to_string(),
+        TaskStatus::Failed => "✗ Failed".red().bold().to_string(),
     }
 }
 

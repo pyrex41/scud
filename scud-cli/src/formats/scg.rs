@@ -21,6 +21,7 @@ fn status_to_code(status: &TaskStatus) -> char {
         TaskStatus::Deferred => 'F',
         TaskStatus::Cancelled => 'C',
         TaskStatus::Expanded => 'X',
+        TaskStatus::Failed => '!',
     }
 }
 
@@ -34,6 +35,7 @@ fn code_to_status(code: char) -> Option<TaskStatus> {
         'F' => Some(TaskStatus::Deferred),
         'C' => Some(TaskStatus::Cancelled),
         'X' => Some(TaskStatus::Expanded),
+        '!' => Some(TaskStatus::Failed),
         _ => None,
     }
 }
@@ -527,9 +529,11 @@ mod tests {
         assert_eq!(status_to_code(&TaskStatus::InProgress), 'I');
         assert_eq!(status_to_code(&TaskStatus::Done), 'D');
         assert_eq!(status_to_code(&TaskStatus::Expanded), 'X');
+        assert_eq!(status_to_code(&TaskStatus::Failed), '!');
 
         assert_eq!(code_to_status('P'), Some(TaskStatus::Pending));
         assert_eq!(code_to_status('X'), Some(TaskStatus::Expanded));
+        assert_eq!(code_to_status('!'), Some(TaskStatus::Failed));
         assert_eq!(code_to_status('Z'), None);
     }
 
@@ -803,6 +807,7 @@ mod tests {
             ("6", TaskStatus::Deferred),
             ("7", TaskStatus::Cancelled),
             ("8", TaskStatus::Expanded),
+            ("9", TaskStatus::Failed),
         ];
 
         for (id, status) in &statuses {

@@ -12,6 +12,7 @@ pub enum TaskStatus {
     Deferred,
     Cancelled,
     Expanded, // Task has been broken into subtasks
+    Failed,   // Task failed validation (build/test/lint)
 }
 
 impl TaskStatus {
@@ -25,6 +26,7 @@ impl TaskStatus {
             TaskStatus::Deferred => "deferred",
             TaskStatus::Cancelled => "cancelled",
             TaskStatus::Expanded => "expanded",
+            TaskStatus::Failed => "failed",
         }
     }
 
@@ -39,6 +41,7 @@ impl TaskStatus {
             "deferred" => Some(TaskStatus::Deferred),
             "cancelled" => Some(TaskStatus::Cancelled),
             "expanded" => Some(TaskStatus::Expanded),
+            "failed" => Some(TaskStatus::Failed),
             _ => None,
         }
     }
@@ -53,6 +56,7 @@ impl TaskStatus {
             "deferred",
             "cancelled",
             "expanded",
+            "failed",
         ]
     }
 }
@@ -623,7 +627,7 @@ mod tests {
     #[test]
     fn test_status_all() {
         let all_statuses = TaskStatus::all();
-        assert_eq!(all_statuses.len(), 8);
+        assert_eq!(all_statuses.len(), 9);
         assert!(all_statuses.contains(&"pending"));
         assert!(all_statuses.contains(&"in-progress"));
         assert!(all_statuses.contains(&"done"));
@@ -632,6 +636,7 @@ mod tests {
         assert!(all_statuses.contains(&"deferred"));
         assert!(all_statuses.contains(&"cancelled"));
         assert!(all_statuses.contains(&"expanded"));
+        assert!(all_statuses.contains(&"failed"));
     }
 
     #[test]

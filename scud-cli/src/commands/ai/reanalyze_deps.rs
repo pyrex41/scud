@@ -174,6 +174,7 @@ fn build_task_context(all_phases: &HashMap<String, Phase>) -> String {
                 TaskStatus::Review => "[REVIEW]",
                 TaskStatus::Deferred => "[DEFERRED]",
                 TaskStatus::Cancelled => "[CANCELLED]",
+                TaskStatus::Failed => "[FAILED]",
             };
 
             // Build full namespaced ID for display
