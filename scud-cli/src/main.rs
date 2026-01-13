@@ -23,6 +23,29 @@ enum ConfigCommands {
         #[command(subcommand)]
         command: AgentsCommands,
     },
+
+    /// Configure backpressure validation commands
+    Backpressure {
+        /// Commands to set (replaces existing). Use multiple args: "cargo build" "cargo test"
+        #[arg(trailing_var_arg = true)]
+        commands: Vec<String>,
+
+        /// Add a command to existing list
+        #[arg(long, conflicts_with = "commands")]
+        add: Option<String>,
+
+        /// Remove a command from list
+        #[arg(long, conflicts_with = "commands")]
+        remove: Option<String>,
+
+        /// List current backpressure config
+        #[arg(long, conflicts_with_all = ["commands", "add", "remove"])]
+        list: bool,
+
+        /// Clear all commands (use auto-detect)
+        #[arg(long, conflicts_with_all = ["commands", "add", "remove", "list"])]
+        clear: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -492,7 +515,7 @@ enum Commands {
         #[arg(long)]
         all_tags: bool,
 
-        /// Terminal: auto, tmux, kitty, wezterm, iterm2 (default: auto)
+        /// Terminal: auto, tmux, kitty, wezterm, iterm2, zellij (default: auto)
         #[arg(short = 'T', long, default_value = "auto")]
         terminal: String,
 
@@ -500,7 +523,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
 
-        /// tmux session name (default: scud-<tag>)
+        /// Session name for tmux/zellij (default: scud-<tag>)
         #[arg(long)]
         session: Option<String>,
 
@@ -545,7 +568,7 @@ enum Commands {
         #[arg(long)]
         all_tags: bool,
 
-        /// Terminal: auto, tmux, kitty, wezterm, iterm2 (default: auto)
+        /// Terminal: auto, tmux, kitty, wezterm, iterm2, zellij (default: auto)
         #[arg(short = 'T', long, default_value = "auto")]
         terminal: String,
 
@@ -553,7 +576,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
 
-        /// Session name (default: swarm-<tag>)
+        /// Session name for tmux/zellij (default: swarm-<tag>)
         #[arg(long)]
         session: Option<String>,
 
@@ -622,6 +645,13 @@ async fn main() -> Result<()> {
                     commands::config::agents_remove(cli.project, name, all)
                 }
             },
+            ConfigCommands::Backpressure {
+                commands,
+                add,
+                remove,
+                list,
+                clear,
+            } => commands::config::backpressure(cli.project, commands, add, remove, list, clear),
         },
         Commands::Parse {
             file,

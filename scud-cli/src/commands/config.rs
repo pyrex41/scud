@@ -886,3 +886,161 @@ pub fn agents_remove(project_root: Option<PathBuf>, name: Option<String>, all: b
 
     Ok(())
 }
+
+/// Configure backpressure validation commands
+pub fn backpressure(
+    project_root: Option<PathBuf>,
+    commands: Vec<String>,
+    add: Option<String>,
+    remove: Option<String>,
+    list: bool,
+    clear: bool,
+) -> Result<()> {
+    let storage = Storage::new(project_root);
+
+    if !storage.is_initialized() {
+        anyhow::bail!("SCUD is not initialized. Run: scud init");
+    }
+
+    let config_path = storage.config_file();
+
+    // Load existing config
+    let content = fs::read_to_string(&config_path).unwrap_or_default();
+    let mut config: toml::Value = toml::from_str(&content).unwrap_or(toml::Value::Table(toml::map::Map::new()));
+
+    // Get or create swarm.backpressure section
+    let bp_commands = get_backpressure_commands(&config);
+
+    if list {
+        // List current configuration
+        println!("{}", "Backpressure Configuration".blue().bold());
+        println!();
+
+        if bp_commands.is_empty() {
+            println!("  {} No commands configured (using auto-detect)", "·".yellow());
+            println!();
+
+            // Show what would be auto-detected
+            let auto = crate::backpressure::BackpressureConfig::load(Some(&storage.project_root().to_path_buf()))?;
+            if !auto.commands.is_empty() {
+                println!("{}", "Auto-detected commands:".dimmed());
+                for cmd in &auto.commands {
+                    println!("  {} {}", "·".dimmed(), cmd.dimmed());
+                }
+            }
+        } else {
+            println!("{}", "Commands (in order):".blue());
+            for (i, cmd) in bp_commands.iter().enumerate() {
+                println!("  {}. {}", i + 1, cmd.green());
+            }
+        }
+
+        println!();
+        println!("{}", "Usage:".blue().bold());
+        println!("  scud config backpressure \"cmd1\" \"cmd2\"   Set commands");
+        println!("  scud config backpressure --add \"cmd\"     Add a command");
+        println!("  scud config backpressure --remove \"cmd\"  Remove a command");
+        println!("  scud config backpressure --clear         Clear (use auto-detect)");
+
+        return Ok(());
+    }
+
+    if clear {
+        // Remove backpressure section entirely
+        if let Some(swarm) = config.get_mut("swarm") {
+            if let Some(table) = swarm.as_table_mut() {
+                table.remove("backpressure");
+            }
+        }
+        save_config(&config_path, &config)?;
+        println!("{}", "✓ Backpressure config cleared (will use auto-detect)".green());
+        return Ok(());
+    }
+
+    let mut new_commands = bp_commands.clone();
+
+    if let Some(cmd) = add {
+        if !new_commands.contains(&cmd) {
+            new_commands.push(cmd.clone());
+            println!("{}", format!("✓ Added: {}", cmd).green());
+        } else {
+            println!("{}", format!("· Already exists: {}", cmd).yellow());
+        }
+    } else if let Some(cmd) = remove {
+        if let Some(pos) = new_commands.iter().position(|c| c == &cmd) {
+            new_commands.remove(pos);
+            println!("{}", format!("✓ Removed: {}", cmd).green());
+        } else {
+            println!("{}", format!("· Not found: {}", cmd).yellow());
+        }
+    } else if !commands.is_empty() {
+        // Set commands directly
+        new_commands = commands;
+        println!("{}", "✓ Backpressure commands set:".green());
+        for cmd in &new_commands {
+            println!("  · {}", cmd);
+        }
+    } else {
+        // No args - show list
+        return backpressure(Some(storage.project_root().to_path_buf()), vec![], None, None, true, false);
+    }
+
+    // Save updated config
+    set_backpressure_commands(&mut config, &new_commands);
+    save_config(&config_path, &config)?;
+
+    Ok(())
+}
+
+/// Get backpressure commands from config
+fn get_backpressure_commands(config: &toml::Value) -> Vec<String> {
+    config
+        .get("swarm")
+        .and_then(|s| s.get("backpressure"))
+        .and_then(|b| b.get("commands"))
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Set backpressure commands in config
+fn set_backpressure_commands(config: &mut toml::Value, commands: &[String]) {
+    let table = config.as_table_mut().expect("Config must be a table");
+
+    // Ensure swarm section exists
+    if !table.contains_key("swarm") {
+        table.insert("swarm".to_string(), toml::Value::Table(toml::map::Map::new()));
+    }
+
+    let swarm = table.get_mut("swarm").unwrap().as_table_mut().unwrap();
+
+    // Ensure backpressure section exists
+    if !swarm.contains_key("backpressure") {
+        swarm.insert("backpressure".to_string(), toml::Value::Table(toml::map::Map::new()));
+    }
+
+    let bp = swarm.get_mut("backpressure").unwrap().as_table_mut().unwrap();
+
+    // Set commands array
+    let cmd_array: Vec<toml::Value> = commands.iter().map(|s| toml::Value::String(s.clone())).collect();
+    bp.insert("commands".to_string(), toml::Value::Array(cmd_array));
+
+    // Ensure defaults exist
+    if !bp.contains_key("stop_on_failure") {
+        bp.insert("stop_on_failure".to_string(), toml::Value::Boolean(true));
+    }
+    if !bp.contains_key("timeout_secs") {
+        bp.insert("timeout_secs".to_string(), toml::Value::Integer(300));
+    }
+}
+
+/// Save config to file
+fn save_config(path: &PathBuf, config: &toml::Value) -> Result<()> {
+    let content = toml::to_string_pretty(config)?;
+    fs::write(path, content)?;
+    Ok(())
+}

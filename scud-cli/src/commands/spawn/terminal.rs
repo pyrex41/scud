@@ -1,6 +1,6 @@
 //! Terminal detection and spawning functionality
 //!
-//! Supports Kitty, WezTerm, iTerm2, and tmux with auto-detection based on environment variables.
+//! Supports Kitty, WezTerm, iTerm2, Zellij, and tmux with auto-detection based on environment variables.
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -12,6 +12,7 @@ pub enum Terminal {
     Kitty,
     Wezterm,
     ITerm2,
+    Zellij,
     Tmux,
 }
 
@@ -22,6 +23,7 @@ impl Terminal {
             Terminal::Kitty => "kitty",
             Terminal::Wezterm => "wezterm",
             Terminal::ITerm2 => "iterm2",
+            Terminal::Zellij => "zellij",
             Terminal::Tmux => "tmux",
         }
     }
@@ -44,6 +46,11 @@ pub fn detect_terminal() -> Terminal {
         return Terminal::ITerm2;
     }
 
+    // Check for Zellij
+    if std::env::var("ZELLIJ").is_ok() || std::env::var("ZELLIJ_SESSION_NAME").is_ok() {
+        return Terminal::Zellij;
+    }
+
     // Default to tmux as universal fallback
     Terminal::Tmux
 }
@@ -54,10 +61,11 @@ pub fn parse_terminal(name: &str) -> Result<Terminal> {
         "kitty" => Ok(Terminal::Kitty),
         "wezterm" => Ok(Terminal::Wezterm),
         "iterm" | "iterm2" => Ok(Terminal::ITerm2),
+        "zellij" => Ok(Terminal::Zellij),
         "tmux" => Ok(Terminal::Tmux),
         "auto" => Ok(detect_terminal()),
         other => anyhow::bail!(
-            "Unknown terminal: {}. Supported: kitty, wezterm, iterm2, tmux, auto",
+            "Unknown terminal: {}. Supported: kitty, wezterm, iterm2, zellij, tmux, auto",
             other
         ),
     }
@@ -69,6 +77,7 @@ pub fn check_terminal_available(terminal: &Terminal) -> Result<()> {
         Terminal::Kitty => "kitty",
         Terminal::Wezterm => "wezterm",
         Terminal::ITerm2 => "osascript", // iTerm2 uses AppleScript
+        Terminal::Zellij => "zellij",
         Terminal::Tmux => "tmux",
     };
 
@@ -96,6 +105,7 @@ pub fn spawn_terminal(
         Terminal::Kitty => spawn_kitty(task_id, prompt, working_dir),
         Terminal::Wezterm => spawn_wezterm(task_id, prompt, working_dir),
         Terminal::ITerm2 => spawn_iterm2(task_id, prompt, working_dir),
+        Terminal::Zellij => spawn_zellij(task_id, prompt, working_dir, session_name),
         Terminal::Tmux => spawn_tmux(task_id, prompt, working_dir, session_name),
     }
 }
@@ -204,6 +214,158 @@ end tell"#,
     }
 
     Ok(())
+}
+
+/// Spawn in Zellij terminal using pane management
+///
+/// Creates a tab if needed via `zellij action new-tab --name <session>`,
+/// then spawns a named pane via `zellij action new-pane --name task-{id} --direction right`.
+/// Sets SCUD_TASK_ID environment variable for hook integration.
+fn spawn_zellij(
+    task_id: &str,
+    prompt: &str,
+    working_dir: &Path,
+    session_name: &str,
+) -> Result<()> {
+    let pane_name = format!("task-{}", task_id);
+
+    // Write prompt to temp file to avoid shell escaping issues
+    let prompt_file = std::env::temp_dir().join(format!("scud-prompt-{}.txt", task_id));
+    std::fs::write(&prompt_file, prompt)?;
+
+    // Check if we're inside a Zellij session
+    let inside_zellij = std::env::var("ZELLIJ").is_ok();
+
+    if inside_zellij {
+        // We're inside Zellij - use `zellij action` commands
+
+        // First, try to create a new tab with the session name if it doesn't exist
+        // Zellij doesn't have a way to check if a tab exists, so we just try to
+        // create one and use the current tab if spawning in an existing session
+        let _ = Command::new("zellij")
+            .args(["action", "new-tab", "--name", session_name])
+            .output();
+
+        // Interactive mode with SCUD_TASK_ID for hook integration
+        let bash_cmd = format!(
+            r#"cd '{}' && export SCUD_TASK_ID='{}' ; claude "$(cat '{}')" --dangerously-skip-permissions ; rm -f '{}' ; exec bash"#,
+            working_dir.display(),
+            task_id,
+            prompt_file.display(),
+            prompt_file.display()
+        );
+
+        // Spawn a new pane to the right with the task name
+        let status = Command::new("zellij")
+            .args([
+                "action",
+                "new-pane",
+                "--name",
+                &pane_name,
+                "--direction",
+                "right",
+                "--",
+                "bash",
+                "-c",
+                &bash_cmd,
+            ])
+            .status()
+            .context("Failed to spawn Zellij pane")?;
+
+        if !status.success() {
+            anyhow::bail!("Zellij pane spawn failed with exit code: {:?}", status.code());
+        }
+    } else {
+        // We're outside Zellij - need to start a new session or attach to existing one
+        // Use `zellij run` to spawn with a command in a new session
+
+        let bash_cmd = format!(
+            r#"cd '{}' && export SCUD_TASK_ID='{}' ; claude "$(cat '{}')" --dangerously-skip-permissions ; rm -f '{}' ; exec bash"#,
+            working_dir.display(),
+            task_id,
+            prompt_file.display(),
+            prompt_file.display()
+        );
+
+        // Start a new Zellij session with the command
+        let status = Command::new("zellij")
+            .args([
+                "--session",
+                session_name,
+                "run",
+                "--name",
+                &pane_name,
+                "--",
+                "bash",
+                "-c",
+                &bash_cmd,
+            ])
+            .current_dir(working_dir)
+            .status()
+            .context("Failed to start Zellij session")?;
+
+        if !status.success() {
+            anyhow::bail!(
+                "Zellij session start failed with exit code: {:?}",
+                status.code()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Focus a Zellij pane by name for attach functionality
+///
+/// Uses `zellij action go-to-tab-name` to switch to the tab containing the pane.
+pub fn focus_zellij_pane(session_name: &str) -> Result<()> {
+    // Check if we're inside Zellij
+    let inside_zellij = std::env::var("ZELLIJ").is_ok();
+
+    if inside_zellij {
+        // Switch to the tab with the given name
+        let status = Command::new("zellij")
+            .args(["action", "go-to-tab-name", session_name])
+            .status()
+            .context("Failed to switch Zellij tab")?;
+
+        if !status.success() {
+            anyhow::bail!(
+                "Failed to switch to Zellij tab '{}': exit code {:?}",
+                session_name,
+                status.code()
+            );
+        }
+    } else {
+        // Attach to the Zellij session from outside
+        let status = Command::new("zellij")
+            .args(["attach", session_name])
+            .status()
+            .context("Failed to attach to Zellij session")?;
+
+        if !status.success() {
+            anyhow::bail!(
+                "Failed to attach to Zellij session '{}': exit code {:?}",
+                session_name,
+                status.code()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Check if a Zellij session exists
+pub fn zellij_session_exists(session_name: &str) -> bool {
+    Command::new("zellij")
+        .args(["list-sessions"])
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .any(|line| line.trim() == session_name || line.starts_with(&format!("{} ", session_name)))
+        })
+        .unwrap_or(false)
 }
 
 /// Spawn in tmux session

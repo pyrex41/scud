@@ -1,9 +1,10 @@
 use anyhow::Result;
 use colored::Colorize;
-use dialoguer::{Input, Select};
+use dialoguer::{Confirm, Input, MultiSelect, Select};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::backpressure::BackpressureConfig;
 use crate::commands::config as config_cmd;
 use crate::commands::helpers::is_interactive;
 use crate::config::{Config, LLMConfig};
@@ -70,6 +71,201 @@ fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
     };
 
     Ok((provider.to_string(), model))
+}
+
+/// Interactive backpressure configuration during init
+fn configure_backpressure_interactive(storage: &Storage) -> Result<()> {
+    println!();
+    println!(
+        "{}",
+        "=== VALIDATION COMMANDS (BACKPRESSURE) ===".yellow().bold()
+    );
+    println!(
+        "{}",
+        "Backpressure runs validation commands between task waves".dimmed()
+    );
+    println!(
+        "{}",
+        "to catch build/test failures early.".dimmed()
+    );
+    println!();
+
+    // Get auto-detected commands
+    let auto_config = BackpressureConfig::load(Some(&storage.project_root().to_path_buf()))?;
+
+    if !auto_config.commands.is_empty() {
+        println!("{}", "Auto-detected commands:".blue());
+        for cmd in &auto_config.commands {
+            println!("  {} {}", "·".green(), cmd);
+        }
+        println!();
+    }
+
+    let options = vec![
+        "Use auto-detect (recommended)",
+        "Configure custom commands",
+        "Skip (configure later with: scud config backpressure)",
+    ];
+
+    let selection = Select::new()
+        .with_prompt("How would you like to configure validation?")
+        .items(&options)
+        .default(0)
+        .interact()?;
+
+    match selection {
+        0 => {
+            // Auto-detect - nothing to save, that's the default
+            if auto_config.commands.is_empty() {
+                println!(
+                    "{}",
+                    "  ⚠ No project type detected - add commands later with: scud config backpressure".yellow()
+                );
+            } else {
+                println!("{}", "  ✓ Using auto-detected commands".green());
+            }
+        }
+        1 => {
+            // Custom configuration
+            let commands = configure_backpressure_commands(&auto_config.commands)?;
+            save_backpressure_config(storage, &commands)?;
+            println!("{}", "  ✓ Custom backpressure commands saved".green());
+        }
+        2 => {
+            // Skip
+            println!(
+                "{}",
+                "  Skipped - configure later with: scud config backpressure".dimmed()
+            );
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+/// Configure custom backpressure commands interactively
+fn configure_backpressure_commands(auto_detected: &[String]) -> Result<Vec<String>> {
+    println!();
+    println!("{}", "Common validation commands:".blue());
+
+    // Build a list of common commands based on what might be useful
+    let mut suggestions: Vec<(&str, bool)> = vec![
+        ("cargo build", false),
+        ("cargo build --release", false),
+        ("cargo test", false),
+        ("cargo clippy -- -D warnings", false),
+        ("cargo fmt --check", false),
+        ("npm run build", false),
+        ("npm test", false),
+        ("npm run lint", false),
+        ("npm run typecheck", false),
+        ("go build ./...", false),
+        ("go test ./...", false),
+        ("pytest", false),
+        ("python -m mypy .", false),
+    ];
+
+    // Mark auto-detected as selected by default
+    for (cmd, selected) in &mut suggestions {
+        if auto_detected.contains(&cmd.to_string()) {
+            *selected = true;
+        }
+    }
+
+    let items: Vec<&str> = suggestions.iter().map(|(cmd, _)| *cmd).collect();
+    let defaults: Vec<bool> = suggestions.iter().map(|(_, selected)| *selected).collect();
+
+    let selections = MultiSelect::new()
+        .with_prompt("Select commands to run (space to toggle, enter to confirm)")
+        .items(&items)
+        .defaults(&defaults)
+        .interact()?;
+
+    let mut commands: Vec<String> = selections
+        .iter()
+        .map(|&i| items[i].to_string())
+        .collect();
+
+    // Allow adding custom commands
+    loop {
+        let add_custom = Confirm::new()
+            .with_prompt("Add a custom command?")
+            .default(false)
+            .interact()?;
+
+        if !add_custom {
+            break;
+        }
+
+        let custom: String = Input::new()
+            .with_prompt("Enter command")
+            .interact_text()?;
+
+        if !custom.trim().is_empty() {
+            commands.push(custom.trim().to_string());
+            println!("  {} Added: {}", "✓".green(), custom.trim());
+        }
+    }
+
+    if commands.is_empty() {
+        println!(
+            "{}",
+            "  No commands selected - backpressure will be skipped".yellow()
+        );
+    } else {
+        println!();
+        println!("{}", "Selected commands:".blue());
+        for (i, cmd) in commands.iter().enumerate() {
+            println!("  {}. {}", i + 1, cmd.green());
+        }
+    }
+
+    Ok(commands)
+}
+
+/// Save backpressure configuration to config file
+fn save_backpressure_config(storage: &Storage, commands: &[String]) -> Result<()> {
+    let config_path = storage.config_file();
+
+    // Load existing config
+    let content = fs::read_to_string(&config_path).unwrap_or_default();
+    let mut config: toml::Value =
+        toml::from_str(&content).unwrap_or(toml::Value::Table(toml::map::Map::new()));
+
+    let table = config.as_table_mut().expect("Config must be a table");
+
+    // Ensure swarm section exists
+    if !table.contains_key("swarm") {
+        table.insert(
+            "swarm".to_string(),
+            toml::Value::Table(toml::map::Map::new()),
+        );
+    }
+
+    let swarm = table
+        .get_mut("swarm")
+        .unwrap()
+        .as_table_mut()
+        .unwrap();
+
+    // Create backpressure section
+    let mut bp = toml::map::Map::new();
+    let cmd_array: Vec<toml::Value> = commands
+        .iter()
+        .map(|s| toml::Value::String(s.clone()))
+        .collect();
+    bp.insert("commands".to_string(), toml::Value::Array(cmd_array));
+    bp.insert("stop_on_failure".to_string(), toml::Value::Boolean(true));
+    bp.insert("timeout_secs".to_string(), toml::Value::Integer(300));
+
+    swarm.insert("backpressure".to_string(), toml::Value::Table(bp));
+
+    // Save
+    let output = toml::to_string_pretty(&config)?;
+    fs::write(&config_path, output)?;
+
+    Ok(())
 }
 
 pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Result<()> {
@@ -175,6 +371,11 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     };
 
     storage.initialize_with_config(&config)?;
+
+    // Interactive backpressure configuration
+    if is_interactive() {
+        configure_backpressure_interactive(&storage)?;
+    }
 
     println!("\n{}", "SCUD initialized successfully!".green().bold());
 
