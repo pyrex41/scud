@@ -154,12 +154,7 @@ impl Storage {
         let mut guidance_content = String::new();
         let mut entries: Vec<_> = fs::read_dir(&guidance_dir)?
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|ext| ext == "md")
-                    .unwrap_or(false)
-            })
+            .filter(|e| e.path().extension().map(|ext| ext == "md").unwrap_or(false))
             .collect();
 
         // Sort by filename for consistent ordering
@@ -167,7 +162,10 @@ impl Storage {
 
         for entry in entries {
             let path = entry.path();
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+            let filename = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
 
             match fs::read_to_string(&path) {
                 Ok(content) => {

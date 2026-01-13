@@ -65,6 +65,20 @@ pub struct LLMClient {
     client: reqwest::Client,
 }
 
+/// Info about which model is being used for display purposes
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    pub tier: &'static str, // "fast" or "smart"
+    pub provider: String,
+    pub model: String,
+}
+
+impl std::fmt::Display for ModelInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} model: {}/{}", self.tier, self.provider, self.model)
+    }
+}
+
 impl LLMClient {
     pub fn new() -> Result<Self> {
         let storage = Storage::new(None);
@@ -104,24 +118,56 @@ impl LLMClient {
         })
     }
 
+    /// Get info about the smart model that will be used
+    pub fn smart_model_info(&self, model_override: Option<&str>) -> ModelInfo {
+        ModelInfo {
+            tier: "smart",
+            provider: self.config.smart_provider().to_string(),
+            model: model_override
+                .unwrap_or(self.config.smart_model())
+                .to_string(),
+        }
+    }
+
+    /// Get info about the fast model that will be used
+    pub fn fast_model_info(&self, model_override: Option<&str>) -> ModelInfo {
+        ModelInfo {
+            tier: "fast",
+            provider: self.config.fast_provider().to_string(),
+            model: model_override
+                .unwrap_or(self.config.fast_model())
+                .to_string(),
+        }
+    }
+
     pub async fn complete(&self, prompt: &str) -> Result<String> {
         self.complete_with_model(prompt, None, None).await
     }
 
     /// Complete using the smart model (for validation/analysis tasks with large context)
     /// Use user override if provided, otherwise fall back to configured smart_model
-    pub async fn complete_smart(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+    pub async fn complete_smart(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         let model = model_override.unwrap_or(self.config.smart_model());
         let provider = self.config.smart_provider();
-        self.complete_with_model(prompt, Some(model), Some(provider)).await
+        self.complete_with_model(prompt, Some(model), Some(provider))
+            .await
     }
 
     /// Complete using the fast model (for generation tasks)
     /// Use user override if provided, otherwise fall back to configured fast_model
-    pub async fn complete_fast(&self, prompt: &str, model_override: Option<&str>) -> Result<String> {
+    pub async fn complete_fast(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
         let model = model_override.unwrap_or(self.config.fast_model());
         let provider = self.config.fast_provider();
-        self.complete_with_model(prompt, Some(model), Some(provider)).await
+        self.complete_with_model(prompt, Some(model), Some(provider))
+            .await
     }
 
     pub async fn complete_with_model(
@@ -256,7 +302,11 @@ impl LLMClient {
     }
 
     /// Complete JSON using the smart model (for validation/analysis tasks)
-    pub async fn complete_json_smart<T>(&self, prompt: &str, model_override: Option<&str>) -> Result<T>
+    pub async fn complete_json_smart<T>(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -265,7 +315,11 @@ impl LLMClient {
     }
 
     /// Complete JSON using the fast model (for generation tasks)
-    pub async fn complete_json_fast<T>(&self, prompt: &str, model_override: Option<&str>) -> Result<T>
+    pub async fn complete_json_fast<T>(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -281,7 +335,9 @@ impl LLMClient {
     where
         T: serde::de::DeserializeOwned,
     {
-        let response_text = self.complete_with_model(prompt, model_override, None).await?;
+        let response_text = self
+            .complete_with_model(prompt, model_override, None)
+            .await?;
         Self::parse_json_response(&response_text)
     }
 

@@ -68,6 +68,10 @@ pub async fn run(
         None => LLMClient::new()?,
     };
 
+    // Show model info
+    let model_info = client.smart_model_info(model);
+    println!("{} {}", "Using".blue(), model_info.to_string().cyan());
+
     // Show progress
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(

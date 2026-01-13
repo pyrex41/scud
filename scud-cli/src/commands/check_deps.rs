@@ -1,7 +1,7 @@
 use anyhow::Result;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -12,10 +12,10 @@ use crate::storage::Storage;
 /// Results from dependency validation
 #[derive(Debug, Default)]
 pub struct DepCheckResults {
-    pub missing_deps: Vec<(String, String, String)>,      // (tag, task_id, missing_dep)
-    pub invalid_zero_deps: Vec<(String, String)>,          // (tag, task_id)
-    pub self_refs: Vec<(String, String)>,                  // (tag, task_id)
-    pub cancelled_deps: Vec<(String, String, String)>,     // (tag, task_id, cancelled_dep)
+    pub missing_deps: Vec<(String, String, String)>, // (tag, task_id, missing_dep)
+    pub invalid_zero_deps: Vec<(String, String)>,    // (tag, task_id)
+    pub self_refs: Vec<(String, String)>,            // (tag, task_id)
+    pub cancelled_deps: Vec<(String, String, String)>, // (tag, task_id, cancelled_dep)
 }
 
 impl DepCheckResults {
@@ -35,7 +35,7 @@ impl DepCheckResults {
 }
 
 /// PRD validation result structures
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PrdValidationResult {
     pub coverage_score: u32,
     #[serde(default)]
@@ -51,37 +51,49 @@ pub struct PrdValidationResult {
     pub summary: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MissingRequirement {
     pub requirement: String,
     pub prd_section: String,
     pub suggested_task: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct IncompleteCoverage {
     pub requirement: String,
     pub existing_tasks: Vec<String>,
     pub gap: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MisalignedTask {
     pub task_id: String,
     pub issue: String,
     pub suggestion: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ExtraTask {
     pub task_id: String,
     pub note: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DependencySuggestion {
     pub task_id: String,
     pub should_depend_on: Vec<String>,
+    pub reasoning: String,
+}
+
+/// Struct for PRD fix response
+#[derive(Debug, Deserialize)]
+pub struct PrdFix {
+    pub action: String, // "update_task", "add_task", "update_dependency"
+    pub task_id: Option<String>,
+    pub new_title: Option<String>,
+    pub new_description: Option<String>,
+    pub add_dependencies: Option<Vec<String>>,
+    pub remove_dependencies: Option<Vec<String>>,
     pub reasoning: String,
 }
 
@@ -90,6 +102,7 @@ pub async fn run(
     tag: Option<&str>,
     all_tags: bool,
     prd_file: Option<&Path>,
+    fix: bool,
     model: Option<&str>,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
@@ -98,7 +111,12 @@ pub async fn run(
         anyhow::bail!("SCUD not initialized. Run: scud init");
     }
 
-    let all_phases = storage.load_tasks()?;
+    // Validate --fix requires --prd
+    if fix && prd_file.is_none() {
+        anyhow::bail!("--fix requires --prd to be specified");
+    }
+
+    let mut all_phases = storage.load_tasks()?;
 
     if all_phases.is_empty() {
         println!("{}", "No tasks found.".yellow());
@@ -172,6 +190,11 @@ pub async fn run(
             None => LLMClient::new()?,
         };
 
+        // Show model info
+        let model_info = client.smart_model_info(model);
+        println!("{} {}", "Using".blue(), model_info.to_string().cyan());
+        println!();
+
         // Show progress
         let spinner = ProgressBar::new_spinner();
         spinner.set_style(
@@ -190,6 +213,134 @@ pub async fn run(
 
         // Print PRD validation results
         has_prd_issues = print_prd_results(&validation);
+
+        // Apply fixes if requested
+        if fix && has_prd_issues {
+            println!();
+            println!("{}", "━".repeat(50).green());
+            println!("{}", "Applying PRD Fixes".green().bold());
+            println!("{}", "━".repeat(50).green());
+            println!();
+
+            // Show progress for fix generation
+            let fix_spinner = ProgressBar::new_spinner();
+            fix_spinner.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {msg}")
+                    .unwrap(),
+            );
+            fix_spinner.set_message("Generating fixes based on PRD validation...");
+            fix_spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+
+            // Call LLM to generate fixes
+            let fix_prompt = Prompts::fix_prd_issues(&prd_content, &tasks_json, &validation);
+            let fixes: Vec<PrdFix> = client.complete_json_smart(&fix_prompt, model).await?;
+
+            fix_spinner.finish_and_clear();
+
+            if fixes.is_empty() {
+                println!("  {} No automatic fixes available", "ℹ".blue());
+            } else {
+                println!("  {} Generated {} fix(es):\n", "✓".green(), fixes.len());
+
+                let mut changes_made = 0;
+
+                for fix_item in &fixes {
+                    println!("  {} {}", "→".cyan(), fix_item.action.cyan().bold());
+                    println!("    {}", fix_item.reasoning.dimmed());
+
+                    match fix_item.action.as_str() {
+                        "update_task" => {
+                            if let Some(task_id) = &fix_item.task_id {
+                                // Parse tag:id format
+                                let (fix_tag, fix_task_id) =
+                                    parse_task_id(task_id, &phases_to_check);
+
+                                if let Some(phase) = all_phases.get_mut(&fix_tag) {
+                                    if let Some(task) =
+                                        phase.tasks.iter_mut().find(|t| t.id == fix_task_id)
+                                    {
+                                        if let Some(new_title) = &fix_item.new_title {
+                                            println!("    {} {}", "Title:".green(), new_title);
+                                            task.title = new_title.clone();
+                                            changes_made += 1;
+                                        }
+                                        if let Some(new_desc) = &fix_item.new_description {
+                                            println!(
+                                                "    {} {} chars",
+                                                "Description:".green(),
+                                                new_desc.len()
+                                            );
+                                            task.description = new_desc.clone();
+                                            changes_made += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "update_dependency" => {
+                            if let Some(task_id) = &fix_item.task_id {
+                                let (fix_tag, fix_task_id) =
+                                    parse_task_id(task_id, &phases_to_check);
+
+                                if let Some(phase) = all_phases.get_mut(&fix_tag) {
+                                    if let Some(task) =
+                                        phase.tasks.iter_mut().find(|t| t.id == fix_task_id)
+                                    {
+                                        if let Some(add_deps) = &fix_item.add_dependencies {
+                                            for dep in add_deps {
+                                                if !task.dependencies.contains(dep) {
+                                                    println!("    {} +{}", "Dep:".green(), dep);
+                                                    task.dependencies.push(dep.clone());
+                                                    changes_made += 1;
+                                                }
+                                            }
+                                        }
+                                        if let Some(remove_deps) = &fix_item.remove_dependencies {
+                                            for dep in remove_deps {
+                                                if task.dependencies.contains(dep) {
+                                                    println!("    {} -{}", "Dep:".red(), dep);
+                                                    task.dependencies.retain(|d| d != dep);
+                                                    changes_made += 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            println!(
+                                "    {} Unsupported action: {}",
+                                "⚠".yellow(),
+                                fix_item.action
+                            );
+                        }
+                    }
+                    println!();
+                }
+
+                if changes_made > 0 {
+                    storage.save_tasks(&all_phases)?;
+                    println!(
+                        "{}",
+                        format!("✓ Applied {} change(s) successfully!", changes_made)
+                            .green()
+                            .bold()
+                    );
+                    has_prd_issues = false; // Don't exit with error since we fixed things
+                } else {
+                    println!(
+                        "  {} No changes could be applied automatically",
+                        "ℹ".yellow()
+                    );
+                    println!(
+                        "  {} Some issues may require manual intervention",
+                        "ℹ".yellow()
+                    );
+                }
+            }
+        }
     }
 
     if results.has_issues() || has_prd_issues {
@@ -197,6 +348,17 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+/// Parse task_id in format "tag:id" or just "id"
+fn parse_task_id(task_id: &str, phases_to_check: &[String]) -> (String, String) {
+    if task_id.contains(':') {
+        let parts: Vec<&str> = task_id.split(':').collect();
+        (parts[0].to_string(), parts[1..].join(":"))
+    } else {
+        let tag = phases_to_check.first().cloned().unwrap_or_default();
+        (tag, task_id.to_string())
+    }
 }
 
 fn build_tasks_json(
@@ -241,7 +403,9 @@ pub fn validate_phase(
         for dep in &task.dependencies {
             // Check for invalid "0" reference
             if dep == "0" || dep.ends_with(":0") {
-                results.invalid_zero_deps.push((tag.to_string(), task.id.clone()));
+                results
+                    .invalid_zero_deps
+                    .push((tag.to_string(), task.id.clone()));
                 continue;
             }
 
@@ -257,22 +421,18 @@ pub fn validate_phase(
                 || all_task_ids.contains(&format!("{}:{}", tag, dep));
 
             if !exists {
-                results.missing_deps.push((
-                    tag.to_string(),
-                    task.id.clone(),
-                    dep.clone(),
-                ));
+                results
+                    .missing_deps
+                    .push((tag.to_string(), task.id.clone(), dep.clone()));
                 continue;
             }
 
             // Check if dependency is cancelled
             if let Some(dep_task) = phase.get_task(dep) {
                 if dep_task.status == TaskStatus::Cancelled {
-                    results.cancelled_deps.push((
-                        tag.to_string(),
-                        task.id.clone(),
-                        dep.clone(),
-                    ));
+                    results
+                        .cancelled_deps
+                        .push((tag.to_string(), task.id.clone(), dep.clone()));
                 }
             }
         }
@@ -442,7 +602,10 @@ fn print_prd_results(validation: &PrdValidationResult) -> bool {
     }
 
     if !validation.dependency_suggestions.is_empty() {
-        println!("{}", "Suggested Dependencies (from PRD context)".cyan().bold());
+        println!(
+            "{}",
+            "Suggested Dependencies (from PRD context)".cyan().bold()
+        );
         println!("{}", "-".repeat(40).cyan());
         for dep in &validation.dependency_suggestions {
             println!(
@@ -484,7 +647,9 @@ mod tests {
         let mut results = DepCheckResults::default();
         assert!(!results.has_issues());
 
-        results.missing_deps.push(("test".to_string(), "1".to_string(), "99".to_string()));
+        results
+            .missing_deps
+            .push(("test".to_string(), "1".to_string(), "99".to_string()));
         assert!(results.has_issues());
     }
 
@@ -501,7 +666,10 @@ mod tests {
         validate_phase("test", &phase, &all_ids, &mut results);
 
         assert_eq!(results.invalid_zero_deps.len(), 1);
-        assert_eq!(results.invalid_zero_deps[0], ("test".to_string(), "1".to_string()));
+        assert_eq!(
+            results.invalid_zero_deps[0],
+            ("test".to_string(), "1".to_string())
+        );
     }
 
     #[test]

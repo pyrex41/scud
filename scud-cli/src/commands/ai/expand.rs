@@ -53,6 +53,10 @@ pub async fn run(
         LLMClient::new()?
     });
 
+    // Show model info
+    let model_info = client.fast_model_info(model);
+    println!("{} {}", "Using".blue(), model_info.to_string().cyan());
+
     // Load guidance unless disabled
     let guidance = if no_guidance {
         None
@@ -232,7 +236,13 @@ pub async fn run(
                         // Retry logic (use fast model for generation tasks)
                         let mut last_error = None;
                         for attempt in 1..=3 {
-                            match client.complete_json_fast::<Vec<ExpandedTask>>(&prompt, model_ref.as_deref()).await {
+                            match client
+                                .complete_json_fast::<Vec<ExpandedTask>>(
+                                    &prompt,
+                                    model_ref.as_deref(),
+                                )
+                                .await
+                            {
                                 Ok(expanded) => {
                                     spinner.finish_and_clear();
                                     overall.inc(1);

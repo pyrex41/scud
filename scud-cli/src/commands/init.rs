@@ -41,7 +41,10 @@ fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
     model_options.push("Custom (enter model name)".to_string());
 
     let default_model_index = if tier == "fast" && provider == "xai" {
-        suggested.iter().position(|m| *m == "grok-code-fast-1").unwrap_or(0)
+        suggested
+            .iter()
+            .position(|m| *m == "grok-code-fast-1")
+            .unwrap_or(0)
     } else if tier == "smart" && provider == "claude-cli" {
         suggested.iter().position(|m| *m == "opus").unwrap_or(0)
     } else {
@@ -49,7 +52,10 @@ fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
     };
 
     let model_selection = Select::new()
-        .with_prompt(&format!("Select {} model (or choose Custom to enter any model)", tier))
+        .with_prompt(&format!(
+            "Select {} model (or choose Custom to enter any model)",
+            tier
+        ))
         .items(&model_options)
         .default(default_model_index)
         .interact()?;
@@ -77,7 +83,11 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     println!("{}", "Initializing SCUD...".blue());
     println!();
 
-    let (provider, model, smart_provider, smart_model, fast_provider, fast_model) = if let Some(provider_name) = provider_arg {
+    let (provider, model, smart_provider, smart_model, fast_provider, fast_model) = if let Some(
+        provider_name,
+    ) =
+        provider_arg
+    {
         // Non-interactive mode with command-line argument - use defaults for all tiers
         let provider = provider_name.to_lowercase();
         if !matches!(
@@ -95,9 +105,19 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         let smart_model = "opus".to_string();
         let fast_provider = "xai".to_string();
         let fast_model = "grok-code-fast-1".to_string();
-        (provider, model, smart_provider, smart_model, fast_provider, fast_model)
+        (
+            provider,
+            model,
+            smart_provider,
+            smart_model,
+            fast_provider,
+            fast_model,
+        )
     } else if is_interactive() {
-        println!("{}", "SCUD supports separate models for different types of tasks:".blue());
+        println!(
+            "{}",
+            "SCUD supports separate models for different types of tasks:".blue()
+        );
         println!("  • Fast models: Quick coding, generation tasks");
         println!("  • Smart models: Complex reasoning, analysis, validation");
         println!();
@@ -115,7 +135,14 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         let provider = fast_provider.clone();
         let model = fast_model.clone();
 
-        (provider, model, smart_provider, smart_model, fast_provider, fast_model)
+        (
+            provider,
+            model,
+            smart_provider,
+            smart_model,
+            fast_provider,
+            fast_model,
+        )
     } else {
         // Non-interactive without provider arg: use default (claude-cli)
         let provider = "claude-cli";
@@ -125,7 +152,14 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         let smart_model = "opus".to_string();
         let fast_provider = "xai".to_string();
         let fast_model = "grok-code-fast-1".to_string();
-        (provider.to_string(), model.to_string(), smart_provider, smart_model, fast_provider, fast_model)
+        (
+            provider.to_string(),
+            model.to_string(),
+            smart_provider,
+            smart_model,
+            fast_provider,
+            fast_model,
+        )
     };
 
     let config = Config {
@@ -147,10 +181,7 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     // Auto-install all agents and commands
     println!("\n{}", "Installing SCUD agents and commands...".blue());
     if let Err(e) = config_cmd::agents_add(Some(storage.project_root().to_path_buf()), None, true) {
-        println!(
-            "{}",
-            format!("  Could not install agents: {}", e).yellow()
-        );
+        println!("{}", format!("  Could not install agents: {}", e).yellow());
         println!("  You can install them later with: scud config agents add --all");
     }
 
@@ -163,18 +194,36 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
     }
 
     println!("\n{}", "Configuration:".blue());
-    println!("  Default Provider: {} ({})", config.llm.provider.yellow(), config.llm.model.yellow());
-    println!("  Fast Provider: {} ({})", config.llm.fast_provider.yellow(), config.llm.fast_model.yellow());
-    println!("  Smart Provider: {} ({})", config.llm.smart_provider.yellow(), config.llm.smart_model.yellow());
+    println!(
+        "  Default Provider: {} ({})",
+        config.llm.provider.yellow(),
+        config.llm.model.yellow()
+    );
+    println!(
+        "  Fast Provider: {} ({})",
+        config.llm.fast_provider.yellow(),
+        config.llm.fast_model.yellow()
+    );
+    println!(
+        "  Smart Provider: {} ({})",
+        config.llm.smart_provider.yellow(),
+        config.llm.smart_model.yellow()
+    );
     if config.requires_api_key() {
         println!("\n{}", "Environment variables required:".blue());
         let mut env_vars = std::collections::HashSet::new();
         env_vars.insert(config.api_key_env_var());
         if config.llm.fast_provider != config.llm.provider {
-            env_vars.insert(Config::api_key_env_var_for_provider(&config.llm.fast_provider));
+            env_vars.insert(Config::api_key_env_var_for_provider(
+                &config.llm.fast_provider,
+            ));
         }
-        if config.llm.smart_provider != config.llm.provider && config.llm.smart_provider != config.llm.fast_provider {
-            env_vars.insert(Config::api_key_env_var_for_provider(&config.llm.smart_provider));
+        if config.llm.smart_provider != config.llm.provider
+            && config.llm.smart_provider != config.llm.fast_provider
+        {
+            env_vars.insert(Config::api_key_env_var_for_provider(
+                &config.llm.smart_provider,
+            ));
         }
         for env_var in env_vars {
             if env_var != "NONE" {

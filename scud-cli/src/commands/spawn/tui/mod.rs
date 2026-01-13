@@ -142,7 +142,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 
                     // s: spawn selected tasks
                     (_, KeyCode::Char('s')) => {
-                        if app.focused_panel == FocusedPanel::Waves && app.selected_task_count() > 0 {
+                        if app.focused_panel == FocusedPanel::Waves && app.selected_task_count() > 0
+                        {
                             let count = app.selected_task_count();
                             match app.spawn_selected_tasks() {
                                 Ok(spawned) if spawned > 0 => {
@@ -162,7 +163,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 
                     // Enter: toggle fullscreen or view agent output
                     (_, KeyCode::Enter) => {
-                        if app.focused_panel == FocusedPanel::Output || app.view_mode == ViewMode::Fullscreen {
+                        if app.focused_panel == FocusedPanel::Output
+                            || app.view_mode == ViewMode::Fullscreen
+                        {
                             app.toggle_fullscreen();
                         } else if app.focused_panel == FocusedPanel::Agents {
                             // Switch to output panel to see agent's output
@@ -180,7 +183,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
 
                     // i: Enter input mode (send text to agent)
                     (_, KeyCode::Char('i')) => {
-                        if app.focused_panel == FocusedPanel::Agents || app.focused_panel == FocusedPanel::Output {
+                        if app.focused_panel == FocusedPanel::Agents
+                            || app.focused_panel == FocusedPanel::Output
+                        {
                             app.enter_input_mode();
                         }
                     }

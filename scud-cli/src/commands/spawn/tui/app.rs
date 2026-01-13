@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use crate::commands::spawn::monitor::{load_session, save_session, AgentState, AgentStatus, SpawnSession};
+use crate::commands::spawn::monitor::{
+    load_session, save_session, AgentState, AgentStatus, SpawnSession,
+};
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
@@ -230,30 +232,31 @@ impl App {
         let output = Command::new("tmux")
             .args([
                 "capture-pane",
-                "-t", &window_target,
-                "-p",           // print to stdout
-                "-S", "-100",   // start from 100 lines back
+                "-t",
+                &window_target,
+                "-p", // print to stdout
+                "-S",
+                "-100", // start from 100 lines back
             ])
             .output();
 
         match output {
             Ok(out) if out.status.success() => {
                 let content = String::from_utf8_lossy(&out.stdout);
-                self.live_output = content
-                    .lines()
-                    .map(|s| s.to_string())
-                    .collect();
+                self.live_output = content.lines().map(|s| s.to_string()).collect();
 
                 // Remove trailing empty lines
-                while self.live_output.last().map(|s| s.trim().is_empty()).unwrap_or(false) {
+                while self
+                    .live_output
+                    .last()
+                    .map(|s| s.trim().is_empty())
+                    .unwrap_or(false)
+                {
                     self.live_output.pop();
                 }
             }
             Ok(out) => {
-                self.live_output = vec![format!(
-                    "Error: {}",
-                    String::from_utf8_lossy(&out.stderr)
-                )];
+                self.live_output = vec![format!("Error: {}", String::from_utf8_lossy(&out.stderr))];
             }
             Err(e) => {
                 self.live_output = vec![format!("tmux error: {}", e)];
@@ -276,7 +279,9 @@ impl App {
 
             let task_status = all_phases.as_ref().and_then(|phases| {
                 phases.get(&agent.tag).and_then(|phase| {
-                    phase.get_task(&agent.task_id).map(|task| task.status.clone())
+                    phase
+                        .get_task(&agent.task_id)
+                        .map(|task| task.status.clone())
                 })
             });
 
@@ -294,23 +299,27 @@ impl App {
     /// Get list of tmux windows for a session: [(index, name), ...]
     fn get_tmux_windows(&self, session_name: &str) -> Vec<(usize, String)> {
         let output = Command::new("tmux")
-            .args(["list-windows", "-t", session_name, "-F", "#{window_index}:#{window_name}"])
+            .args([
+                "list-windows",
+                "-t",
+                session_name,
+                "-F",
+                "#{window_index}:#{window_name}",
+            ])
             .output();
 
         match output {
-            Ok(out) if out.status.success() => {
-                String::from_utf8_lossy(&out.stdout)
-                    .lines()
-                    .filter_map(|line| {
-                        let parts: Vec<&str> = line.splitn(2, ':').collect();
-                        if parts.len() == 2 {
-                            parts[0].parse().ok().map(|idx| (idx, parts[1].to_string()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            }
+            Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .filter_map(|line| {
+                    let parts: Vec<&str> = line.splitn(2, ':').collect();
+                    if parts.len() == 2 {
+                        parts[0].parse().ok().map(|idx| (idx, parts[1].to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -349,7 +358,9 @@ impl App {
     /// Auto-spawn ready tasks in Ralph mode
     fn ralph_auto_spawn(&mut self) {
         // Count running agents
-        let running_count = self.agents().iter()
+        let running_count = self
+            .agents()
+            .iter()
             .filter(|a| a.status == AgentStatus::Running || a.status == AgentStatus::Starting)
             .count();
 
@@ -365,8 +376,7 @@ impl App {
             for task in &wave.tasks {
                 if task.state == WaveTaskState::Ready && !self.selected_tasks.contains(&task.id) {
                     // Check if already have an agent for this task
-                    let already_spawned = self.agents().iter()
-                        .any(|a| a.task_id == task.id);
+                    let already_spawned = self.agents().iter().any(|a| a.task_id == task.id);
                     if !already_spawned {
                         tasks_to_spawn.push(task.id.clone());
                         if tasks_to_spawn.len() >= slots_available {
@@ -504,7 +514,13 @@ impl App {
 
         // Send the input to tmux
         let result = Command::new("tmux")
-            .args(["send-keys", "-t", &window_target, &self.input_buffer, "Enter"])
+            .args([
+                "send-keys",
+                "-t",
+                &window_target,
+                &self.input_buffer,
+                "Enter",
+            ])
             .output();
 
         match result {
@@ -561,7 +577,13 @@ impl App {
 
             // Clear and show message
             let _ = Command::new("tmux")
-                .args(["send-keys", "-t", &target, "echo 'Agent restarted by user'", "Enter"])
+                .args([
+                    "send-keys",
+                    "-t",
+                    &target,
+                    "echo 'Agent restarted by user'",
+                    "Enter",
+                ])
                 .output();
 
             self.error = None;
@@ -606,10 +628,22 @@ impl App {
     /// Get status counts (starting, running, completed, failed)
     pub fn status_counts(&self) -> (usize, usize, usize, usize) {
         let agents = self.agents();
-        let starting = agents.iter().filter(|a| a.status == AgentStatus::Starting).count();
-        let running = agents.iter().filter(|a| a.status == AgentStatus::Running).count();
-        let completed = agents.iter().filter(|a| a.status == AgentStatus::Completed).count();
-        let failed = agents.iter().filter(|a| a.status == AgentStatus::Failed).count();
+        let starting = agents
+            .iter()
+            .filter(|a| a.status == AgentStatus::Starting)
+            .count();
+        let running = agents
+            .iter()
+            .filter(|a| a.status == AgentStatus::Running)
+            .count();
+        let completed = agents
+            .iter()
+            .filter(|a| a.status == AgentStatus::Completed)
+            .count();
+        let failed = agents
+            .iter()
+            .filter(|a| a.status == AgentStatus::Failed)
+            .count();
         (starting, running, completed, failed)
     }
 
@@ -1098,7 +1132,9 @@ impl App {
         use crate::commands::spawn::{agent, terminal};
 
         // Find the task in waves
-        let task_info = self.waves.iter()
+        let task_info = self
+            .waves
+            .iter()
             .flat_map(|w| w.tasks.iter())
             .find(|t| t.id == task_id)
             .map(|t| (t.id.clone(), t.title.clone(), t.tag.clone()));
@@ -1206,7 +1242,10 @@ DO NOT output this promise unless task {task_id} is TRULY complete!
                 self.refresh_waves();
             }
             Err(e) => {
-                self.error = Some(format!("Failed to spawn Ralph agent for {}: {}", task_id, e));
+                self.error = Some(format!(
+                    "Failed to spawn Ralph agent for {}: {}",
+                    task_id, e
+                ));
             }
         }
 

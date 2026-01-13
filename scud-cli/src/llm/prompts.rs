@@ -325,4 +325,74 @@ Return ONLY the JSON object, no additional explanation."#,
             tasks_json = tasks_json
         )
     }
+
+    pub fn fix_prd_issues(
+        prd_content: &str,
+        tasks_json: &str,
+        validation: &crate::commands::check_deps::PrdValidationResult,
+    ) -> String {
+        let validation_json = serde_json::to_string_pretty(validation).unwrap_or_default();
+
+        format!(
+            r#"You are a task management expert fixing tasks to better align with the PRD.
+
+## Original PRD/Requirements Document
+
+{prd_content}
+
+## Current Tasks (JSON)
+
+{tasks_json}
+
+## Validation Results (Issues Found)
+
+{validation_json}
+
+## Your Task
+
+Generate fixes for the issues identified in the validation. Focus on:
+
+1. **Misaligned Tasks**: Update task titles and descriptions to match PRD intent
+2. **Dependency Issues**: Add or remove dependencies based on logical ordering
+3. **Incomplete Coverage**: Update task descriptions to cover gaps
+
+## Rules
+
+- Only fix issues that can be resolved by updating existing tasks
+- Do NOT suggest adding new tasks (that's a separate operation)
+- Be precise - update only what needs changing
+- Use full task IDs with phase prefix (e.g., "swfix:1", "auth:3")
+- Keep task titles concise and action-oriented
+- Keep descriptions to 2-3 sentences
+
+## Response Format
+
+Return a JSON array of fixes:
+```json
+[
+  {{
+    "action": "update_task",
+    "task_id": "swfix:1",
+    "new_title": "Updated title matching PRD",
+    "new_description": "Updated description that better reflects PRD requirements",
+    "reasoning": "Why this change aligns with PRD"
+  }},
+  {{
+    "action": "update_dependency",
+    "task_id": "swfix:3",
+    "add_dependencies": ["swfix:1"],
+    "remove_dependencies": [],
+    "reasoning": "Task 3 needs output from task 1 per PRD"
+  }}
+]
+```
+
+Return empty array [] if no automatic fixes are possible.
+
+Return ONLY the JSON array, no additional explanation."#,
+            prd_content = prd_content,
+            tasks_json = tasks_json,
+            validation_json = validation_json
+        )
+    }
 }

@@ -56,7 +56,10 @@ pub fn parse_terminal(name: &str) -> Result<Terminal> {
         "iterm" | "iterm2" => Ok(Terminal::ITerm2),
         "tmux" => Ok(Terminal::Tmux),
         "auto" => Ok(detect_terminal()),
-        other => anyhow::bail!("Unknown terminal: {}. Supported: kitty, wezterm, iterm2, tmux, auto", other),
+        other => anyhow::bail!(
+            "Unknown terminal: {}. Supported: kitty, wezterm, iterm2, tmux, auto",
+            other
+        ),
     }
 }
 
@@ -229,10 +232,13 @@ fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &st
     let new_window_output = Command::new("tmux")
         .args([
             "new-window",
-            "-t", session_name,
-            "-n", &window_name,
-            "-P",                    // Print info about new window
-            "-F", "#{window_index}", // Format: just the index
+            "-t",
+            session_name,
+            "-n",
+            &window_name,
+            "-P", // Print info about new window
+            "-F",
+            "#{window_index}", // Format: just the index
         ])
         .arg("-c")
         .arg(working_dir)
@@ -290,7 +296,13 @@ pub fn spawn_terminal_ralph(
     completion_promise: &str,
 ) -> Result<()> {
     match terminal {
-        Terminal::Tmux => spawn_tmux_ralph(task_id, prompt, working_dir, session_name, completion_promise),
+        Terminal::Tmux => spawn_tmux_ralph(
+            task_id,
+            prompt,
+            working_dir,
+            session_name,
+            completion_promise,
+        ),
         // For other terminals, fall back to regular spawn
         // Ralph loop requires bash scripting that's easier in tmux
         _ => spawn_terminal(terminal, task_id, prompt, working_dir, session_name),
@@ -328,10 +340,13 @@ fn spawn_tmux_ralph(
     let new_window_output = Command::new("tmux")
         .args([
             "new-window",
-            "-t", session_name,
-            "-n", &window_name,
+            "-t",
+            session_name,
+            "-n",
+            &window_name,
             "-P",
-            "-F", "#{window_index}",
+            "-F",
+            "#{window_index}",
         ])
         .arg("-c")
         .arg(working_dir)

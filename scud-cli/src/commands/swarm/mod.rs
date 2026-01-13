@@ -25,15 +25,15 @@ use std::thread;
 use std::time::Duration;
 
 use crate::commands::helpers::{flatten_all_tasks, resolve_group_tag};
+use crate::commands::spawn::agent;
 use crate::commands::spawn::hooks;
 use crate::commands::spawn::terminal::{self, parse_terminal, Terminal};
-use crate::commands::spawn::agent;
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
 use self::backpressure::BackpressureConfig;
-use self::session::{SwarmSession, RoundState, WaveState, WaveSummary};
+use self::session::{RoundState, SwarmSession, WaveState, WaveSummary};
 
 /// Main entry point for the swarm command
 pub fn run(
@@ -83,20 +83,37 @@ pub fn run(
     println!("{}", "SCUD Swarm Mode".cyan().bold());
     println!("{}", "═".repeat(50));
     println!("{:<20} {}", "Tag:".dimmed(), phase_tag.green());
-    println!("{:<20} {}", "Round size:".dimmed(), round_size.to_string().cyan());
-    println!("{:<20} {}",
-        "Research:".dimmed(),
-        if no_research { "skip".yellow() } else { "enabled".green() }
+    println!(
+        "{:<20} {}",
+        "Round size:".dimmed(),
+        round_size.to_string().cyan()
     );
-    println!("{:<20} {}",
+    println!(
+        "{:<20} {}",
+        "Research:".dimmed(),
+        if no_research {
+            "skip".yellow()
+        } else {
+            "enabled".green()
+        }
+    );
+    println!(
+        "{:<20} {}",
         "Validation:".dimmed(),
-        if no_validate { "skip".yellow() } else { "enabled".green() }
+        if no_validate {
+            "skip".yellow()
+        } else {
+            "enabled".green()
+        }
     );
     println!("{:<20} {}", "Terminal:".dimmed(), terminal.name().cyan());
 
     if !bp_config.commands.is_empty() && !no_validate {
-        println!("{:<20} {}", "Backpressure:".dimmed(),
-            bp_config.commands.join(", ").dimmed());
+        println!(
+            "{:<20} {}",
+            "Backpressure:".dimmed(),
+            bp_config.commands.join(", ").dimmed()
+        );
     }
     println!();
 
@@ -108,7 +125,11 @@ pub fn run(
     if !hooks::hooks_installed(&working_dir) {
         println!("{}", "Installing Claude Code hooks...".dimmed());
         if let Err(e) = hooks::install_hooks(&working_dir) {
-            println!("  {} Hook installation: {}", "!".yellow(), e.to_string().dimmed());
+            println!(
+                "  {} Hook installation: {}",
+                "!".yellow(),
+                e.to_string().dimmed()
+            );
         } else {
             println!("  {} Hooks installed", "✓".green());
         }
@@ -271,7 +292,9 @@ pub fn run(
         swarm_session.waves.len().to_string().green()
     );
 
-    let total_tasks: usize = swarm_session.waves.iter()
+    let total_tasks: usize = swarm_session
+        .waves
+        .iter()
         .flat_map(|w| &w.rounds)
         .map(|r| r.task_ids.len())
         .sum();
@@ -406,7 +429,10 @@ fn count_in_progress(
     let tags: Vec<&String> = if all_tags {
         all_phases.keys().collect()
     } else {
-        all_phases.keys().filter(|t| t.as_str() == phase_tag).collect()
+        all_phases
+            .keys()
+            .filter(|t| t.as_str() == phase_tag)
+            .collect()
     };
 
     tags.iter()
@@ -430,7 +456,8 @@ fn execute_round(
         // Generate prompt - agents self-orient using scud CLI commands
         let prompt = agent::generate_prompt(info.task, &info.tag);
 
-        match terminal::spawn_terminal(terminal, &info.task.id, &prompt, working_dir, session_name) {
+        match terminal::spawn_terminal(terminal, &info.task.id, &prompt, working_dir, session_name)
+        {
             Ok(()) => {
                 println!(
                     "    {} Spawned: {} | {}",
@@ -449,12 +476,7 @@ fn execute_round(
                 }
             }
             Err(e) => {
-                println!(
-                    "    {} Failed: {} - {}",
-                    "✗".red(),
-                    info.task.id.red(),
-                    e
-                );
+                println!("    {} Failed: {} - {}", "✗".red(), info.task.id.red(), e);
                 round_state.failures.push(info.task.id.clone());
             }
         }
@@ -479,7 +501,9 @@ fn wait_for_round_completion(storage: &Storage, tasks: &[TaskInfo]) -> Result<()
             if let Some(tag) = task_tags.get(task_id) {
                 if let Ok(phase) = storage.load_group(tag) {
                     if let Some(task) = phase.get_task(task_id) {
-                        if task.status == TaskStatus::InProgress || task.status == TaskStatus::Pending {
+                        if task.status == TaskStatus::InProgress
+                            || task.status == TaskStatus::Pending
+                        {
                             all_done = false;
                             break;
                         }

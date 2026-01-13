@@ -83,7 +83,9 @@ pub fn run(
         if !collisions.is_empty() {
             println!(
                 "{}",
-                "Warning: ID collisions detected across tags!".yellow().bold()
+                "Warning: ID collisions detected across tags!"
+                    .yellow()
+                    .bold()
             );
             println!("The following local IDs exist in multiple tags:");
             for (local_id, tags) in &collisions {

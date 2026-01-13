@@ -170,11 +170,7 @@ fn run_all_tags(
 
     match available {
         Some((task, tag)) => {
-            println!(
-                "{} {}",
-                "Phase:".dimmed(),
-                tag.cyan()
-            );
+            println!("{} {}", "Phase:".dimmed(), tag.cyan());
             print_task_details(task);
             print_standard_instructions(&task.id);
         }
@@ -187,7 +183,10 @@ fn run_all_tags(
                     "{}",
                     "No available tasks - all pending tasks blocked by dependencies".yellow()
                 );
-                println!("Pending tasks exist in {} phase(s), but all are blocked.", pending_tasks.len());
+                println!(
+                    "Pending tasks exist in {} phase(s), but all are blocked.",
+                    pending_tasks.len()
+                );
                 println!("Run: scud waves --all-tags  # to see dependency graph");
                 println!("Run: scud doctor  # to diagnose stuck states");
             }

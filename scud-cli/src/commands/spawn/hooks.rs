@@ -55,8 +55,7 @@ pub fn install_hooks(project_root: &Path) -> Result<()> {
     let settings_path = claude_dir.join("settings.local.json");
 
     // Ensure .claude directory exists
-    fs::create_dir_all(&claude_dir)
-        .context("Failed to create .claude directory")?;
+    fs::create_dir_all(&claude_dir).context("Failed to create .claude directory")?;
 
     // Load existing settings or create new
     let mut settings: Value = if settings_path.exists() {
@@ -86,10 +85,7 @@ pub fn install_hooks(project_root: &Path) -> Result<()> {
     ]);
 
     // Merge with existing hooks (preserve other hooks)
-    let hooks = settings
-        .get("hooks")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let hooks = settings.get("hooks").cloned().unwrap_or_else(|| json!({}));
 
     let mut hooks_obj = hooks.as_object().cloned().unwrap_or_default();
     hooks_obj.insert("Stop".to_string(), stop_hook);

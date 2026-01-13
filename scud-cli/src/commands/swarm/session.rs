@@ -30,7 +30,8 @@ impl WaveSummary {
     pub fn to_text(&self) -> String {
         let mut lines = Vec::new();
 
-        lines.push(format!("Wave {} completed {} task(s):",
+        lines.push(format!(
+            "Wave {} completed {} task(s):",
             self.wave_number,
             self.tasks_completed.len()
         ));
@@ -43,7 +44,8 @@ impl WaveSummary {
             let file_summary = if self.files_changed.len() <= 5 {
                 self.files_changed.join(", ")
             } else {
-                format!("{} and {} more",
+                format!(
+                    "{} and {} more",
                     self.files_changed[..5].join(", "),
                     self.files_changed.len() - 5
                 )
@@ -210,9 +212,9 @@ impl SwarmSession {
     /// Get brief summary of the previous wave (if any)
     /// This is just "what was done", not accumulated context
     pub fn get_previous_summary(&self) -> Option<String> {
-        self.waves.last().and_then(|w| {
-            w.summary.as_ref().map(|s| s.to_text())
-        })
+        self.waves
+            .last()
+            .and_then(|w| w.summary.as_ref().map(|s| s.to_text()))
     }
 }
 
@@ -304,13 +306,7 @@ mod tests {
 
     #[test]
     fn test_swarm_session_total_tasks() {
-        let mut session = SwarmSession::new(
-            "test-session",
-            "test-tag",
-            "tmux",
-            "/test/path",
-            5,
-        );
+        let mut session = SwarmSession::new("test-session", "test-tag", "tmux", "/test/path", 5);
 
         let mut wave = WaveState::new(1);
         let mut round = RoundState::new(0);

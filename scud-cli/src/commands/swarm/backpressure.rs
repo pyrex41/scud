@@ -208,7 +208,11 @@ pub fn run_validation(working_dir: &Path, config: &BackpressureConfig) -> Result
 }
 
 /// Run a single command
-fn run_command(working_dir: &Path, cmd_str: &str, _timeout_secs: u64) -> Result<(i32, String, String)> {
+fn run_command(
+    working_dir: &Path,
+    cmd_str: &str,
+    _timeout_secs: u64,
+) -> Result<(i32, String, String)> {
     // Parse command (simple split on spaces, handles basic cases)
     let parts: Vec<&str> = cmd_str.split_whitespace().collect();
     if parts.is_empty() {

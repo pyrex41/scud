@@ -15,13 +15,19 @@ const EMBEDDED_SCUD_COMMANDS: &[(&str, &str)] = &[
     ("show", include_str!("../../assets/commands/scud/show.md")),
     ("list", include_str!("../../assets/commands/scud/list.md")),
     ("waves", include_str!("../../assets/commands/scud/waves.md")),
-    ("status", include_str!("../../assets/commands/scud/status.md")),
+    (
+        "status",
+        include_str!("../../assets/commands/scud/status.md"),
+    ),
 ];
 
 /// Embedded SCUD skill definitions
 /// Skills are stored in .claude/skills/<skill-name>/SKILL.md
 const EMBEDDED_SCUD_SKILLS: &[(&str, &str)] = &[
-    ("scud-tasks", include_str!("../../assets/skills/scud-tasks/SKILL.md")),
+    (
+        "scud-tasks",
+        include_str!("../../assets/skills/scud-tasks/SKILL.md"),
+    ),
     ("scud", include_str!("../../assets/skills/scud/SKILL.md")),
 ];
 
@@ -486,7 +492,10 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
     // Determine what to add
     let (agents_to_add, skills_to_add): (Vec<&str>, Vec<&str>) = if all {
         (
-            EMBEDDED_SCUD_COMMANDS.iter().map(|(name, _)| *name).collect(),
+            EMBEDDED_SCUD_COMMANDS
+                .iter()
+                .map(|(name, _)| *name)
+                .collect(),
             EMBEDDED_SCUD_SKILLS.iter().map(|(name, _)| *name).collect(),
         )
     } else {
@@ -500,8 +509,16 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
             anyhow::bail!(
                 "Unknown agent/skill: '{}'. Valid agents: {}. Valid skills: {}",
                 name_ref,
-                EMBEDDED_SCUD_COMMANDS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", "),
-                EMBEDDED_SCUD_SKILLS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
+                EMBEDDED_SCUD_COMMANDS
+                    .iter()
+                    .map(|(n, _)| *n)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                EMBEDDED_SCUD_SKILLS
+                    .iter()
+                    .map(|(n, _)| *n)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
     };
@@ -519,12 +536,19 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
             }
 
             // Find embedded content
-            if let Some((_, content)) = EMBEDDED_SCUD_COMMANDS.iter().find(|(n, _)| *n == *agent_name) {
+            if let Some((_, content)) = EMBEDDED_SCUD_COMMANDS
+                .iter()
+                .find(|(n, _)| *n == *agent_name)
+            {
                 fs::write(&dest, content)?;
                 agents_added += 1;
                 println!("  {} {}", "✓".green(), agent_name.green());
             } else {
-                println!("  {} {} (embedded content not found)", "✗".red(), agent_name);
+                println!(
+                    "  {} {} (embedded content not found)",
+                    "✗".red(),
+                    agent_name
+                );
             }
         }
     }
@@ -543,7 +567,8 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
             }
 
             // Find embedded content
-            if let Some((_, content)) = EMBEDDED_SCUD_SKILLS.iter().find(|(n, _)| *n == *skill_name) {
+            if let Some((_, content)) = EMBEDDED_SCUD_SKILLS.iter().find(|(n, _)| *n == *skill_name)
+            {
                 fs::create_dir_all(&dest)?;
                 fs::write(&skill_file, content)?;
                 skills_added += 1;
@@ -557,7 +582,11 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
                     fs::write(&opencode_skill_file, content)?;
                 }
             } else {
-                println!("  {} {} (embedded content not found)", "✗".red(), skill_name);
+                println!(
+                    "  {} {} (embedded content not found)",
+                    "✗".red(),
+                    skill_name
+                );
             }
         }
     }
@@ -586,17 +615,20 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
                 "task-next" => "next",
                 "task-show" => "show",
                 "task-status" => "status",
-                "task-claim" => "status", // closest match
+                "task-claim" => "status",   // closest match
                 "task-release" => "status", // closest match
                 "task-waves" => "waves",
                 "task-stats" => "stats",
-                "task-whois" => "status", // closest match
-                "task-tags" => "status", // closest match
+                "task-whois" => "status",  // closest match
+                "task-tags" => "status",   // closest match
                 "task-doctor" => "status", // closest match
                 _ => continue,
             };
 
-            if let Some((_, content)) = EMBEDDED_SCUD_COMMANDS.iter().find(|(n, _)| *n == embedded_name) {
+            if let Some((_, content)) = EMBEDDED_SCUD_COMMANDS
+                .iter()
+                .find(|(n, _)| *n == embedded_name)
+            {
                 fs::write(&dest, content)?;
                 opencode_added += 1;
             }
@@ -628,7 +660,8 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
 
             // Create basic tool definitions
             let tool_content = match *tool {
-                "find_skills" => r#"{
+                "find_skills" => {
+                    r#"{
   "name": "find_skills",
   "description": "Find available skills in the codebase",
   "inputSchema": {
@@ -640,8 +673,10 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
       }
     }
   }
-}"#,
-                "use_skill" => r#"{
+}"#
+                }
+                "use_skill" => {
+                    r#"{
   "name": "use_skill",
   "description": "Use a specific skill",
   "inputSchema": {
@@ -657,7 +692,8 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
       }
     }
   }
-}"#,
+}"#
+                }
                 _ => continue,
             };
 

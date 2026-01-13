@@ -169,13 +169,16 @@ fn compute_waves(tasks: &[Task]) -> Vec<Wave> {
         let wave_tasks: Vec<WaveTask> = ready
             .iter()
             .filter_map(|task_id| {
-                actionable.iter().find(|t| &t.id == task_id).map(|task| WaveTask {
-                    id: task_id.clone(),
-                    title: task.title.clone(),
-                    status: task.status.as_str().to_string(),
-                    complexity: task.complexity,
-                    dependencies: task.dependencies.clone(),
-                })
+                actionable
+                    .iter()
+                    .find(|t| &t.id == task_id)
+                    .map(|task| WaveTask {
+                        id: task_id.clone(),
+                        title: task.title.clone(),
+                        status: task.status.as_str().to_string(),
+                        complexity: task.complexity,
+                        dependencies: task.dependencies.clone(),
+                    })
             })
             .collect();
 

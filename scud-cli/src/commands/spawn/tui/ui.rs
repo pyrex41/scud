@@ -11,7 +11,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{
+        Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState,
+    },
     Frame,
 };
 
@@ -23,19 +26,19 @@ use super::app::{App, FocusedPanel, ViewMode, WaveTaskState};
 // Color Palette: Zen minimalist
 // ─────────────────────────────────────────────────────────────
 
-const BG_PRIMARY: Color = Color::Rgb(15, 23, 42);      // Deep slate
-const BG_SECONDARY: Color = Color::Rgb(30, 41, 59);    // Elevated surface
-const BG_TERMINAL: Color = Color::Rgb(22, 22, 22);     // Terminal black
+const BG_PRIMARY: Color = Color::Rgb(15, 23, 42); // Deep slate
+const BG_SECONDARY: Color = Color::Rgb(30, 41, 59); // Elevated surface
+const BG_TERMINAL: Color = Color::Rgb(22, 22, 22); // Terminal black
 const TEXT_PRIMARY: Color = Color::Rgb(226, 232, 240); // Soft white
-const TEXT_MUTED: Color = Color::Rgb(100, 116, 139);   // Subdued
+const TEXT_MUTED: Color = Color::Rgb(100, 116, 139); // Subdued
 const TEXT_TERMINAL: Color = Color::Rgb(200, 200, 200); // Terminal text
-const BORDER_DEFAULT: Color = Color::Rgb(51, 65, 85);  // Subtle border
+const BORDER_DEFAULT: Color = Color::Rgb(51, 65, 85); // Subtle border
 const BORDER_ACTIVE: Color = Color::Rgb(96, 165, 250); // Active border
-const ACCENT: Color = Color::Rgb(96, 165, 250);        // Calm blue
+const ACCENT: Color = Color::Rgb(96, 165, 250); // Calm blue
 const STATUS_STARTING: Color = Color::Rgb(148, 163, 184); // Gray
-const STATUS_RUNNING: Color = Color::Rgb(34, 197, 94);    // Green
+const STATUS_RUNNING: Color = Color::Rgb(34, 197, 94); // Green
 const STATUS_COMPLETED: Color = Color::Rgb(96, 165, 250); // Blue
-const STATUS_FAILED: Color = Color::Rgb(248, 113, 113);   // Soft red
+const STATUS_FAILED: Color = Color::Rgb(248, 113, 113); // Soft red
 
 /// Main render function
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -126,9 +129,10 @@ fn render_input_bar(frame: &mut Frame, area: Rect, app: &App) {
 fn render_input_footer(frame: &mut Frame, area: Rect) {
     let help_text = " Enter Send  ·  Esc Cancel  ·  Type your message... ";
 
-    let footer = Paragraph::new(Line::from(vec![
-        Span::styled(help_text, Style::default().fg(TEXT_MUTED)),
-    ]))
+    let footer = Paragraph::new(Line::from(vec![Span::styled(
+        help_text,
+        Style::default().fg(TEXT_MUTED),
+    )]))
     .alignment(Alignment::Center)
     .style(Style::default().bg(BG_PRIMARY));
 
@@ -142,7 +146,10 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let ralph_indicator = if app.ralph_mode {
         vec![
             Span::styled("  🔄 ", Style::default()),
-            Span::styled("RALPH ", Style::default().fg(Color::Rgb(255, 165, 0)).bold()),
+            Span::styled(
+                "RALPH ",
+                Style::default().fg(Color::Rgb(255, 165, 0)).bold(),
+            ),
         ]
     } else {
         vec![]
@@ -159,15 +166,24 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         // Gray = Starting/Waiting
         Span::styled("◉ ", Style::default().fg(STATUS_STARTING)),
         Span::styled("Starting ", Style::default().fg(TEXT_MUTED).dim()),
-        Span::styled(format!("{}  ", starting), Style::default().fg(STATUS_STARTING)),
+        Span::styled(
+            format!("{}  ", starting),
+            Style::default().fg(STATUS_STARTING),
+        ),
         // Green = Running
         Span::styled("◉ ", Style::default().fg(STATUS_RUNNING)),
         Span::styled("Running ", Style::default().fg(TEXT_MUTED).dim()),
-        Span::styled(format!("{}  ", running), Style::default().fg(STATUS_RUNNING)),
+        Span::styled(
+            format!("{}  ", running),
+            Style::default().fg(STATUS_RUNNING),
+        ),
         // Blue = Completed
         Span::styled("◉ ", Style::default().fg(STATUS_COMPLETED)),
         Span::styled("Done ", Style::default().fg(TEXT_MUTED).dim()),
-        Span::styled(format!("{}  ", completed), Style::default().fg(STATUS_COMPLETED)),
+        Span::styled(
+            format!("{}  ", completed),
+            Style::default().fg(STATUS_COMPLETED),
+        ),
         // Red = Failed
         Span::styled("◉ ", Style::default().fg(STATUS_FAILED)),
         Span::styled("Failed ", Style::default().fg(TEXT_MUTED).dim()),
@@ -175,14 +191,13 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     ]);
     let status_line = Line::from(spans);
 
-    let header = Paragraph::new(status_line)
-        .block(
-            Block::default()
-                .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(BORDER_DEFAULT))
-                .style(Style::default().bg(BG_SECONDARY))
-                .padding(Padding::horizontal(1)),
-        );
+    let header = Paragraph::new(status_line).block(
+        Block::default()
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(BORDER_DEFAULT))
+            .style(Style::default().bg(BG_SECONDARY))
+            .padding(Padding::horizontal(1)),
+    );
 
     frame.render_widget(header, area);
 }
@@ -198,13 +213,12 @@ fn render_fullscreen_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled(&agent_name, Style::default().fg(ACCENT).bold()),
     ]);
 
-    let header = Paragraph::new(title)
-        .block(
-            Block::default()
-                .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(BORDER_ACTIVE))
-                .style(Style::default().bg(BG_SECONDARY)),
-        );
+    let header = Paragraph::new(title).block(
+        Block::default()
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(BORDER_ACTIVE))
+            .style(Style::default().bg(BG_SECONDARY)),
+    );
 
     frame.render_widget(header, area);
 }
@@ -217,21 +231,21 @@ fn render_three_panel_content(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let constraints = if has_waves && has_agents {
         vec![
-            Constraint::Percentage(35),  // Waves
-            Constraint::Percentage(25),  // Agents
-            Constraint::Percentage(40),  // Output
+            Constraint::Percentage(35), // Waves
+            Constraint::Percentage(25), // Agents
+            Constraint::Percentage(40), // Output
         ]
     } else if has_waves {
         vec![
-            Constraint::Percentage(50),  // Waves
-            Constraint::Length(3),       // Agents (minimal)
-            Constraint::Percentage(50),  // Output
+            Constraint::Percentage(50), // Waves
+            Constraint::Length(3),      // Agents (minimal)
+            Constraint::Percentage(50), // Output
         ]
     } else if has_agents {
         vec![
-            Constraint::Length(3),       // Waves (minimal)
-            Constraint::Percentage(40),  // Agents
-            Constraint::Percentage(60),  // Output
+            Constraint::Length(3),      // Waves (minimal)
+            Constraint::Percentage(40), // Agents
+            Constraint::Percentage(60), // Output
         ]
     } else {
         vec![
@@ -250,13 +264,20 @@ fn render_three_panel_content(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
     let is_focused = app.focused_panel == FocusedPanel::Waves;
-    let border_color = if is_focused { BORDER_ACTIVE } else { BORDER_DEFAULT };
+    let border_color = if is_focused {
+        BORDER_ACTIVE
+    } else {
+        BORDER_DEFAULT
+    };
     let title_color = if is_focused { ACCENT } else { TEXT_MUTED };
 
     let ready_count = app.ready_task_count();
     let selected_count = app.selected_task_count();
     let title = if selected_count > 0 {
-        format!(" Waves & Tasks ({} selected / {} ready) ", selected_count, ready_count)
+        format!(
+            " Waves & Tasks ({} selected / {} ready) ",
+            selected_count, ready_count
+        )
     } else {
         format!(" Waves & Tasks ({} ready) ", ready_count)
     };
@@ -283,7 +304,11 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     for wave in &app.waves {
         // Wave header
-        let ready_in_wave = wave.tasks.iter().filter(|t| t.state == WaveTaskState::Ready).count();
+        let ready_in_wave = wave
+            .tasks
+            .iter()
+            .filter(|t| t.state == WaveTaskState::Ready)
+            .count();
         let wave_header = Line::from(vec![
             Span::styled(
                 format!("Wave {} ", wave.number),
@@ -302,10 +327,10 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
             let is_selected_for_spawn = app.selected_tasks.contains(&task.id);
 
             let state_icon = match task.state {
-                WaveTaskState::Ready => ("○", STATUS_COMPLETED),   // Blue circle = ready
-                WaveTaskState::Running => ("●", STATUS_RUNNING),   // Green filled = running
-                WaveTaskState::Done => ("✓", STATUS_COMPLETED),    // Blue check = done
-                WaveTaskState::Blocked => ("◌", TEXT_MUTED),       // Hollow = blocked
+                WaveTaskState::Ready => ("○", STATUS_COMPLETED), // Blue circle = ready
+                WaveTaskState::Running => ("●", STATUS_RUNNING), // Green filled = running
+                WaveTaskState::Done => ("✓", STATUS_COMPLETED),  // Blue check = done
+                WaveTaskState::Blocked => ("◌", TEXT_MUTED),     // Hollow = blocked
                 WaveTaskState::InProgress => ("◐", STATUS_RUNNING), // Half = in progress
             };
 
@@ -338,18 +363,30 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
                 ),
                 Span::styled(
                     format!("{} ", checkbox),
-                    Style::default().fg(if is_selected_for_spawn { ACCENT } else { TEXT_MUTED }),
+                    Style::default().fg(if is_selected_for_spawn {
+                        ACCENT
+                    } else {
+                        TEXT_MUTED
+                    }),
                 ),
-                Span::styled(format!("{} ", state_icon.0), Style::default().fg(state_icon.1)),
                 Span::styled(
-                    format!("{} ", task.id),
-                    Style::default().fg(TEXT_MUTED),
+                    format!("{} ", state_icon.0),
+                    Style::default().fg(state_icon.1),
                 ),
+                Span::styled(format!("{} ", task.id), Style::default().fg(TEXT_MUTED)),
                 Span::styled(
                     title_display,
                     Style::default()
-                        .fg(if is_selected_in_list { ACCENT } else { TEXT_PRIMARY })
-                        .add_modifier(if is_selected_in_list { Modifier::BOLD } else { Modifier::empty() }),
+                        .fg(if is_selected_in_list {
+                            ACCENT
+                        } else {
+                            TEXT_PRIMARY
+                        })
+                        .add_modifier(if is_selected_in_list {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
                 ),
                 Span::styled(complexity, Style::default().fg(TEXT_MUTED)),
             ]);
@@ -360,10 +397,7 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     // Apply scroll offset - skip first N items
-    let visible_items: Vec<ListItem> = all_items
-        .into_iter()
-        .skip(app.wave_scroll_offset)
-        .collect();
+    let visible_items: Vec<ListItem> = all_items.into_iter().skip(app.wave_scroll_offset).collect();
 
     let list = List::new(visible_items).block(block);
     frame.render_widget(list, area);
@@ -371,12 +405,20 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_agents_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     let is_focused = app.focused_panel == FocusedPanel::Agents;
-    let border_color = if is_focused { BORDER_ACTIVE } else { BORDER_DEFAULT };
+    let border_color = if is_focused {
+        BORDER_ACTIVE
+    } else {
+        BORDER_DEFAULT
+    };
     let title_color = if is_focused { ACCENT } else { TEXT_MUTED };
 
     // Get counts first before borrowing agents slice
     let total = app.agents().len();
-    let running = app.agents().iter().filter(|a| a.status == AgentStatus::Running).count();
+    let running = app
+        .agents()
+        .iter()
+        .filter(|a| a.status == AgentStatus::Running)
+        .count();
     let selected = app.selected;
 
     // Calculate visible height for scroll
@@ -394,7 +436,13 @@ fn render_agents_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     // Show scroll indicator if there are more agents than visible
     let title = if total > inner_height && inner_height > 0 {
         let visible_end = (scroll_offset + inner_height).min(total);
-        format!(" Agents ({} running / {} total) [{}-{}] ", running, total, scroll_offset + 1, visible_end)
+        format!(
+            " Agents ({} running / {} total) [{}-{}] ",
+            running,
+            total,
+            scroll_offset + 1,
+            visible_end
+        )
     } else {
         format!(" Agents ({} running / {} total) ", running, total)
     };
@@ -446,13 +494,23 @@ fn render_agents_panel(frame: &mut Frame, area: Rect, app: &mut App) {
                     if is_selected { "▸ " } else { "  " },
                     Style::default().fg(ACCENT),
                 ),
-                Span::styled(format!("{} ", status_icon.0), Style::default().fg(status_icon.1)),
-                Span::styled(format!("{}: ", agent.task_id), Style::default().fg(TEXT_MUTED)),
+                Span::styled(
+                    format!("{} ", status_icon.0),
+                    Style::default().fg(status_icon.1),
+                ),
+                Span::styled(
+                    format!("{}: ", agent.task_id),
+                    Style::default().fg(TEXT_MUTED),
+                ),
                 Span::styled(
                     title,
                     Style::default()
                         .fg(if is_selected { ACCENT } else { TEXT_PRIMARY })
-                        .add_modifier(if is_selected { Modifier::BOLD } else { Modifier::empty() }),
+                        .add_modifier(if is_selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
                 ),
             ]);
 
@@ -475,7 +533,11 @@ fn render_terminal_output(frame: &mut Frame, area: Rect, app: &App, fullscreen: 
         " Live Output ".to_string()
     };
 
-    let border_color = if is_focused { BORDER_ACTIVE } else { BORDER_DEFAULT };
+    let border_color = if is_focused {
+        BORDER_ACTIVE
+    } else {
+        BORDER_DEFAULT
+    };
     let title_color = if is_focused { ACCENT } else { TEXT_MUTED };
 
     let block = Block::default()
@@ -507,7 +569,12 @@ fn render_terminal_output(frame: &mut Frame, area: Rect, app: &App, fullscreen: 
         .iter()
         .skip(start_idx)
         .take(visible_height)
-        .map(|line| Line::from(Span::styled(line.as_str(), Style::default().fg(TEXT_TERMINAL))))
+        .map(|line| {
+            Line::from(Span::styled(
+                line.as_str(),
+                Style::default().fg(TEXT_TERMINAL),
+            ))
+        })
         .collect();
 
     let paragraph = Paragraph::new(visible_lines);
@@ -528,29 +595,29 @@ fn render_terminal_output(frame: &mut Frame, area: Rect, app: &App, fullscreen: 
             .track_symbol(Some(" "))
             .thumb_symbol("▐");
 
-        let mut scrollbar_state = ScrollbarState::new(total_lines)
-            .position(start_idx);
+        let mut scrollbar_state = ScrollbarState::new(total_lines).position(start_idx);
 
-        frame.render_stateful_widget(
-            scrollbar,
-            scrollbar_area,
-            &mut scrollbar_state,
-        );
+        frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
     }
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     // Context-sensitive help based on focused panel
-    let ralph_hint = if app.ralph_mode { "R Ralph OFF" } else { "R Ralph" };
+    let ralph_hint = if app.ralph_mode {
+        "R Ralph OFF"
+    } else {
+        "R Ralph"
+    };
     let help_text = match app.focused_panel {
         FocusedPanel::Waves => format!(" Tab Panel  ·  j/k Navigate  ·  Space Select  ·  a All  ·  s Spawn  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
         FocusedPanel::Agents => format!(" Tab Panel  ·  j/k Navigate  ·  Enter View  ·  i Input  ·  x Stop  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
         FocusedPanel::Output => format!(" Tab Panel  ·  ↑↓ Scroll  ·  G Bottom  ·  Enter Fullscreen  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
     };
 
-    let mut line = Line::from(vec![
-        Span::styled(help_text, Style::default().fg(TEXT_MUTED)),
-    ]);
+    let mut line = Line::from(vec![Span::styled(
+        help_text,
+        Style::default().fg(TEXT_MUTED),
+    )]);
 
     // Show error if present
     if let Some(ref error) = app.error {
@@ -570,9 +637,10 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
 fn render_fullscreen_footer(frame: &mut Frame, area: Rect) {
     let help_text = " ↑↓ Scroll  ·  j/k Switch  ·  G Bottom  ·  i Input  ·  Esc Back  ·  q Quit ";
 
-    let footer = Paragraph::new(Line::from(vec![
-        Span::styled(help_text, Style::default().fg(TEXT_MUTED)),
-    ]))
+    let footer = Paragraph::new(Line::from(vec![Span::styled(
+        help_text,
+        Style::default().fg(TEXT_MUTED),
+    )]))
     .alignment(Alignment::Center)
     .style(Style::default().bg(BG_PRIMARY));
 
@@ -649,9 +717,10 @@ fn render_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("Quit", Style::default().fg(TEXT_PRIMARY)),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(format!(" Mode: {} | Panel: {}", mode_hint, panel_hint), Style::default().fg(TEXT_MUTED)),
-        ]),
+        Line::from(vec![Span::styled(
+            format!(" Mode: {} | Panel: {}", mode_hint, panel_hint),
+            Style::default().fg(TEXT_MUTED),
+        )]),
     ];
 
     let help_block = Block::default()

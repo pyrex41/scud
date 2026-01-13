@@ -100,8 +100,14 @@ impl Config {
     }
 
     pub fn requires_api_key(&self) -> bool {
-        let providers = [&self.llm.provider, &self.llm.smart_provider, &self.llm.fast_provider];
-        providers.iter().any(|p| !matches!(p.as_str(), "claude-cli" | "codex"))
+        let providers = [
+            &self.llm.provider,
+            &self.llm.smart_provider,
+            &self.llm.fast_provider,
+        ];
+        providers
+            .iter()
+            .any(|p| !matches!(p.as_str(), "claude-cli" | "codex"))
     }
 
     pub fn api_endpoint(&self) -> &str {

@@ -1066,7 +1066,11 @@ mod tests {
     #[test]
     fn test_get_effective_dependencies_deduplication() {
         // Parent has deps A, B
-        let mut parent = Task::new("parent".to_string(), "Parent".to_string(), "Desc".to_string());
+        let mut parent = Task::new(
+            "parent".to_string(),
+            "Parent".to_string(),
+            "Desc".to_string(),
+        );
         parent.dependencies = vec!["A".to_string(), "B".to_string()];
         parent.subtasks = vec!["child".to_string()];
 

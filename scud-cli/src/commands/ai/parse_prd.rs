@@ -62,6 +62,10 @@ pub async fn run(
         None => LLMClient::new()?,
     };
 
+    // Show model info
+    let model_info = client.fast_model_info(model);
+    println!("{} {}", "Using".blue(), model_info.to_string().cyan());
+
     // Show progress
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
@@ -274,10 +278,13 @@ mod tests {
 
         let result = remap_dependencies(&deps, &task_ids);
 
-        assert_eq!(result, vec![
-            "abc123def456789012345678901234ab".to_string(),
-            "def456abc789012345678901234abcde".to_string(),
-        ]);
+        assert_eq!(
+            result,
+            vec![
+                "abc123def456789012345678901234ab".to_string(),
+                "def456abc789012345678901234abcde".to_string(),
+            ]
+        );
     }
 
     #[test]

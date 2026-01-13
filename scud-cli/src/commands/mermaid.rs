@@ -95,9 +95,7 @@ pub fn run(project_root: Option<PathBuf>, tag: Option<&str>, all_tags: bool) -> 
     println!(
         "    classDef cancelled fill:#fafafa,stroke:#bdbdbd,color:#9e9e9e,stroke-dasharray: 5 5"
     );
-    println!(
-        "    classDef failed fill:#ffcdd2,stroke:#b71c1c,color:#b71c1c,stroke-width:3px"
-    );
+    println!("    classDef failed fill:#ffcdd2,stroke:#b71c1c,color:#b71c1c,stroke-width:3px");
 
     println!("```");
 

@@ -81,11 +81,7 @@ pub fn run(
     // Display spawn plan
     println!("{}", "SCUD Spawn".cyan().bold());
     println!("{}", "═".repeat(50));
-    println!(
-        "{:<20} {}",
-        "Terminal:".dimmed(),
-        terminal.name().green()
-    );
+    println!("{:<20} {}", "Terminal:".dimmed(), terminal.name().green());
     println!("{:<20} {}", "Session:".dimmed(), session_name.cyan());
     println!("{:<20} {}", "Tasks:".dimmed(), ready_tasks.len());
     println!();
@@ -113,7 +109,10 @@ pub fn run(
 
     // Check and install Claude Code hooks for automatic task completion
     if !hooks::hooks_installed(&working_dir) {
-        println!("{}", "Installing Claude Code hooks for task completion...".dimmed());
+        println!(
+            "{}",
+            "Installing Claude Code hooks for task completion...".dimmed()
+        );
         if let Err(e) = hooks::install_hooks(&working_dir) {
             println!(
                 "  {} Hook installation: {}",
@@ -121,7 +120,10 @@ pub fn run(
                 e.to_string().dimmed()
             );
         } else {
-            println!("  {} Hooks installed (tasks auto-complete on agent stop)", "✓".green());
+            println!(
+                "  {} Hooks installed (tasks auto-complete on agent stop)",
+                "✓".green()
+            );
         }
     }
 
@@ -142,8 +144,13 @@ pub fn run(
     for info in &ready_tasks {
         let prompt = agent::generate_prompt(info.task, &info.tag);
 
-        match terminal::spawn_terminal(&terminal, &info.task.id, &prompt, &working_dir, &session_name)
-        {
+        match terminal::spawn_terminal(
+            &terminal,
+            &info.task.id,
+            &prompt,
+            &working_dir,
+            &session_name,
+        ) {
             Ok(()) => {
                 println!(
                     "  {} Spawned: {} | {}",
@@ -160,12 +167,7 @@ pub fn run(
                 }
             }
             Err(e) => {
-                println!(
-                    "  {} Failed: {} - {}",
-                    "✗".red(),
-                    info.task.id.red(),
-                    e
-                );
+                println!("  {} Failed: {} - {}", "✗".red(), info.task.id.red(), e);
             }
         }
 
@@ -245,7 +247,10 @@ pub fn run(
 
     if terminal == Terminal::Tmux {
         println!();
-        println!("To attach: {}", format!("tmux attach -t {}", session_name).cyan());
+        println!(
+            "To attach: {}",
+            format!("tmux attach -t {}", session_name).cyan()
+        );
         println!(
             "To list:   {}",
             format!("tmux list-windows -t {}", session_name).dimmed()
@@ -350,7 +355,10 @@ pub fn run_sessions(project_root: Option<PathBuf>, verbose: bool) -> Result<()> 
 
     if !verbose {
         println!();
-        println!("{}", "Use -v for details, or: scud monitor --session <name>".dimmed());
+        println!(
+            "{}",
+            "Use -v for details, or: scud monitor --session <name>".dimmed()
+        );
     }
 
     Ok(())

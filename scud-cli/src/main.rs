@@ -359,26 +359,11 @@ enum Commands {
         #[arg(long)]
         prd: Option<PathBuf>,
 
+        /// Auto-fix PRD coverage issues (requires --prd)
+        #[arg(long)]
+        fix: bool,
+
         /// Model to use for PRD validation (overrides config)
-        #[arg(long)]
-        model: Option<String>,
-    },
-
-    /// Fix dependency issues automatically (AI-powered)
-    FixDeps {
-        /// Phase tag (uses active phase if not provided)
-        #[arg(short, long)]
-        tag: Option<String>,
-
-        /// Fix across all phases
-        #[arg(long)]
-        all_tags: bool,
-
-        /// Show what would be fixed without making changes
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Model to use for dependency analysis (overrides config)
         #[arg(long)]
         model: Option<String>,
     },
@@ -545,9 +530,11 @@ async fn main() -> Result<()> {
             status,
             tag,
         } => commands::set_status::run(cli.project, &task_id, &status, tag.as_deref()),
-        Commands::Next { tag, spawn, all_tags } => {
-            commands::next::run(cli.project, tag.as_deref(), spawn, all_tags)
-        }
+        Commands::Next {
+            tag,
+            spawn,
+            all_tags,
+        } => commands::next::run(cli.project, tag.as_deref(), spawn, all_tags),
         Commands::Stats { tag } => commands::stats::run(cli.project, tag.as_deref()),
         Commands::Migrate { dry_run } => commands::migrate::run(cli.project, dry_run),
         Commands::Waves {
@@ -578,14 +565,45 @@ async fn main() -> Result<()> {
             no_guidance,
             id_format,
             model,
-        } => commands::ai::parse_prd::run(cli.project, &file, &tag, num_tasks, append, no_guidance, &id_format, model.as_deref()).await,
+        } => {
+            commands::ai::parse_prd::run(
+                cli.project,
+                &file,
+                &tag,
+                num_tasks,
+                append,
+                no_guidance,
+                &id_format,
+                model.as_deref(),
+            )
+            .await
+        }
         Commands::Clean { force, tag } => commands::clean::run(cli.project, force, tag.as_deref()),
         Commands::AnalyzeComplexity { task, tag, model } => {
-            commands::ai::analyze_complexity::run(cli.project, task.as_deref(), tag.as_deref(), model.as_deref())
-                .await
+            commands::ai::analyze_complexity::run(
+                cli.project,
+                task.as_deref(),
+                tag.as_deref(),
+                model.as_deref(),
+            )
+            .await
         }
-        Commands::Expand { task, all, tag, no_guidance, model } => {
-            commands::ai::expand::run(cli.project, task.as_deref(), all, tag.as_deref(), no_guidance, model.as_deref()).await
+        Commands::Expand {
+            task,
+            all,
+            tag,
+            no_guidance,
+            model,
+        } => {
+            commands::ai::expand::run(
+                cli.project,
+                task.as_deref(),
+                all,
+                tag.as_deref(),
+                no_guidance,
+                model.as_deref(),
+            )
+            .await
         }
         Commands::ReanalyzeDeps {
             tag,
@@ -594,8 +612,15 @@ async fn main() -> Result<()> {
             dry_run,
             model,
         } => {
-            commands::ai::reanalyze_deps::run(cli.project, tag.as_deref(), all_tags, apply, dry_run, model.as_deref())
-                .await
+            commands::ai::reanalyze_deps::run(
+                cli.project,
+                tag.as_deref(),
+                all_tags,
+                apply,
+                dry_run,
+                model.as_deref(),
+            )
+            .await
         }
         Commands::Assign {
             task_id,
@@ -603,9 +628,11 @@ async fn main() -> Result<()> {
             tag,
         } => commands::assign::run(cli.project, &task_id, &assignee, tag.as_deref()),
         Commands::WhoIs { tag } => commands::whois::run(cli.project, tag.as_deref()),
-        Commands::NextBatch { tag, limit, all_tags } => {
-            commands::next_batch::run(cli.project, tag.as_deref(), limit, all_tags)
-        }
+        Commands::NextBatch {
+            tag,
+            limit,
+            all_tags,
+        } => commands::next_batch::run(cli.project, tag.as_deref(), limit, all_tags),
         Commands::Convert { from, to, backup } => {
             commands::convert::run(cli.project, &from, &to, backup)
         }
@@ -614,11 +641,22 @@ async fn main() -> Result<()> {
             stale_hours,
             fix,
         } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
-        Commands::CheckDeps { tag, all_tags, prd, model } => {
-            commands::check_deps::run(cli.project, tag.as_deref(), all_tags, prd.as_deref(), model.as_deref()).await
-        }
-        Commands::FixDeps { tag, all_tags, dry_run, model } => {
-            commands::fix_deps::run(cli.project, tag.as_deref(), all_tags, dry_run, model.as_deref()).await
+        Commands::CheckDeps {
+            tag,
+            all_tags,
+            prd,
+            fix,
+            model,
+        } => {
+            commands::check_deps::run(
+                cli.project,
+                tag.as_deref(),
+                all_tags,
+                prd.as_deref(),
+                fix,
+                model.as_deref(),
+            )
+            .await
         }
         Commands::Mermaid { tag, all_tags } => {
             commands::mermaid::run(cli.project, tag.as_deref(), all_tags)

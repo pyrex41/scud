@@ -86,12 +86,7 @@ Description: {}
 When done: scud set-status {} done
 If blocked: scud set-status {} blocked
 "#,
-        task.id,
-        task.title,
-        tag,
-        task.description,
-        task.id,
-        task.id
+        task.id, task.title, tag, task.description, task.id, task.id
     )
 }
 

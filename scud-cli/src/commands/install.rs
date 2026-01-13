@@ -55,15 +55,24 @@ pub fn run() -> Result<()> {
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf();
 
-    let source_path = repo_root.join("scud-cli").join("target").join("release").join(binary_name);
+    let source_path = repo_root
+        .join("scud-cli")
+        .join("target")
+        .join("release")
+        .join(binary_name);
 
     if !source_path.exists() {
-        println!("  {} Binary not found at: {}", "✗".red(), source_path.display());
+        println!(
+            "  {} Binary not found at: {}",
+            "✗".red(),
+            source_path.display()
+        );
         anyhow::bail!("Binary not found after build");
     }
 
     // Install to ~/.cargo/bin/ (standard Rust bin location)
-    let home_dir = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
+    let home_dir =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
     let cargo_bin_dir = home_dir.join(".cargo").join("bin");
     fs::create_dir_all(&cargo_bin_dir)?;
 
@@ -86,14 +95,22 @@ pub fn run() -> Result<()> {
         fs::set_permissions(&dest_path, perms)?;
     }
 
-    println!("  {} Binary installed to: {}", "✓".green(), dest_path.display());
+    println!(
+        "  {} Binary installed to: {}",
+        "✓".green(),
+        dest_path.display()
+    );
 
     // Verify installation
     let verify_result = Command::new(&dest_path).arg("--version").output();
     match verify_result {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout);
-            println!("  {} Installation verified: {}", "✓".green(), version.trim());
+            println!(
+                "  {} Installation verified: {}",
+                "✓".green(),
+                version.trim()
+            );
         }
         _ => {
             println!("  {} Installation verification failed", "✗".red());
