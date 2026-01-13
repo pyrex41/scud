@@ -207,7 +207,57 @@ enum Commands {
         model: Option<String>,
     },
 
-    /// Clear all tasks (with confirmation)
+    /// Generate tasks from PRD (parse → expand → check-deps pipeline)
+    Generate {
+        /// Path to PRD/spec document
+        file: PathBuf,
+
+        /// Tag name for generated tasks
+        #[arg(short, long)]
+        tag: String,
+
+        /// Number of tasks to generate (default: 10)
+        #[arg(short = 'n', long, default_value = "10")]
+        num_tasks: u32,
+
+        // === Phase Control ===
+        /// Skip task expansion phase
+        #[arg(long)]
+        no_expand: bool,
+
+        /// Skip dependency validation phase
+        #[arg(long)]
+        no_check_deps: bool,
+
+        // === Parse Options ===
+        /// Append tasks to existing tag instead of replacing
+        #[arg(long)]
+        append: bool,
+
+        /// Skip loading guidance from .scud/guidance/
+        #[arg(long)]
+        no_guidance: bool,
+
+        /// Task ID format: sequential (default) or uuid
+        #[arg(long, default_value = "sequential")]
+        id_format: String,
+
+        // === Model Selection ===
+        /// Model to use for all AI operations (overrides config)
+        #[arg(long)]
+        model: Option<String>,
+
+        // === Output Control ===
+        /// Show what would be done without making changes
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Verbose output showing each phase's details
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Clear tasks (archives by default, use --delete to permanently remove)
     Clean {
         /// Skip confirmation prompt
         #[arg(long)]
@@ -216,6 +266,22 @@ enum Commands {
         /// Only clean a specific tag
         #[arg(short, long)]
         tag: Option<String>,
+
+        /// Tags to keep (comma-separated or repeat flag)
+        #[arg(long, value_delimiter = ',')]
+        keep: Vec<String>,
+
+        /// Permanently delete instead of archiving
+        #[arg(long)]
+        delete: bool,
+
+        /// List archived phases
+        #[arg(long)]
+        list: bool,
+
+        /// Restore an archived phase
+        #[arg(long)]
+        restore: Option<String>,
     },
 
     /// Analyze task complexity (AI-powered)
@@ -578,7 +644,51 @@ async fn main() -> Result<()> {
             )
             .await
         }
-        Commands::Clean { force, tag } => commands::clean::run(cli.project, force, tag.as_deref()),
+        Commands::Generate {
+            file,
+            tag,
+            num_tasks,
+            no_expand,
+            no_check_deps,
+            append,
+            no_guidance,
+            id_format,
+            model,
+            dry_run,
+            verbose,
+        } => {
+            commands::generate::run(
+                cli.project,
+                &file,
+                &tag,
+                num_tasks,
+                no_expand,
+                no_check_deps,
+                append,
+                no_guidance,
+                &id_format,
+                model.as_deref(),
+                dry_run,
+                verbose,
+            )
+            .await
+        }
+        Commands::Clean {
+            force,
+            tag,
+            keep,
+            delete,
+            list,
+            restore,
+        } => commands::clean::run(
+            cli.project,
+            force,
+            tag.as_deref(),
+            &keep,
+            delete,
+            list,
+            restore.as_deref(),
+        ),
         Commands::AnalyzeComplexity { task, tag, model } => {
             commands::ai::analyze_complexity::run(
                 cli.project,
@@ -695,6 +805,7 @@ async fn main() -> Result<()> {
         ),
         Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
+        #[allow(deprecated)]
         Commands::Swarm {
             tag,
             round_size,

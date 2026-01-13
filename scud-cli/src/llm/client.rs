@@ -177,7 +177,7 @@ impl LLMClient {
         provider_override: Option<&str>,
     ) -> Result<String> {
         let provider = provider_override.unwrap_or(&self.config.llm.provider);
-        match provider.as_ref() {
+        match provider {
             "claude-cli" => self.complete_claude_cli(prompt, model_override).await,
             "codex" => self.complete_codex_cli(prompt, model_override).await,
             "anthropic" => {

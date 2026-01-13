@@ -1,5 +1,8 @@
 //! Swarm mode - Wave-based parallel execution with backpressure
 //!
+//! **DEPRECATED**: This command is moving to Descartes.
+//! Use `descartes ralph --scud-tag <tag>` instead.
+//!
 //! Executes tasks in dependency-order waves using parallel agents.
 //! After each wave, runs backpressure validation (build, lint, test).
 //!
@@ -14,8 +17,18 @@
 //!   scud swarm --tag <tag> --no-research   # Skip research, use tasks as-is
 //!   scud swarm --tag <tag> --no-validate   # Skip backpressure validation
 
-pub mod backpressure;
+#![deprecated(
+    since = "1.33.0",
+    note = "Use `descartes ralph` command instead. See https://github.com/pyrex41/descartes"
+)]
+
 pub mod session;
+
+/// Re-export backpressure module for backward compatibility.
+///
+/// The canonical location is now [`crate::backpressure`], but this re-export
+/// maintains the old path `scud::commands::swarm::backpressure` for existing code.
+pub use crate::backpressure;
 
 use anyhow::Result;
 use colored::Colorize;
@@ -32,10 +45,11 @@ use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
-use self::backpressure::BackpressureConfig;
+use crate::backpressure::BackpressureConfig;
 use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, WaveSummary};
 
 /// Main entry point for the swarm command
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     project_root: Option<PathBuf>,
     tag: Option<&str>,
@@ -47,6 +61,21 @@ pub fn run(
     no_research: bool,
     no_validate: bool,
 ) -> Result<()> {
+    // Runtime deprecation warning for users
+    let effective_tag = tag.unwrap_or("default");
+    eprintln!(
+        "\n{}\n{}\n{}\n",
+        "⚠ DEPRECATED: 'scud swarm' is deprecated and will be removed in a future release."
+            .yellow()
+            .bold(),
+        format!(
+            "  Use 'descartes ralph --scud-tag {}' instead for wave-based parallel execution.",
+            effective_tag
+        )
+        .yellow(),
+        "  See: https://github.com/pyrex41/descartes#migration".dimmed()
+    );
+
     if round_size == 0 {
         anyhow::bail!("--round-size must be at least 1");
     }

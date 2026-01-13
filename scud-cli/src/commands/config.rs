@@ -448,6 +448,7 @@ pub fn agents_list(project_root: Option<PathBuf>) -> Result<()> {
 }
 
 /// Recursively copy a directory
+#[allow(dead_code)]
 fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
     fs::create_dir_all(dst)?;
     for entry in fs::read_dir(src)? {
@@ -644,7 +645,7 @@ pub fn agents_add(project_root: Option<PathBuf>, name: Option<String>, all: bool
             }
 
             // Create basic hook content
-            let hook_content = format!("# Session Start Hook\n\nThis hook runs when an OpenCode session starts.\n\n```bash\nscud warmup\n```");
+            let hook_content = "# Session Start Hook\n\nThis hook runs when an OpenCode session starts.\n\n```bash\nscud warmup\n```".to_string();
             fs::write(&dest, hook_content)?;
             opencode_added += 1;
         }

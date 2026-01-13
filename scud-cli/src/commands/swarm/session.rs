@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use super::backpressure::ValidationResult;
+use crate::backpressure::ValidationResult;
 
 /// Get the current git commit SHA
 pub fn get_current_commit() -> Option<String> {

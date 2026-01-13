@@ -43,8 +43,8 @@ curl -fsSL https://raw.githubusercontent.com/pyrex41/scud/main/install.sh | bash
 
 ### Basic Usage
 ```bash
-# Create tasks from a PRD or feature doc
-scud parse docs/feature.md --tag my-feature
+# Generate tasks from a PRD or feature doc (parse → expand → validate)
+scud generate docs/feature.md --tag my-feature
 
 # View tasks and dependencies
 scud list --tag my-feature
@@ -99,6 +99,8 @@ Group related tasks together (e.g., `auth-system`, `payment-flow`). Each tag has
 ### Parallel Execution
 Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each working on a ready task. See [docs/orchestrator.md](docs/orchestrator.md).
 
+> **Note**: For production AI agent orchestration, we recommend [Descartes](https://github.com/pyrex41/descartes), which provides the Ralph Wiggum loop pattern for wave-based execution with backpressure validation.
+
 ---
 
 ## Key Features
@@ -123,6 +125,7 @@ Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each
 - **Parallel agents** - spawn multiple Claude instances
 - **Task locking** - `scud claim/release` prevents conflicts
 - **Session monitoring** - `scud whois` tracks active work
+- **Descartes integration** - For full AI agent orchestration, see [Descartes](https://github.com/pyrex41/descartes)
 
 ---
 
@@ -169,11 +172,11 @@ scud mermaid [--tag <tag>]         # Generate Mermaid diagram
 
 ### AI Commands (Requires XAI_API_KEY)
 ```bash
-scud parse <file> --tag <tag>      # Parse PRD/doc into tasks
-scud parse <file> --tag <tag> --no-guidance  # Parse without project guidance
+scud generate <file> --tag <tag>   # Full pipeline: parse → expand → validate
+scud parse <file> --tag <tag>      # Parse PRD/doc into tasks (step 1 only)
 scud analyze-complexity            # Analyze task complexity
 scud expand --all                  # Break down complex tasks
-scud expand --all --no-guidance    # Expand without project guidance
+scud check-deps --tag <tag>        # Validate task dependencies
 ```
 
 Default model: `grok-code-fast-1`. Configure with `scud config set-provider <provider> --model <model>`.
@@ -193,8 +196,18 @@ scud doctor [--tag <tag>]          # Diagnose stuck task states
 scud log <id> "message"            # Add log entry to task
 scud log-show <id>                 # Show task log entries
 scud commit [-m "msg"]             # Git commit with task context
-scud clean [--tag <tag>]           # Clear tasks (with confirmation)
 ```
+
+### Task Cleanup
+```bash
+scud clean [--tag <tag>]           # Archive tasks (default, recoverable)
+scud clean --list                  # List archived phases
+scud clean --restore <name>        # Restore an archived phase
+scud clean --keep tag1,tag2        # Archive all except specified tags
+scud clean --delete                # Permanently delete (use with caution)
+```
+
+> **Note:** `scud clean` now archives by default instead of deleting. Use `--delete` for permanent removal.
 
 ---
 
@@ -204,9 +217,8 @@ scud clean [--tag <tag>]           # Clear tasks (with confirmation)
 # 1. Initialize
 scud init
 
-# 2. Create tasks from PRD
-scud parse docs/feature.md --tag auth-system
-# Creates tasks with dependencies
+# 2. Generate tasks from PRD (parse → expand → validate in one command)
+scud generate docs/feature.md --tag auth-system
 
 # 3. View execution plan
 scud waves --tag auth-system
@@ -282,6 +294,8 @@ Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`
 ├── current-task              # Active task ID (for commits)
 ├── guidance/                 # Project guidance for AI prompts
 │   └── *.md                  # Markdown files auto-loaded
+├── archive/                  # Archived phases (from scud clean)
+│   └── <tag>_<timestamp>.scg # Timestamped archive files
 └── logs/                     # Task log entries
 ```
 
@@ -343,5 +357,7 @@ MIT
 - **SCG Format:** [docs/reference/SCG_FORMAT_SPEC.md](docs/reference/SCG_FORMAT_SPEC.md)
 - **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
 - **Parallel Features:** [docs/features/PARALLEL_FEATURES.md](docs/features/PARALLEL_FEATURES.md)
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+- **Descartes (AI Orchestration):** [github.com/pyrex41/descartes](https://github.com/pyrex41/descartes)
 
 **Happy building!**

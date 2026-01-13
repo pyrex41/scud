@@ -33,6 +33,7 @@ struct TaskInfo<'a> {
 }
 
 /// Main entry point for the spawn command
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     project_root: Option<PathBuf>,
     tag: Option<&str>,

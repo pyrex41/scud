@@ -19,6 +19,7 @@ struct ParsedTask {
     dependencies: Vec<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     project_root: Option<PathBuf>,
     file_path: &Path,

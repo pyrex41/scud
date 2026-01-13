@@ -115,7 +115,16 @@ scud stats
 
 # Open interactive task viewer in browser
 scud view
+
+# Clean up tasks (archives by default)
+scud clean                    # Archive all tags
+scud clean --tag auth         # Archive specific tag
+scud clean --list             # List archived phases
+scud clean --restore <name>   # Restore archived phase
+scud clean --delete           # Permanently delete (use with caution)
 ```
+
+> **Note:** `scud clean` archives tasks by default instead of deleting them. This provides a safety net for accidental cleanups. Use `--delete` to permanently remove tasks. Archives are stored in `.scud/archive/`.
 
 ### [EXPERIMENTAL] Doctor Command
 

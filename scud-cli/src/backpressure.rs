@@ -1,17 +1,93 @@
-//! Backpressure configuration and execution
+//! Backpressure validation for maintaining code quality during automated execution.
 //!
-//! Backpressure is the programmatic validation that prevents bad code from
-//! being committed. This includes:
-//! - Build/compile checks
-//! - Linting
-//! - Type checking
-//! - Tests
+//! # Overview
 //!
-//! Configuration is stored in `.scud/config.toml`:
+//! Backpressure is a quality gate mechanism that runs programmatic validation
+//! after each wave of task execution. It prevents bad code from accumulating by
+//! catching issues early - if validation fails, the affected tasks are marked as
+//! `Failed` so they can be re-attempted or debugged.
+//!
+//! ## What Backpressure Validates
+//!
+//! - **Build/compile checks** - Ensures code compiles successfully
+//! - **Linting** - Catches style issues and common mistakes
+//! - **Type checking** - Validates type correctness (for typed languages)
+//! - **Tests** - Runs the test suite to catch regressions
+//!
+//! ## Workflow Integration
+//!
+//! In swarm mode, backpressure runs after each wave completes:
+//!
+//! ```text
+//! Wave 1: [Task A, Task B] -> Backpressure Check -> Pass? -> Wave 2
+//!                                    |
+//!                                    v
+//!                             Fail? -> Mark tasks as Failed
+//! ```
+//!
+//! This creates a feedback loop where AI agents can see which tasks caused
+//! validation failures and attempt repairs.
+//!
+//! # Configuration
+//!
+//! Backpressure commands are configured in `.scud/config.toml`:
+//!
 //! ```toml
 //! [swarm.backpressure]
-//! commands = ["cargo build", "cargo test", "cargo clippy"]
+//! commands = ["cargo build", "cargo test", "cargo clippy -- -D warnings"]
+//! stop_on_failure = true  # Stop at first failure (default: true)
+//! timeout_secs = 300      # Per-command timeout (default: 300 = 5 minutes)
 //! ```
+//!
+//! If no configuration is found, backpressure auto-detects commands based on
+//! project type (Rust, Node.js, Python, Go).
+//!
+//! # Example
+//!
+//! ```no_run
+//! use std::path::Path;
+//! use scud::backpressure::{BackpressureConfig, run_validation};
+//!
+//! // Load configuration (auto-detects if not configured)
+//! let config = BackpressureConfig::load(None).expect("Failed to load config");
+//!
+//! // Or create a custom configuration
+//! let custom_config = BackpressureConfig {
+//!     commands: vec![
+//!         "cargo build".to_string(),
+//!         "cargo test".to_string(),
+//!     ],
+//!     stop_on_failure: true,
+//!     timeout_secs: 300,
+//! };
+//!
+//! // Run validation in a working directory
+//! let working_dir = Path::new(".");
+//! let result = run_validation(working_dir, &custom_config).expect("Validation failed");
+//!
+//! if result.all_passed {
+//!     println!("All checks passed!");
+//! } else {
+//!     println!("Failures: {:?}", result.failures);
+//!     for cmd_result in &result.results {
+//!         if !cmd_result.passed {
+//!             println!("  {} failed with code {:?}", cmd_result.command, cmd_result.exit_code);
+//!             println!("  stderr: {}", cmd_result.stderr);
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! # Auto-Detection
+//!
+//! When no explicit configuration exists, backpressure detects project type:
+//!
+//! | Project Type | Detected By | Default Commands |
+//! |--------------|-------------|------------------|
+//! | Rust | `Cargo.toml` | `cargo build`, `cargo test` |
+//! | Node.js | `package.json` | Scripts: `build`, `test`, `lint`, `typecheck` |
+//! | Python | `pyproject.toml` or `setup.py` | `pytest` |
+//! | Go | `go.mod` | `go build ./...`, `go test ./...` |
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -98,10 +174,10 @@ impl BackpressureConfig {
         }
 
         // Python project
-        if root.join("pyproject.toml").exists() || root.join("setup.py").exists() {
-            if root.join("pytest.ini").exists() || root.join("pyproject.toml").exists() {
-                commands.push("pytest".to_string());
-            }
+        if (root.join("pyproject.toml").exists() || root.join("setup.py").exists())
+            && (root.join("pytest.ini").exists() || root.join("pyproject.toml").exists())
+        {
+            commands.push("pytest".to_string());
         }
 
         // Go project

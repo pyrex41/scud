@@ -20,7 +20,7 @@ fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
         "OpenRouter",
     ];
     let provider_selection = Select::new()
-        .with_prompt(&format!("Select {} LLM provider", tier))
+        .with_prompt(format!("Select {} LLM provider", tier))
         .items(&providers)
         .default(if tier == "fast" { 2 } else { 0 }) // Default xAI for fast, Claude for smart
         .interact()?;
@@ -52,7 +52,7 @@ fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
     };
 
     let model_selection = Select::new()
-        .with_prompt(&format!(
+        .with_prompt(format!(
             "Select {} model (or choose Custom to enter any model)",
             tier
         ))

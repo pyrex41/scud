@@ -1,11 +1,11 @@
 [package]
 name = "scud-cli"
-version = "1.32.4"
+version = "1.34.0"
 edition = "2021"
 authors = ["SCUD Team"]
 description = "Fast, simple task master for AI-driven development"
 license = "MIT"
-include = ["src/**/*", "assets/**/*", "Cargo.toml", "README.md"]
+include = ["src/**/*", "assets/**/*", "examples/**/*", "Cargo.toml", "README.md"]
 
 [lib]
 name = "scud"
@@ -44,3 +44,7 @@ tempfile = "3.8"  # Temporary directories for tests
 mockall = "0.12"  # Mock objects for testing
 tokio-test = "0.4"  # Testing utilities for tokio
 criterion = "0.5"  # Benchmarking framework
+
+[[example]]
+name = "library_usage"
+path = "examples/library_usage.rs"

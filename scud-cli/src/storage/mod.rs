@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Local;
 use fs2::FileExt;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
@@ -10,6 +11,21 @@ use std::time::Duration;
 use crate::config::Config;
 use crate::formats::{parse_scg, serialize_scg};
 use crate::models::Phase;
+
+/// Information about an archived phase
+#[derive(Debug, Clone)]
+pub struct ArchiveInfo {
+    /// The filename of the archive (e.g., "2026-01-13_v1.scg")
+    pub filename: String,
+    /// Full path to the archive file
+    pub path: PathBuf,
+    /// The date extracted from the filename (e.g., "2026-01-13")
+    pub date: String,
+    /// The tag name if this is a single-phase archive, None if "all"
+    pub tag: Option<String>,
+    /// Number of tasks in the archive
+    pub task_count: usize,
+}
 
 pub struct Storage {
     project_root: PathBuf,
@@ -445,6 +461,257 @@ impl Storage {
 
     pub fn read_file(&self, path: &Path) -> Result<String> {
         fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
+    }
+
+    // ==================== Archive Methods ====================
+
+    /// Get the archive directory path
+    pub fn archive_dir(&self) -> PathBuf {
+        self.scud_dir().join("archive")
+    }
+
+    /// Ensure archive directory exists
+    pub fn ensure_archive_dir(&self) -> Result<()> {
+        let dir = self.archive_dir();
+        if !dir.exists() {
+            fs::create_dir_all(&dir).context("Failed to create archive directory")?;
+        }
+        Ok(())
+    }
+
+    /// Generate archive filename for a tag or all tasks
+    /// Format: {YYYY-MM-DD}_{tag}.scg or {YYYY-MM-DD}_all.scg
+    pub fn archive_filename(&self, tag: Option<&str>) -> String {
+        let date = Local::now().format("%Y-%m-%d");
+        match tag {
+            Some(t) => format!("{}_{}.scg", date, t),
+            None => format!("{}_all.scg", date),
+        }
+    }
+
+    /// Get unique archive path by appending counter if file exists
+    /// Tries base path, then base_1, base_2, etc. up to 100
+    /// Falls back to timestamp suffix if all counters exhausted
+    fn unique_archive_path(&self, base_path: &Path) -> PathBuf {
+        if !base_path.exists() {
+            return base_path.to_path_buf();
+        }
+
+        let stem = base_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("archive");
+        let ext = base_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("scg");
+        let parent = base_path.parent().unwrap_or(Path::new("."));
+
+        for i in 1..100 {
+            let new_name = format!("{}_{}.{}", stem, i, ext);
+            let new_path = parent.join(&new_name);
+            if !new_path.exists() {
+                return new_path;
+            }
+        }
+
+        // Fallback with timestamp
+        let ts = Local::now().format("%H%M%S");
+        parent.join(format!("{}_{}.{}", stem, ts, ext))
+    }
+
+    /// Archive a single phase/tag
+    /// Returns the path to the created archive file
+    pub fn archive_phase(&self, tag: &str, phases: &HashMap<String, Phase>) -> Result<PathBuf> {
+        self.ensure_archive_dir()?;
+
+        let phase = phases
+            .get(tag)
+            .ok_or_else(|| anyhow::anyhow!("Tag '{}' not found", tag))?;
+
+        let filename = self.archive_filename(Some(tag));
+        let archive_path = self.archive_dir().join(&filename);
+        let final_path = self.unique_archive_path(&archive_path);
+
+        // Serialize single phase to SCG format
+        let content = serialize_scg(phase);
+        fs::write(&final_path, content)
+            .with_context(|| format!("Failed to write archive: {}", final_path.display()))?;
+
+        Ok(final_path)
+    }
+
+    /// Archive all phases together
+    /// Returns the path to the created archive file
+    pub fn archive_all(&self, phases: &HashMap<String, Phase>) -> Result<PathBuf> {
+        self.ensure_archive_dir()?;
+
+        let filename = self.archive_filename(None);
+        let archive_path = self.archive_dir().join(&filename);
+        let final_path = self.unique_archive_path(&archive_path);
+
+        // Serialize all phases (same format as tasks.scg)
+        let mut sorted_tags: Vec<_> = phases.keys().collect();
+        sorted_tags.sort();
+
+        let mut output = String::new();
+        for (i, tag) in sorted_tags.iter().enumerate() {
+            if i > 0 {
+                output.push_str("\n---\n\n");
+            }
+            let phase = phases.get(*tag).unwrap();
+            output.push_str(&serialize_scg(phase));
+        }
+
+        fs::write(&final_path, output)
+            .with_context(|| format!("Failed to write archive: {}", final_path.display()))?;
+
+        Ok(final_path)
+    }
+
+    /// Parse archive filename to extract date and tag
+    /// Returns (date, tag) where tag is None if "all"
+    pub fn parse_archive_filename(filename: &str) -> (String, Option<String>) {
+        let name = filename.trim_end_matches(".scg");
+
+        // Handle filenames with counter suffix: YYYY-MM-DD_tag_N
+        // or just YYYY-MM-DD_tag
+        let parts: Vec<&str> = name.splitn(2, '_').collect();
+
+        if parts.len() == 2 {
+            let date = parts[0].to_string();
+            let rest = parts[1];
+
+            // Check if rest ends with _N (counter suffix)
+            // We need to detect if there's a trailing _NUMBER
+            if let Some(last_underscore) = rest.rfind('_') {
+                let potential_counter = &rest[last_underscore + 1..];
+                if potential_counter.chars().all(|c| c.is_ascii_digit())
+                    && !potential_counter.is_empty()
+                {
+                    // Has a counter suffix, extract tag without it
+                    let tag_part = &rest[..last_underscore];
+                    let tag = if tag_part == "all" {
+                        None
+                    } else {
+                        Some(tag_part.to_string())
+                    };
+                    return (date, tag);
+                }
+            }
+
+            // No counter suffix
+            let tag = if rest == "all" {
+                None
+            } else {
+                Some(rest.to_string())
+            };
+            (date, tag)
+        } else {
+            // Fallback for malformed filenames
+            (name.to_string(), None)
+        }
+    }
+
+    /// List all archives in the archive directory
+    /// Returns sorted by date descending (newest first)
+    pub fn list_archives(&self) -> Result<Vec<ArchiveInfo>> {
+        let archive_dir = self.archive_dir();
+        if !archive_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut archives = Vec::new();
+        for entry in fs::read_dir(&archive_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.extension().map(|e| e == "scg").unwrap_or(false) {
+                let filename = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let (date, tag) = Self::parse_archive_filename(&filename);
+
+                // Get task count by loading the archive
+                let task_count = match self.load_archive(&path) {
+                    Ok(phases) => phases.values().map(|p| p.tasks.len()).sum(),
+                    Err(_) => 0,
+                };
+
+                archives.push(ArchiveInfo {
+                    filename,
+                    path,
+                    date,
+                    tag,
+                    task_count,
+                });
+            }
+        }
+
+        // Sort by date descending (newest first)
+        archives.sort_by(|a, b| b.date.cmp(&a.date));
+        Ok(archives)
+    }
+
+    /// Load an archive file
+    /// Returns the phases contained in the archive
+    pub fn load_archive(&self, path: &Path) -> Result<HashMap<String, Phase>> {
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read archive: {}", path.display()))?;
+
+        self.parse_multi_phase_scg(&content)
+    }
+
+    /// Restore an archive by merging it into current tasks.
+    ///
+    /// # Arguments
+    /// * `archive_name` - filename or partial match (e.g., "v1", "2026-01-13_v1", "2026-01-13_v1.scg")
+    /// * `replace` - if true, replace existing tags; if false, skip existing
+    ///
+    /// # Returns
+    /// The list of restored tag names
+    pub fn restore_archive(&self, archive_name: &str, replace: bool) -> Result<Vec<String>> {
+        let archive_dir = self.archive_dir();
+
+        // Find matching archive
+        let archive_path = if archive_name.ends_with(".scg") {
+            let path = archive_dir.join(archive_name);
+            if !path.exists() {
+                anyhow::bail!("Archive file not found: {}", archive_name);
+            }
+            path
+        } else {
+            // Search for matching archive
+            let mut found = None;
+            if archive_dir.exists() {
+                for entry in fs::read_dir(&archive_dir)? {
+                    let entry = entry?;
+                    let filename = entry.file_name().to_string_lossy().to_string();
+                    if filename.contains(archive_name) {
+                        found = Some(entry.path());
+                        break;
+                    }
+                }
+            }
+            found.ok_or_else(|| anyhow::anyhow!("Archive '{}' not found", archive_name))?
+        };
+
+        let archived_phases = self.load_archive(&archive_path)?;
+        let mut current_phases = self.load_tasks().unwrap_or_default();
+        let mut restored_tags = Vec::new();
+
+        for (tag, phase) in archived_phases {
+            if replace || !current_phases.contains_key(&tag) {
+                current_phases.insert(tag.clone(), phase);
+                restored_tags.push(tag);
+            }
+        }
+
+        self.save_tasks(&current_phases)?;
+        Ok(restored_tags)
     }
 
     /// Create or update CLAUDE.md with SCUD agent instructions
@@ -1048,5 +1315,355 @@ mod tests {
         // Verify EPIC-2 unchanged
         let epic2 = storage.load_group("EPIC-2").unwrap();
         assert_eq!(epic2.tasks.len(), 0);
+    }
+
+    // ==================== Archive Tests ====================
+
+    #[test]
+    fn test_archive_dir() {
+        let (storage, _temp_dir) = create_test_storage();
+        let archive_dir = storage.archive_dir();
+        assert!(archive_dir.ends_with(".scud/archive"));
+    }
+
+    #[test]
+    fn test_ensure_archive_dir() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Directory shouldn't exist initially
+        assert!(!storage.archive_dir().exists());
+
+        // Create it
+        storage.ensure_archive_dir().unwrap();
+        assert!(storage.archive_dir().exists());
+
+        // Second call should be idempotent
+        storage.ensure_archive_dir().unwrap();
+        assert!(storage.archive_dir().exists());
+    }
+
+    #[test]
+    fn test_archive_filename_with_tag() {
+        let (storage, _temp_dir) = create_test_storage();
+        let filename = storage.archive_filename(Some("v1"));
+
+        // Should match pattern YYYY-MM-DD_v1.scg
+        assert!(filename.ends_with("_v1.scg"));
+        assert!(filename.len() == 17); // YYYY-MM-DD_v1.scg = 17 chars
+    }
+
+    #[test]
+    fn test_archive_filename_all() {
+        let (storage, _temp_dir) = create_test_storage();
+        let filename = storage.archive_filename(None);
+
+        // Should match pattern YYYY-MM-DD_all.scg
+        assert!(filename.ends_with("_all.scg"));
+        assert!(filename.len() == 18); // YYYY-MM-DD_all.scg = 18 chars
+    }
+
+    #[test]
+    fn test_parse_archive_filename_simple() {
+        let (date, tag) = Storage::parse_archive_filename("2026-01-13_v1.scg");
+        assert_eq!(date, "2026-01-13");
+        assert_eq!(tag, Some("v1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_archive_filename_all() {
+        let (date, tag) = Storage::parse_archive_filename("2026-01-13_all.scg");
+        assert_eq!(date, "2026-01-13");
+        assert_eq!(tag, None);
+    }
+
+    #[test]
+    fn test_parse_archive_filename_with_counter() {
+        let (date, tag) = Storage::parse_archive_filename("2026-01-13_v1_2.scg");
+        assert_eq!(date, "2026-01-13");
+        assert_eq!(tag, Some("v1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_archive_filename_all_with_counter() {
+        let (date, tag) = Storage::parse_archive_filename("2026-01-13_all_5.scg");
+        assert_eq!(date, "2026-01-13");
+        assert_eq!(tag, None);
+    }
+
+    #[test]
+    fn test_archive_single_phase() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Create test phases
+        let mut phases = HashMap::new();
+        let mut phase = Phase::new("v1".to_string());
+        phase.add_task(crate::models::Task::new(
+            "task-1".to_string(),
+            "Test Task".to_string(),
+            "Description".to_string(),
+        ));
+        phases.insert("v1".to_string(), phase);
+        storage.save_tasks(&phases).unwrap();
+
+        // Archive
+        let archive_path = storage.archive_phase("v1", &phases).unwrap();
+
+        assert!(archive_path.exists());
+        assert!(archive_path.to_string_lossy().contains("v1"));
+        assert!(archive_path.extension().unwrap() == "scg");
+    }
+
+    #[test]
+    fn test_archive_all_phases() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut phases = HashMap::new();
+        phases.insert("v1".to_string(), Phase::new("v1".to_string()));
+        phases.insert("v2".to_string(), Phase::new("v2".to_string()));
+        storage.save_tasks(&phases).unwrap();
+
+        let archive_path = storage.archive_all(&phases).unwrap();
+
+        assert!(archive_path.exists());
+        assert!(archive_path.to_string_lossy().contains("all"));
+
+        // Verify it contains both phases
+        let loaded = storage.load_archive(&archive_path).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded.contains_key("v1"));
+        assert!(loaded.contains_key("v2"));
+    }
+
+    #[test]
+    fn test_archive_nonexistent_tag() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let phases = HashMap::new();
+        let result = storage.archive_phase("nonexistent", &phases);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_unique_archive_path_no_collision() {
+        let (storage, _temp_dir) = create_test_storage();
+        storage.ensure_archive_dir().unwrap();
+
+        let base_path = storage.archive_dir().join("test.scg");
+        let result = storage.unique_archive_path(&base_path);
+
+        assert_eq!(result, base_path);
+    }
+
+    #[test]
+    fn test_unique_archive_path_with_collision() {
+        let (storage, _temp_dir) = create_test_storage();
+        storage.ensure_archive_dir().unwrap();
+
+        // Create existing file
+        let base_path = storage.archive_dir().join("test.scg");
+        fs::write(&base_path, "existing").unwrap();
+
+        // Should get test_1.scg
+        let result = storage.unique_archive_path(&base_path);
+        assert!(result.to_string_lossy().contains("test_1.scg"));
+    }
+
+    #[test]
+    fn test_unique_archive_path_multiple_collisions() {
+        let (storage, _temp_dir) = create_test_storage();
+        storage.ensure_archive_dir().unwrap();
+
+        // Create existing files
+        let base_path = storage.archive_dir().join("test.scg");
+        fs::write(&base_path, "existing").unwrap();
+        fs::write(storage.archive_dir().join("test_1.scg"), "existing").unwrap();
+        fs::write(storage.archive_dir().join("test_2.scg"), "existing").unwrap();
+
+        // Should get test_3.scg
+        let result = storage.unique_archive_path(&base_path);
+        assert!(result.to_string_lossy().contains("test_3.scg"));
+    }
+
+    #[test]
+    fn test_list_archives_empty() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let archives = storage.list_archives().unwrap();
+        assert!(archives.is_empty());
+    }
+
+    #[test]
+    fn test_list_archives_with_archives() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Create test phases and archive them
+        let mut phases = HashMap::new();
+        let mut phase = Phase::new("v1".to_string());
+        phase.add_task(crate::models::Task::new(
+            "task-1".to_string(),
+            "Test".to_string(),
+            "Desc".to_string(),
+        ));
+        phases.insert("v1".to_string(), phase);
+        storage.save_tasks(&phases).unwrap();
+
+        storage.archive_phase("v1", &phases).unwrap();
+
+        let archives = storage.list_archives().unwrap();
+        assert_eq!(archives.len(), 1);
+        assert_eq!(archives[0].tag, Some("v1".to_string()));
+        assert_eq!(archives[0].task_count, 1);
+    }
+
+    #[test]
+    fn test_load_archive() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut phases = HashMap::new();
+        let mut phase = Phase::new("test-tag".to_string());
+        phase.add_task(crate::models::Task::new(
+            "task-1".to_string(),
+            "Test Title".to_string(),
+            "Test Description".to_string(),
+        ));
+        phases.insert("test-tag".to_string(), phase);
+        storage.save_tasks(&phases).unwrap();
+
+        let archive_path = storage.archive_phase("test-tag", &phases).unwrap();
+
+        // Load and verify
+        let loaded = storage.load_archive(&archive_path).unwrap();
+        assert_eq!(loaded.len(), 1);
+        let loaded_phase = loaded.get("test-tag").unwrap();
+        assert_eq!(loaded_phase.tasks.len(), 1);
+        assert_eq!(loaded_phase.tasks[0].title, "Test Title");
+    }
+
+    #[test]
+    fn test_restore_archive_empty_tasks() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Create and archive a phase
+        let mut phases = HashMap::new();
+        phases.insert("v1".to_string(), Phase::new("v1".to_string()));
+        storage.save_tasks(&phases).unwrap();
+
+        let archive_path = storage.archive_phase("v1", &phases).unwrap();
+        let archive_name = archive_path.file_name().unwrap().to_str().unwrap();
+
+        // Clear current tasks
+        storage.save_tasks(&HashMap::new()).unwrap();
+        let empty_check = storage.load_tasks().unwrap();
+        assert!(empty_check.is_empty());
+
+        // Restore
+        let restored = storage.restore_archive(archive_name, false).unwrap();
+        assert_eq!(restored, vec!["v1".to_string()]);
+
+        // Verify restored
+        let current = storage.load_tasks().unwrap();
+        assert!(current.contains_key("v1"));
+    }
+
+    #[test]
+    fn test_restore_archive_no_replace() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Create initial phase with task
+        let mut phases = HashMap::new();
+        let mut phase = Phase::new("v1".to_string());
+        phase.add_task(crate::models::Task::new(
+            "original".to_string(),
+            "Original".to_string(),
+            "Desc".to_string(),
+        ));
+        phases.insert("v1".to_string(), phase);
+        storage.save_tasks(&phases).unwrap();
+
+        // Archive it
+        let archive_path = storage.archive_phase("v1", &phases).unwrap();
+        let archive_name = archive_path.file_name().unwrap().to_str().unwrap();
+
+        // Modify current tasks
+        let mut current = storage.load_tasks().unwrap();
+        current.get_mut("v1").unwrap().add_task(crate::models::Task::new(
+            "new".to_string(),
+            "New".to_string(),
+            "Desc".to_string(),
+        ));
+        storage.save_tasks(&current).unwrap();
+
+        // Restore without replace - should not overwrite
+        let restored = storage.restore_archive(archive_name, false).unwrap();
+        assert!(restored.is_empty()); // Nothing restored since v1 exists
+
+        // Verify current still has both tasks
+        let final_tasks = storage.load_tasks().unwrap();
+        assert_eq!(final_tasks.get("v1").unwrap().tasks.len(), 2);
+    }
+
+    #[test]
+    fn test_restore_archive_with_replace() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        // Create initial phase with task
+        let mut phases = HashMap::new();
+        let mut phase = Phase::new("v1".to_string());
+        phase.add_task(crate::models::Task::new(
+            "original".to_string(),
+            "Original".to_string(),
+            "Desc".to_string(),
+        ));
+        phases.insert("v1".to_string(), phase);
+        storage.save_tasks(&phases).unwrap();
+
+        // Archive it
+        let archive_path = storage.archive_phase("v1", &phases).unwrap();
+        let archive_name = archive_path.file_name().unwrap().to_str().unwrap();
+
+        // Modify current tasks
+        let mut current = storage.load_tasks().unwrap();
+        current.get_mut("v1").unwrap().add_task(crate::models::Task::new(
+            "new".to_string(),
+            "New".to_string(),
+            "Desc".to_string(),
+        ));
+        storage.save_tasks(&current).unwrap();
+
+        // Restore with replace - should overwrite
+        let restored = storage.restore_archive(archive_name, true).unwrap();
+        assert_eq!(restored, vec!["v1".to_string()]);
+
+        // Verify archive version restored (only 1 task)
+        let final_tasks = storage.load_tasks().unwrap();
+        assert_eq!(final_tasks.get("v1").unwrap().tasks.len(), 1);
+    }
+
+    #[test]
+    fn test_restore_archive_partial_match() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let mut phases = HashMap::new();
+        phases.insert("myproject".to_string(), Phase::new("myproject".to_string()));
+        storage.save_tasks(&phases).unwrap();
+
+        storage.archive_phase("myproject", &phases).unwrap();
+
+        // Clear and restore using partial name
+        storage.save_tasks(&HashMap::new()).unwrap();
+
+        let restored = storage.restore_archive("myproject", false).unwrap();
+        assert_eq!(restored, vec!["myproject".to_string()]);
+    }
+
+    #[test]
+    fn test_restore_archive_not_found() {
+        let (storage, _temp_dir) = create_test_storage();
+
+        let result = storage.restore_archive("nonexistent", false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 }

@@ -318,7 +318,7 @@ fn detect_id_collisions(tasks: &[&Task]) -> Vec<(String, Vec<String>)> {
         .into_iter()
         .filter(|(_, tags)| {
             // Dedupe tags and check if more than one unique tag
-            let mut unique_tags: Vec<_> = tags.iter().cloned().collect();
+            let mut unique_tags: Vec<_> = tags.to_vec();
             unique_tags.sort();
             unique_tags.dedup();
             unique_tags.len() > 1
