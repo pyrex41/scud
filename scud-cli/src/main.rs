@@ -479,6 +479,41 @@ enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
+
+    /// Run Ralph Wiggum mode - wave-based execution with optional smart review
+    Ralph {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Maximum tasks per round (default: 5)
+        #[arg(short = 'n', long, default_value = "5")]
+        round_size: usize,
+
+        /// Enable smart model review after each wave
+        #[arg(short, long)]
+        review: bool,
+
+        /// Execute across all phases
+        #[arg(long)]
+        all_tags: bool,
+
+        /// Terminal: auto, tmux, kitty, wezterm, iterm2 (default: auto)
+        #[arg(short = 'T', long, default_value = "auto")]
+        terminal: String,
+
+        /// Show execution plan without spawning
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Session name (default: ralph-<tag>)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Model override for smart review (default: config smart_model)
+        #[arg(long)]
+        model: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -622,5 +657,25 @@ async fn main() -> Result<()> {
         ),
         Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
+        Commands::Ralph {
+            tag,
+            round_size,
+            review,
+            all_tags,
+            terminal,
+            dry_run,
+            session,
+            model,
+        } => commands::ralph::run(
+            cli.project,
+            tag.as_deref(),
+            round_size,
+            review,
+            all_tags,
+            &terminal,
+            dry_run,
+            session,
+            model.as_deref(),
+        ),
     }
 }
