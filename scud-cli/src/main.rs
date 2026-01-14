@@ -592,6 +592,17 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env file if present (before anything else)
+    // Tries: .env, .scud/.env, ~/.scud/.env
+    if dotenvy::dotenv().is_err() {
+        // Try .scud/.env
+        let _ = dotenvy::from_filename(".scud/.env");
+    }
+    // Also try home directory
+    if let Some(home) = dirs::home_dir() {
+        let _ = dotenvy::from_path(home.join(".scud/.env"));
+    }
+
     let cli = Cli::parse();
 
     match cli.command {

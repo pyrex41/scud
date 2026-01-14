@@ -10,8 +10,11 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LLMConfig {
+    /// Default provider
+    #[serde(default = "default_provider")]
     pub provider: String,
     /// Default model (used when no tier specified)
+    #[serde(default = "default_model")]
     pub model: String,
     /// Smart provider for validation/analysis tasks
     #[serde(default = "default_smart_provider")]
@@ -25,37 +28,53 @@ pub struct LLMConfig {
     /// Fast model for generation tasks
     #[serde(default = "default_fast_model")]
     pub fast_model: String,
-    #[serde(default)]
+    /// Max tokens for LLM requests
+    #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
 }
 
+fn default_provider() -> String {
+    std::env::var("SCUD_PROVIDER").unwrap_or_else(|_| "xai".to_string())
+}
+
+fn default_model() -> String {
+    std::env::var("SCUD_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string())
+}
+
 fn default_smart_provider() -> String {
-    "claude-cli".to_string()
+    std::env::var("SCUD_SMART_PROVIDER").unwrap_or_else(|_| "claude-cli".to_string())
 }
 
 fn default_smart_model() -> String {
-    "opus".to_string()
+    std::env::var("SCUD_SMART_MODEL").unwrap_or_else(|_| "opus".to_string())
 }
 
 fn default_fast_provider() -> String {
-    "xai".to_string()
+    std::env::var("SCUD_FAST_PROVIDER").unwrap_or_else(|_| "xai".to_string())
 }
 
 fn default_fast_model() -> String {
-    "grok-code-fast-1".to_string()
+    std::env::var("SCUD_FAST_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string())
+}
+
+fn default_max_tokens() -> u32 {
+    std::env::var("SCUD_MAX_TOKENS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16000)
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             llm: LLMConfig {
-                provider: "claude-cli".to_string(),
-                model: "sonnet".to_string(),
-                smart_provider: "claude-cli".to_string(),
-                smart_model: "opus".to_string(),
-                fast_provider: "xai".to_string(),
-                fast_model: "grok-code-fast-1".to_string(),
-                max_tokens: 16000,
+                provider: default_provider(),
+                model: default_model(),
+                smart_provider: default_smart_provider(),
+                smart_model: default_smart_model(),
+                fast_provider: default_fast_provider(),
+                fast_model: default_fast_model(),
+                max_tokens: default_max_tokens(),
             },
         }
     }
@@ -208,10 +227,13 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.llm.provider, "claude-cli");
-        assert_eq!(config.llm.model, "sonnet");
+        // Default provider is xai with grok-code-fast-1 for speed
+        assert_eq!(config.llm.provider, "xai");
+        assert_eq!(config.llm.model, "grok-code-fast-1");
+        // Smart tier uses claude-cli with opus
         assert_eq!(config.llm.smart_provider, "claude-cli");
         assert_eq!(config.llm.smart_model, "opus");
+        // Fast tier uses xai with grok-code-fast-1
         assert_eq!(config.llm.fast_provider, "xai");
         assert_eq!(config.llm.fast_model, "grok-code-fast-1");
         assert_eq!(config.llm.max_tokens, 16000);

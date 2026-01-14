@@ -296,18 +296,15 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             );
         }
         let model = Config::default_model_for_provider(&provider).to_string();
-        // Use defaults for smart/fast (could be customized later)
-        let smart_provider = "claude-cli".to_string();
-        let smart_model = "opus".to_string();
-        let fast_provider = "xai".to_string();
-        let fast_model = "grok-code-fast-1".to_string();
+        // Use defaults for smart/fast from Config (respects env vars)
+        let defaults = Config::default();
         (
             provider,
             model,
-            smart_provider,
-            smart_model,
-            fast_provider,
-            fast_model,
+            defaults.llm.smart_provider,
+            defaults.llm.smart_model,
+            defaults.llm.fast_provider,
+            defaults.llm.fast_model,
         )
     } else if is_interactive() {
         println!(
@@ -340,21 +337,15 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             fast_model,
         )
     } else {
-        // Non-interactive without provider arg: use default (claude-cli)
-        let provider = "claude-cli";
-        let model = Config::default_model_for_provider(provider);
-        // Use defaults for smart/fast
-        let smart_provider = "claude-cli".to_string();
-        let smart_model = "opus".to_string();
-        let fast_provider = "xai".to_string();
-        let fast_model = "grok-code-fast-1".to_string();
+        // Non-interactive without provider arg: use defaults from Config (respects env vars)
+        let defaults = Config::default();
         (
-            provider.to_string(),
-            model.to_string(),
-            smart_provider,
-            smart_model,
-            fast_provider,
-            fast_model,
+            defaults.llm.provider,
+            defaults.llm.model,
+            defaults.llm.smart_provider,
+            defaults.llm.smart_model,
+            defaults.llm.fast_provider,
+            defaults.llm.fast_model,
         )
     };
 
