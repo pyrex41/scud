@@ -11,9 +11,9 @@ This project uses SCUD Task Manager for task management.
    - Displays active tag, task counts, and any stale locks
    - Identifies the next available task
 
-2. **Claim a task**: Use `/scud:task-next` or `scud next --claim --name "Claude"`
-   - Always claim before starting work to prevent conflicts
-   - Task context is stored in `.scud/current-task`
+2. **Get a task**: Use `/scud:next` or `scud next`
+   - Shows the next available task based on DAG dependencies
+   - Use `scud set-status <id> in-progress` to mark you're working on it
 
 3. **Work on the task**: Implement the requirements
    - Reference task details with `/scud:task-show <id>`

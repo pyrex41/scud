@@ -1,4 +1,18 @@
-# SCUD Parallel Features (Experimental)
+# SCUD Parallel Features (Planned/Experimental)
+
+> **⚠️ IMPORTANT: Most features in this document are PLANNED but NOT YET IMPLEMENTED.**
+>
+> **Currently implemented:**
+> - `scud assign <task-id> <assignee>` - Assign a task to someone
+> - `scud who-is` - Show who is assigned to what
+>
+> **Not yet implemented (planned):**
+> - `scud claim` / `scud release` - Task locking
+> - Tag groups (`create-group`, `list-groups`, `group-status`, `add-to-group`)
+>
+> This document describes the vision for parallel development features. Check back for updates.
+
+---
 
 Enable parallel development with tag groups and task assignment for team collaboration.
 
@@ -233,7 +247,7 @@ To force release: scud release 7 --force
 
 #### Who's Working on What
 ```bash
-scud whois
+scud who-is
 ```
 
 **Output:**
@@ -298,7 +312,7 @@ scud claim 9 --name charlie
 scud set-status 9 in-progress
 
 # Team Lead: Check progress
-scud whois
+scud who-is
 
 # Shows:
 # ● alice - Task 5 (in progress)
@@ -325,7 +339,7 @@ scud claim 5 --name bob    # ✗ Error: Task is locked by alice
 
 **Stale Lock Detection:**
 - Locks >24h are flagged as stale
-- Shown in `scud whois` output
+- Shown in `scud who-is` output
 - Can be force-released
 
 **Auto-Release:**
@@ -426,7 +440,7 @@ Developers:
 Workflow:
 1. All work on same tag
 2. Each developer claims tasks
-3. Use scud whois to avoid conflicts
+3. Use scud who-is to avoid conflicts
 4. Work asynchronously across timezones
 5. Lock prevents accidental overlaps
 ```
@@ -483,7 +497,7 @@ scud group-status dashboard-feature
 - Claim tasks before starting work
 - Release tasks if you step away
 - Use `scud next` to find available tasks
-- Check `scud whois` before claiming
+- Check `scud who-is` before claiming
 - Set status to done when complete (auto-releases)
 
 ❌ **Don't:**
@@ -577,7 +591,7 @@ scud group-status feature-x
 
 ```bash
 # Check who has it
-scud whois
+scud who-is
 
 # If they're done, ask them to release
 # Or force release if stale
@@ -598,7 +612,7 @@ scud add-to-group <group-id> <tag>
 
 ```bash
 # See all assignments
-scud whois
+scud who-is
 
 # Release stale locks
 scud release <task-id> --force
@@ -621,30 +635,30 @@ scud release <task-id> --force
 - Claim tasks to show you're working
 - Lock prevents conflicts
 - Auto-release on completion
-- Monitor with `scud whois`
+- Monitor with `scud who-is`
 
 **Together:**
 Enable teams to work in parallel efficiently while maintaining coordination and preventing conflicts.
 
 **Experimental Status:**
-These features are stable but marked experimental. Feedback welcome!
+Most features described above are planned but not yet implemented. See the note at the top of this document.
 
 ---
 
-**Quick Reference:**
+**Quick Reference (Currently Implemented):**
 
 ```bash
-# Tag Groups
-scud create-group "Name" --tags tag1,tag2
-scud list-groups
-scud group-status <group-id>
-scud add-to-group <group-id> <tag>
+# Task Assignment (implemented)
+scud assign <task-id> <assignee>    # Assign a task
+scud who-is                          # Show assignments
 
-# Task Assignment
-scud assign <task-id> <assignee>
-scud claim <task-id> --name <your-name>
-scud release <task-id> [--force]
-scud whois
+# Planned (not yet implemented)
+# scud claim <task-id> --name <your-name>
+# scud release <task-id> [--force]
+# scud create-group "Name" --tags tag1,tag2
+# scud list-groups
+# scud group-status <group-id>
+# scud add-to-group <group-id> <tag>
 ```
 
 **Happy parallel development!**

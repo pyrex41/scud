@@ -25,7 +25,7 @@ scud commit        # Task-aware git commit
 | View | `scud list [--status pending]` | List tasks |
 | | `scud show ID` | Task details |
 | | `scud tags` | List/set active tag |
-| Work | `scud next [--claim]` | Next task |
+| Work | `scud next` | Next task |
 | | `scud waves` | Dependency waves |
 | | `scud set-status ID [pending\|in-progress\|done\|blocked]` | Update status |
 | | `scud assign ID @dev` | Assign |
@@ -44,7 +44,7 @@ scud commit        # Task-aware git commit
 `/scud:next`, `/scud:task-list`, etc (auto-installed).
 
 ## Best Practices
-- Claim: `scud next --claim`
+- Find next: `scud next`
 - Waves for parallel: `scud waves`
 - Log everything: `scud log ID "Progress: X done"`
 

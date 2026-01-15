@@ -189,14 +189,12 @@ scud next --tag myproject
 scud next-batch --tag myproject --limit 5
 ```
 
-### Claim and Work
+### Start Work on a Task
 
 ```bash
-scud claim <task-id> --name agent-1
 scud set-status <task-id> in-progress
 # ... do work ...
 scud set-status <task-id> done
-scud release <task-id>
 ```
 
 ### Example: Custom Bash Orchestrator
