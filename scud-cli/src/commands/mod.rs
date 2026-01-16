@@ -29,6 +29,3 @@ pub mod whois;
 
 // Parallel execution
 pub mod spawn;
-
-// Swarm mode (wave-based parallel execution with backpressure)
-pub mod swarm;

@@ -131,7 +131,6 @@ pub mod backpressure;
 /// - `waves` - Display execution waves
 /// - `stats` - Show completion statistics
 /// - `spawn` - Parallel task execution
-/// - `swarm` - Wave-based parallel execution with backpressure
 ///
 /// ## Generate Pipeline
 ///
