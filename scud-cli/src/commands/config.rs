@@ -79,23 +79,6 @@ const SCUD_SKILLS: &[(&str, &[&str], &str)] = &[
     ),
 ];
 
-/// SCUD task command definitions (Claude Code slash commands)
-/// These wrap the CLI for common task operations
-/// Commands are stored in .claude/commands/scud/
-#[allow(dead_code)]
-const SCUD_TASK_COMMANDS: &[&str] = &[
-    "task-list",
-    "task-next",
-    "task-show",
-    "task-status",
-    "task-claim",
-    "task-waves",
-    "task-stats",
-    "task-whois",
-    "task-tags",
-    "task-doctor",
-];
-
 /// OpenCode command definitions
 /// These are the same commands but for OpenCode
 /// Commands are stored in .opencode/command/
@@ -444,24 +427,6 @@ pub fn agents_list(project_root: Option<PathBuf>) -> Result<()> {
     println!("  scud config agents remove <name>  Remove an agent or skill");
     println!("  scud config agents remove --all   Remove all agents, skills, and OpenCode support");
 
-    Ok(())
-}
-
-/// Recursively copy a directory
-#[allow(dead_code)]
-fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
     Ok(())
 }
 

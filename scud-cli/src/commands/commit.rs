@@ -117,8 +117,6 @@ fn get_current_task_id(storage: &Storage) -> Result<Option<String>> {
 
 struct TaskContext {
     title: String,
-    #[allow(dead_code)]
-    tag: Option<String>,
 }
 
 fn get_task_context(storage: &Storage, task_id: &str) -> Option<TaskContext> {
@@ -128,7 +126,6 @@ fn get_task_context(storage: &Storage, task_id: &str) -> Option<TaskContext> {
             if let Some(task) = phase.tasks.iter().find(|t| t.id == task_id) {
                 return Some(TaskContext {
                     title: task.title.clone(),
-                    tag: Some(tag),
                 });
             }
         }
@@ -136,11 +133,10 @@ fn get_task_context(storage: &Storage, task_id: &str) -> Option<TaskContext> {
 
     // Search all phases
     if let Ok(all_tasks) = storage.load_tasks() {
-        for (tag, phase) in all_tasks {
+        for (_tag, phase) in all_tasks {
             if let Some(task) = phase.tasks.iter().find(|t| t.id == task_id) {
                 return Some(TaskContext {
                     title: task.title.clone(),
-                    tag: Some(tag),
                 });
             }
         }

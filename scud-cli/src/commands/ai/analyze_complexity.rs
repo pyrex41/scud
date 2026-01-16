@@ -12,6 +12,7 @@ use crate::storage::Storage;
 #[derive(Debug, Deserialize)]
 struct ComplexityAnalysis {
     complexity: u32,
+    #[allow(dead_code)] // Required for JSON deserialization
     reasoning: String,
 }
 
@@ -20,8 +21,6 @@ struct TaskAnalysisResult {
     id: String,
     title: String,
     complexity: u32,
-    #[allow(dead_code)]
-    reasoning: String, // Parsed from LLM response but not stored
 }
 
 /// Number of concurrent LLM requests
@@ -139,7 +138,6 @@ pub async fn run(
                                     id,
                                     title,
                                     complexity: analysis.complexity,
-                                    reasoning: analysis.reasoning,
                                 });
                             }
                             Err(e) => {
