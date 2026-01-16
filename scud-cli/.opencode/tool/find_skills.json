@@ -1,0 +1,13 @@
+{
+  "name": "find_skills",
+  "description": "Find available skills in the codebase",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query for skills"
+      }
+    }
+  }
+}

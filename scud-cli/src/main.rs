@@ -553,6 +553,45 @@ enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
+
+    /// Run swarm mode - wave-based parallel execution with backpressure
+    Swarm {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Maximum tasks per round (default: 5)
+        #[arg(short = 'n', long, default_value = "5")]
+        round_size: usize,
+
+        /// Execute across all phases
+        #[arg(long)]
+        all_tags: bool,
+
+        /// Terminal: auto, tmux, kitty, wezterm, iterm2, zellij (default: auto)
+        #[arg(short = 'T', long, default_value = "auto")]
+        terminal: String,
+
+        /// AI harness: claude, opencode (default: claude)
+        #[arg(short = 'H', long, default_value = "claude")]
+        harness: String,
+
+        /// Show execution plan without spawning
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Session name for tmux/zellij (default: swarm-<tag>)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Skip research phase (use existing tasks as-is)
+        #[arg(long)]
+        no_research: bool,
+
+        /// Skip backpressure validation after wave
+        #[arg(long)]
+        no_validate: bool,
+    },
 }
 
 #[tokio::main]
@@ -811,5 +850,27 @@ async fn main() -> Result<()> {
         ),
         Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
+        Commands::Swarm {
+            tag,
+            round_size,
+            all_tags,
+            terminal,
+            harness,
+            dry_run,
+            session,
+            no_research,
+            no_validate,
+        } => commands::swarm::run(
+            cli.project,
+            tag.as_deref(),
+            round_size,
+            all_tags,
+            &terminal,
+            &harness,
+            dry_run,
+            session,
+            no_research,
+            no_validate,
+        ),
     }
 }

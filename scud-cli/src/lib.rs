@@ -131,6 +131,7 @@ pub mod backpressure;
 /// - `waves` - Display execution waves
 /// - `stats` - Show completion statistics
 /// - `spawn` - Parallel task execution
+/// - `swarm` - Wave-based parallel execution with backpressure
 ///
 /// ## Generate Pipeline
 ///
@@ -274,3 +275,14 @@ pub mod models;
 /// storage.update_group("my-phase", &phase).unwrap();
 /// ```
 pub mod storage;
+
+/// Returns a greeting message.
+///
+/// # Example
+///
+/// ```
+/// assert_eq!(scud::hello(), "Hello, World!");
+/// ```
+pub fn hello() -> &'static str {
+    "Hello, World!"
+}

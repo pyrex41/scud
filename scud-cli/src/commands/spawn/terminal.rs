@@ -1,10 +1,184 @@
 //! Terminal detection and spawning functionality
 //!
 //! Supports Kitty, WezTerm, iTerm2, Zellij, and tmux with auto-detection based on environment variables.
+//! Supports multiple AI harnesses: Claude Code, OpenCode.
 
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
+use std::sync::OnceLock;
+
+/// Supported AI coding harnesses
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Harness {
+    /// Claude Code CLI (default)
+    #[default]
+    Claude,
+    /// OpenCode CLI
+    OpenCode,
+}
+
+impl Harness {
+    /// Parse harness from string
+    pub fn parse(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "claude" | "claude-code" => Ok(Harness::Claude),
+            "opencode" | "open-code" => Ok(Harness::OpenCode),
+            other => anyhow::bail!(
+                "Unknown harness: '{}'. Supported: claude, opencode",
+                other
+            ),
+        }
+    }
+
+    /// Display name
+    pub fn name(&self) -> &'static str {
+        match self {
+            Harness::Claude => "claude",
+            Harness::OpenCode => "opencode",
+        }
+    }
+
+    /// Binary name to search for
+    pub fn binary_name(&self) -> &'static str {
+        match self {
+            Harness::Claude => "claude",
+            Harness::OpenCode => "opencode",
+        }
+    }
+
+    /// Generate the command to run with a prompt
+    pub fn command(&self, binary_path: &str, prompt_file: &Path) -> String {
+        match self {
+            Harness::Claude => format!(
+                r#"'{}' "$(cat '{}')" --dangerously-skip-permissions"#,
+                binary_path,
+                prompt_file.display()
+            ),
+            Harness::OpenCode => format!(
+                r#"'{}' run "$(cat '{}')""#,
+                binary_path,
+                prompt_file.display()
+            ),
+        }
+    }
+}
+
+/// Cached paths to harness binaries
+static CLAUDE_PATH: OnceLock<String> = OnceLock::new();
+static OPENCODE_PATH: OnceLock<String> = OnceLock::new();
+
+/// Generate shell initialization prefix that sources user's profile.
+/// This ensures PATH and other environment variables are properly set up
+/// in spawned shells (which don't run as login shells).
+fn shell_init_prefix() -> &'static str {
+    // Source common shell initialization files to set up PATH
+    // This handles cases where node, python, etc. are installed via nvm, pyenv, homebrew, etc.
+    r#"
+# Source shell profile for PATH setup
+[ -f /etc/profile ] && . /etc/profile
+[ -f ~/.profile ] && . ~/.profile
+[ -f ~/.bash_profile ] && . ~/.bash_profile
+[ -f ~/.bashrc ] && . ~/.bashrc
+[ -f ~/.zshrc ] && . ~/.zshrc 2>/dev/null
+# Add common paths
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# Source nvm if present
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
+# Source bun if present
+[ -s "$HOME/.bun/_bun" ] && . "$HOME/.bun/_bun"
+export PATH="$HOME/.bun/bin:$PATH"
+"#
+}
+
+/// Find the full path to a harness binary.
+/// Caches the result for subsequent calls.
+pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
+    let cache = match harness {
+        Harness::Claude => &CLAUDE_PATH,
+        Harness::OpenCode => &OPENCODE_PATH,
+    };
+
+    // Check if already cached
+    if let Some(path) = cache.get() {
+        return Ok(path.as_str());
+    }
+
+    let binary_name = harness.binary_name();
+
+    // Try `which <binary>` to find it in PATH
+    let output = Command::new("which")
+        .arg(binary_name)
+        .output()
+        .context(format!("Failed to run 'which {}'", binary_name))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            // Cache and return
+            let _ = cache.set(path);
+            return Ok(cache.get().unwrap().as_str());
+        }
+    }
+
+    // Common installation paths as fallback
+    let common_paths: &[&str] = match harness {
+        Harness::Claude => &[
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            "/usr/bin/claude",
+        ],
+        Harness::OpenCode => &[
+            "/opt/homebrew/bin/opencode",
+            "/usr/local/bin/opencode",
+            "/usr/bin/opencode",
+        ],
+    };
+
+    for path in common_paths {
+        if std::path::Path::new(path).exists() {
+            let _ = cache.set(path.to_string());
+            return Ok(cache.get().unwrap().as_str());
+        }
+    }
+
+    // Try home-relative paths
+    if let Ok(home) = std::env::var("HOME") {
+        let home_paths: Vec<String> = match harness {
+            Harness::Claude => vec![
+                format!("{}/.local/bin/claude", home),
+                format!("{}/.claude/local/claude", home),
+            ],
+            Harness::OpenCode => vec![
+                format!("{}/.local/bin/opencode", home),
+                format!("{}/.bun/bin/opencode", home),
+            ],
+        };
+
+        for path in home_paths {
+            if std::path::Path::new(&path).exists() {
+                let _ = cache.set(path);
+                return Ok(cache.get().unwrap().as_str());
+            }
+        }
+    }
+
+    let install_hint = match harness {
+        Harness::Claude => "Install with: npm install -g @anthropic-ai/claude-code",
+        Harness::OpenCode => "Install with: curl -fsSL https://opencode.ai/install | bash",
+    };
+
+    anyhow::bail!(
+        "Could not find '{}' binary. Please ensure it is installed and in PATH.\n{}",
+        binary_name,
+        install_hint
+    )
+}
+
+/// Find the full path to the claude binary (convenience wrapper).
+pub fn find_claude_binary() -> Result<&'static str> {
+    find_harness_binary(Harness::Claude)
+}
 
 /// Supported terminal emulators
 #[derive(Debug, Clone, PartialEq)]
@@ -101,17 +275,33 @@ pub fn spawn_terminal(
     working_dir: &Path,
     session_name: &str,
 ) -> Result<()> {
+    // Default to Claude harness for backwards compatibility
+    spawn_terminal_with_harness(terminal, task_id, prompt, working_dir, session_name, Harness::Claude)
+}
+
+/// Spawn a new terminal window/pane with the given command using a specific harness
+pub fn spawn_terminal_with_harness(
+    terminal: &Terminal,
+    task_id: &str,
+    prompt: &str,
+    working_dir: &Path,
+    session_name: &str,
+    harness: Harness,
+) -> Result<()> {
+    // Find harness binary path upfront to fail fast if not found
+    let binary_path = find_harness_binary(harness)?;
+
     match terminal {
-        Terminal::Kitty => spawn_kitty(task_id, prompt, working_dir),
-        Terminal::Wezterm => spawn_wezterm(task_id, prompt, working_dir),
-        Terminal::ITerm2 => spawn_iterm2(task_id, prompt, working_dir),
-        Terminal::Zellij => spawn_zellij(task_id, prompt, working_dir, session_name),
-        Terminal::Tmux => spawn_tmux(task_id, prompt, working_dir, session_name),
+        Terminal::Kitty => spawn_kitty(task_id, prompt, working_dir, binary_path, harness),
+        Terminal::Wezterm => spawn_wezterm(task_id, prompt, working_dir, binary_path, harness),
+        Terminal::ITerm2 => spawn_iterm2(task_id, prompt, working_dir, binary_path, harness),
+        Terminal::Zellij => spawn_zellij(task_id, prompt, working_dir, session_name, binary_path, harness),
+        Terminal::Tmux => spawn_tmux(task_id, prompt, working_dir, session_name, binary_path, harness),
     }
 }
 
 /// Spawn in Kitty terminal using remote control
-fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> {
+fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness) -> Result<()> {
     let title = format!("task-{}", task_id);
 
     // Write prompt to temp file to avoid shell escaping issues
@@ -120,11 +310,16 @@ fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> {
 
     // Interactive mode with SCUD_TASK_ID for hook integration
     // The Stop hook will read SCUD_TASK_ID and auto-complete the task
+    // Use full path to harness binary to avoid PATH issues in spawned shells
+    // Source shell profile to ensure PATH includes node, etc.
+    let harness_cmd = harness.command(binary_path, &prompt_file);
     let bash_cmd = format!(
-        r#"export SCUD_TASK_ID='{}' ; claude "$(cat '{}')" --dangerously-skip-permissions ; rm -f '{}' ; exec bash"#,
-        task_id,
-        prompt_file.display(),
-        prompt_file.display()
+        r#"{init}
+export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
+        init = shell_init_prefix(),
+        task_id = task_id,
+        cmd = harness_cmd,
+        prompt = prompt_file.display()
     );
 
     let status = Command::new("kitty")
@@ -132,7 +327,7 @@ fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> {
         .arg(format!("--title={}", title))
         .arg(format!("--cwd={}", working_dir.display()))
         .arg("bash")
-        .arg("-c")
+        .arg("-lc")
         .arg(&bash_cmd)
         .status()
         .context("Failed to spawn Kitty window")?;
@@ -145,17 +340,22 @@ fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> {
 }
 
 /// Spawn in WezTerm terminal
-fn spawn_wezterm(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> {
+fn spawn_wezterm(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness) -> Result<()> {
     // Write prompt to temp file to avoid shell escaping issues
     let prompt_file = std::env::temp_dir().join(format!("scud-prompt-{}.txt", task_id));
     std::fs::write(&prompt_file, prompt)?;
 
     // Interactive mode with SCUD_TASK_ID for hook integration
+    // Use full path to harness binary to avoid PATH issues in spawned shells
+    // Source shell profile to ensure PATH includes node, etc.
+    let harness_cmd = harness.command(binary_path, &prompt_file);
     let bash_cmd = format!(
-        r#"export SCUD_TASK_ID='{}' ; claude "$(cat '{}')" --dangerously-skip-permissions ; rm -f '{}' ; exec bash"#,
-        task_id,
-        prompt_file.display(),
-        prompt_file.display()
+        r#"{init}
+export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
+        init = shell_init_prefix(),
+        task_id = task_id,
+        cmd = harness_cmd,
+        prompt = prompt_file.display()
     );
 
     let status = Command::new("wezterm")
@@ -163,7 +363,7 @@ fn spawn_wezterm(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> 
         .arg(format!("--cwd={}", working_dir.display()))
         .arg("--")
         .arg("bash")
-        .arg("-c")
+        .arg("-lc")
         .arg(&bash_cmd)
         .status()
         .context("Failed to spawn WezTerm window")?;
@@ -176,18 +376,34 @@ fn spawn_wezterm(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> 
 }
 
 /// Spawn in iTerm2 on macOS using AppleScript
-fn spawn_iterm2(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> {
+fn spawn_iterm2(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness) -> Result<()> {
     // Write prompt to temp file
     let prompt_file = std::env::temp_dir().join(format!("scud-prompt-{}.txt", task_id));
     std::fs::write(&prompt_file, prompt)?;
 
     let title = format!("task-{}", task_id);
     // Interactive mode with SCUD_TASK_ID for hook integration
-    let claude_cmd = format!(
-        r#"cd '{}' && export SCUD_TASK_ID='{}' && claude \"$(cat '{}')\" --dangerously-skip-permissions ; rm -f '{}'"#,
+    // Use full path to harness binary to avoid PATH issues
+    // Source shell profile to ensure PATH includes node, etc.
+    // Note: AppleScript requires different escaping, so we build the command manually here
+    let harness_cmd = match harness {
+        Harness::Claude => format!(
+            r#"'{}' \"$(cat '{}')\" --dangerously-skip-permissions"#,
+            binary_path,
+            prompt_file.display()
+        ),
+        Harness::OpenCode => format!(
+            r#"'{}' run \"$(cat '{}')\""#,
+            binary_path,
+            prompt_file.display()
+        ),
+    };
+    // For iTerm2, source profile inline (can't use multi-line easily in AppleScript)
+    let full_cmd = format!(
+        r#"source ~/.bash_profile 2>/dev/null; source ~/.zshrc 2>/dev/null; export PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"; [ -s \"$HOME/.nvm/nvm.sh\" ] && source \"$HOME/.nvm/nvm.sh\"; cd '{}' && export SCUD_TASK_ID='{}' && {} ; rm -f '{}'"#,
         working_dir.display(),
         task_id,
-        prompt_file.display(),
+        harness_cmd,
         prompt_file.display()
     );
 
@@ -200,7 +416,7 @@ fn spawn_iterm2(task_id: &str, prompt: &str, working_dir: &Path) -> Result<()> {
     end tell
 end tell"#,
         title,
-        claude_cmd.replace('\\', "\\\\").replace('"', "\\\"")
+        full_cmd.replace('\\', "\\\\").replace('"', "\\\"")
     );
 
     let status = Command::new("osascript")
@@ -226,6 +442,8 @@ fn spawn_zellij(
     prompt: &str,
     working_dir: &Path,
     session_name: &str,
+    binary_path: &str,
+    harness: Harness,
 ) -> Result<()> {
     let pane_name = format!("task-{}", task_id);
 
@@ -247,12 +465,17 @@ fn spawn_zellij(
             .output();
 
         // Interactive mode with SCUD_TASK_ID for hook integration
+        // Use full path to harness binary to avoid PATH issues in spawned shells
+        // Source shell profile to ensure PATH includes node, etc.
+        let harness_cmd = harness.command(binary_path, &prompt_file);
         let bash_cmd = format!(
-            r#"cd '{}' && export SCUD_TASK_ID='{}' ; claude "$(cat '{}')" --dangerously-skip-permissions ; rm -f '{}' ; exec bash"#,
-            working_dir.display(),
-            task_id,
-            prompt_file.display(),
-            prompt_file.display()
+            r#"{init}
+cd '{wd}' && export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
+            init = shell_init_prefix(),
+            wd = working_dir.display(),
+            task_id = task_id,
+            cmd = harness_cmd,
+            prompt = prompt_file.display()
         );
 
         // Spawn a new pane to the right with the task name
@@ -278,13 +501,18 @@ fn spawn_zellij(
     } else {
         // We're outside Zellij - need to start a new session or attach to existing one
         // Use `zellij run` to spawn with a command in a new session
+        // Use full path to harness binary to avoid PATH issues in spawned shells
+        // Source shell profile to ensure PATH includes node, etc.
 
+        let harness_cmd = harness.command(binary_path, &prompt_file);
         let bash_cmd = format!(
-            r#"cd '{}' && export SCUD_TASK_ID='{}' ; claude "$(cat '{}')" --dangerously-skip-permissions ; rm -f '{}' ; exec bash"#,
-            working_dir.display(),
-            task_id,
-            prompt_file.display(),
-            prompt_file.display()
+            r#"{init}
+cd '{wd}' && export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
+            init = shell_init_prefix(),
+            wd = working_dir.display(),
+            task_id = task_id,
+            cmd = harness_cmd,
+            prompt = prompt_file.display()
         );
 
         // Start a new Zellij session with the command
@@ -369,7 +597,7 @@ pub fn zellij_session_exists(session_name: &str) -> bool {
 }
 
 /// Spawn in tmux session
-fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &str) -> Result<()> {
+fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &str, binary_path: &str, harness: Harness) -> Result<()> {
     let window_name = format!("task-{}", task_id);
 
     // Check if session exists
@@ -424,16 +652,21 @@ fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &st
 
     // Send command to the window BY INDEX (not name, which can be ambiguous)
     // Interactive mode with SCUD_TASK_ID for hook integration
-    let claude_cmd = format!(
-        r#"export SCUD_TASK_ID='{}' ; claude "$(cat '{}')" --dangerously-skip-permissions ; rm -f '{}'"#,
+    // Use full path to harness binary to avoid PATH issues in spawned shells
+    // Source shell profile to ensure PATH includes node, etc.
+    let harness_cmd = harness.command(binary_path, &prompt_file);
+    // For tmux, we send a multi-line script via send-keys
+    // First source profiles, then run the harness command
+    let full_cmd = format!(
+        r#"source ~/.bash_profile 2>/dev/null; source ~/.zshrc 2>/dev/null; export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; [ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh"; export SCUD_TASK_ID='{}' ; {} ; rm -f '{}'"#,
         task_id,
-        prompt_file.display(),
+        harness_cmd,
         prompt_file.display()
     );
 
     let target = format!("{}:{}", session_name, window_index);
     let send_result = Command::new("tmux")
-        .args(["send-keys", "-t", &target, &claude_cmd, "Enter"])
+        .args(["send-keys", "-t", &target, &full_cmd, "Enter"])
         .output()
         .context("Failed to send command to tmux window")?;
 
@@ -457,6 +690,31 @@ pub fn spawn_terminal_ralph(
     session_name: &str,
     completion_promise: &str,
 ) -> Result<()> {
+    // Default to Claude harness
+    spawn_terminal_ralph_with_harness(
+        terminal,
+        task_id,
+        prompt,
+        working_dir,
+        session_name,
+        completion_promise,
+        Harness::Claude,
+    )
+}
+
+/// Spawn a new terminal window/pane with Ralph loop enabled using a specific harness
+pub fn spawn_terminal_ralph_with_harness(
+    terminal: &Terminal,
+    task_id: &str,
+    prompt: &str,
+    working_dir: &Path,
+    session_name: &str,
+    completion_promise: &str,
+    harness: Harness,
+) -> Result<()> {
+    // Find harness binary path upfront to fail fast if not found
+    let binary_path = find_harness_binary(harness)?;
+
     match terminal {
         Terminal::Tmux => spawn_tmux_ralph(
             task_id,
@@ -464,10 +722,12 @@ pub fn spawn_terminal_ralph(
             working_dir,
             session_name,
             completion_promise,
+            binary_path,
+            harness,
         ),
         // For other terminals, fall back to regular spawn
         // Ralph loop requires bash scripting that's easier in tmux
-        _ => spawn_terminal(terminal, task_id, prompt, working_dir, session_name),
+        _ => spawn_terminal_with_harness(terminal, task_id, prompt, working_dir, session_name, harness),
     }
 }
 
@@ -478,6 +738,8 @@ fn spawn_tmux_ralph(
     working_dir: &Path,
     session_name: &str,
     completion_promise: &str,
+    binary_path: &str,
+    harness: Harness,
 ) -> Result<()> {
     let window_name = format!("ralph-{}", task_id);
 
@@ -530,19 +792,47 @@ fn spawn_tmux_ralph(
     let prompt_file = std::env::temp_dir().join(format!("scud-ralph-{}.txt", task_id));
     std::fs::write(&prompt_file, prompt)?;
 
+    // Build the harness-specific command for the ralph script
+    // We need to inline this since the script is a bash heredoc
+    let harness_cmd = match harness {
+        Harness::Claude => format!(
+            "'{binary_path}' \"$(cat '{prompt_file}')\" --dangerously-skip-permissions",
+            binary_path = binary_path,
+            prompt_file = prompt_file.display()
+        ),
+        Harness::OpenCode => format!(
+            "'{binary_path}' run \"$(cat '{prompt_file}')\"",
+            binary_path = binary_path,
+            prompt_file = prompt_file.display()
+        ),
+    };
+
     // Create a Ralph loop script that:
-    // 1. Runs Claude with the prompt
+    // 1. Runs the harness with the prompt
     // 2. Checks if the task was marked done (via scud show)
-    // 3. If not done, loops back and runs Claude again with the same prompt
+    // 3. If not done, loops back and runs the harness again with the same prompt
     // 4. Continues until task is done or max iterations
+    // Use full path to harness binary to avoid PATH issues in spawned shells
+    // Source shell profile to ensure PATH includes node, etc.
     let ralph_script = format!(
         r#"
+# Source shell profile for PATH setup
+[ -f /etc/profile ] && . /etc/profile
+[ -f ~/.profile ] && . ~/.profile
+[ -f ~/.bash_profile ] && . ~/.bash_profile
+[ -f ~/.bashrc ] && . ~/.bashrc
+[ -f ~/.zshrc ] && . ~/.zshrc 2>/dev/null
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
+[ -s "$HOME/.bun/_bun" ] && . "$HOME/.bun/_bun"
+
 export SCUD_TASK_ID='{task_id}'
 export RALPH_PROMISE='{promise}'
 export RALPH_MAX_ITER=50
 export RALPH_ITER=0
 
 echo "🔄 Ralph loop starting for task {task_id}"
+echo "   Harness: {harness_name}"
 echo "   Completion promise: {promise}"
 echo "   Max iterations: $RALPH_MAX_ITER"
 echo ""
@@ -555,8 +845,8 @@ while true; do
     echo "═══════════════════════════════════════════════════════════"
     echo ""
 
-    # Run Claude with the prompt
-    claude "$(cat '{prompt_file}')" --dangerously-skip-permissions
+    # Run harness with the prompt (using full path)
+    {harness_cmd}
 
     # Check if task is done
     TASK_STATUS=$(scud show {task_id} 2>/dev/null | grep -i "status:" | awk '{{print $2}}')
@@ -586,6 +876,8 @@ done
         task_id = task_id,
         promise = completion_promise,
         prompt_file = prompt_file.display(),
+        harness_name = harness.name(),
+        harness_cmd = harness_cmd,
     );
 
     // Write the Ralph script to a temp file

@@ -1,9 +1,23 @@
 {
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "bash -c 'if [ -n \"$SCUD_TASK_ID\" ]; then scud set-status \"$SCUD_TASK_ID\" done 2>/dev/null || true; fi'",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(find:*)"
     ],
-    "deny": [],
-    "ask": []
+    "ask": [],
+    "deny": []
   }
 }
