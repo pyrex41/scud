@@ -4,11 +4,30 @@ This document explains how to run and write tests for the SCUD Rust CLI.
 
 ## Table of Contents
 
-1. [Running Tests](#running-tests)
-2. [Test Structure](#test-structure)
-3. [Writing New Tests](#writing-new-tests)
-4. [Test Coverage](#test-coverage)
-5. [Continuous Integration](#continuous-integration)
+1. [Quick Start](#quick-start)
+2. [Running Tests](#running-tests)
+3. [E2E Test Suite](#e2e-test-suite)
+4. [Test Structure](#test-structure)
+5. [Writing New Tests](#writing-new-tests)
+6. [Test Coverage](#test-coverage)
+7. [Continuous Integration](#continuous-integration)
+
+---
+
+## Quick Start
+
+```bash
+cd scud-cli
+
+# Run all tests (mock mode - no API calls)
+cargo test
+
+# Run E2E tests specifically
+cargo test --test main
+
+# Run with verbose output
+cargo test -- --nocapture
+```
 
 ---
 
@@ -55,6 +74,115 @@ cargo test
 ```bash
 cargo test --release
 ```
+
+---
+
+## E2E Test Suite
+
+The E2E test suite covers all 22 SCUD user stories with mock-based testing by default.
+
+### Test Organization
+
+```
+tests/
+├── main.rs                      # Test entry point
+├── e2e/
+│   ├── mod.rs                   # E2E module
+│   ├── fixtures.rs              # TestProject helper for temp directories
+│   ├── mock_llm.rs              # Mock LLM for AI command testing
+│   └── mock_terminal.rs         # Mock terminal for spawn testing
+└── user_stories/
+    ├── mod.rs                   # User story module
+    ├── individual_dev.rs        # US-1 to US-5: Individual developer workflow
+    ├── team_coord.rs            # US-6 to US-9: Team coordination
+    ├── ai_powered.rs            # US-10 to US-14: AI-powered commands
+    ├── multi_agent.rs           # US-15 to US-17: Multi-agent spawning
+    ├── data_mgmt.rs             # US-18 to US-20: Data management
+    └── integration.rs           # US-21 to US-22: Integration features
+```
+
+### Running E2E Tests
+
+```bash
+# All E2E tests (mock mode - default)
+cargo test --test main
+
+# Specific user story category
+cargo test --test main user_stories::individual_dev
+cargo test --test main user_stories::team_coord
+cargo test --test main user_stories::ai_powered
+cargo test --test main user_stories::multi_agent
+cargo test --test main user_stories::data_mgmt
+cargo test --test main user_stories::integration
+
+# Single test
+cargo test --test main test_us1_warmup_shows_git_history
+```
+
+### Feature Flags for Real Integration Tests
+
+By default, all tests use mocks for external dependencies. Feature flags enable real integrations:
+
+```bash
+# With real LLM API calls (requires API key)
+export XAI_API_KEY=your_key_here  # or ANTHROPIC_API_KEY, OPENAI_API_KEY
+cargo test --test main --features real-llm
+
+# With real terminal spawning (requires tmux)
+cargo test --test main --features real-terminal
+
+# Both features enabled
+cargo test --test main --features "real-llm real-terminal"
+```
+
+**Note**: Real integration tests are slower and require external dependencies. Use mock tests for fast feedback during development.
+
+### Mock Infrastructure
+
+#### MockLLMClient (`tests/e2e/mock_llm.rs`)
+
+Used for testing AI commands without API calls:
+
+```rust
+// Configure mock responses for PRD parsing
+let mock_llm = MockLLMClient::new()
+    .with_parse_response(r#"[{"id": "1", "title": "Task 1"}]"#);
+
+// Mock complexity analysis
+let mock_llm = MockLLMClient::new()
+    .with_complexity_response(r#"{"complexity": 8}"#);
+```
+
+#### MockTerminalManager (`tests/e2e/mock_terminal.rs`)
+
+Used for testing spawn commands without creating real terminal sessions:
+
+```rust
+let mock_term = MockTerminalManager::new();
+
+// After spawn command, verify sessions were created
+let sessions = mock_term.sessions();
+assert_eq!(sessions.len(), 3);
+```
+
+#### TestProject (`tests/e2e/fixtures.rs`)
+
+Helper for creating temporary SCUD projects:
+
+```rust
+let project = TestProject::new()?;
+project.init()?;
+project.add_task("1", "First task")?;
+project.add_dependency("2", "1")?;
+
+// Project is automatically cleaned up when dropped
+```
+
+### Current Test Statistics
+
+- **108 E2E tests** covering user stories US-1 to US-22
+- All tests pass in mock mode
+- Feature flags available for real integration testing
 
 ---
 
@@ -515,8 +643,8 @@ cargo fmt -- --check
 ```
 
 **Current Test Stats:**
-- ✅ 37 unit tests
+- ✅ 37 unit tests (inline `#[cfg(test)]` modules)
+- ✅ 108 E2E tests (user story coverage)
 - ✅ 100% passing
-- ✅ ~87% estimated coverage
+- ✅ Mock-based by default, feature flags for real integration
 - ✅ CI/CD configured
-- ⏳ Integration tests (planned)

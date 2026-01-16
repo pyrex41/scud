@@ -5,6 +5,9 @@ on:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
+  schedule:
+    # Run weekly integration tests on Sundays at midnight UTC
+    - cron: '0 0 * * 0'
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,10 +32,15 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-      - name: Run tests
+      - name: Run unit tests
         run: |
           cd scud-cli
-          cargo test --all-features
+          cargo test --lib
+
+      - name: Run E2E tests (mock mode)
+        run: |
+          cd scud-cli
+          cargo test --test main
 
       - name: Run clippy
         run: |
@@ -49,8 +57,39 @@ jobs:
           cd scud-cli
           cargo build --release
 
+      - name: Verify feature flags compile
+        run: |
+          cd scud-cli
+          cargo build --features real-llm
+          cargo build --features real-terminal
+          cargo build --features "real-llm real-terminal"
+
       - name: Test Node.js wrapper
         run: |
           cd scud-cli
           npm install
           ./bin/scud.js help
+
+  # Weekly integration tests with real LLM APIs
+  integration:
+    name: Integration Tests (Real APIs)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Run integration tests with real LLM
+        if: ${{ secrets.XAI_API_KEY != '' }}
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: |
+          cd scud-cli
+          cargo test --test main --features real-llm -- --ignored

@@ -40,11 +40,17 @@ dotenvy = "0.15"  # .env file loading
 ratatui = "0.29"      # Terminal UI framework
 crossterm = "0.28"    # Cross-platform terminal manipulation
 
+[features]
+default = []
+real-llm = []        # Enable tests with real LLM API calls
+real-terminal = []   # Enable tests with real terminal sessions (tmux/kitty)
+
 [dev-dependencies]
 tempfile = "3.8"  # Temporary directories for tests
 mockall = "0.12"  # Mock objects for testing
 tokio-test = "0.4"  # Testing utilities for tokio
 criterion = "0.5"  # Benchmarking framework
+serde_json = "1.0"  # JSON for test fixtures
 
 [[example]]
 name = "library_usage"
