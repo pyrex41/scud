@@ -90,6 +90,34 @@ If blocked: scud set-status {} blocked
     )
 }
 
+/// Generate a prompt using a custom template
+///
+/// Template placeholders:
+/// - {task.id} - Task ID
+/// - {task.title} - Task title
+/// - {task.description} - Task description
+/// - {task.complexity} - Complexity score
+/// - {task.priority} - Priority level
+/// - {task.details} - Technical details (empty if none)
+/// - {task.test_strategy} - Test strategy (empty if none)
+/// - {task.dependencies} - Comma-separated dependencies
+/// - {tag} - Phase/tag name
+pub fn generate_prompt_with_template(task: &Task, tag: &str, template: &str) -> String {
+    let mut result = template.to_string();
+
+    result = result.replace("{task.id}", &task.id);
+    result = result.replace("{task.title}", &task.title);
+    result = result.replace("{task.description}", &task.description);
+    result = result.replace("{task.complexity}", &task.complexity.to_string());
+    result = result.replace("{task.priority}", &format!("{:?}", task.priority));
+    result = result.replace("{task.details}", task.details.as_deref().unwrap_or(""));
+    result = result.replace("{task.test_strategy}", task.test_strategy.as_deref().unwrap_or(""));
+    result = result.replace("{task.dependencies}", &task.dependencies.join(", "));
+    result = result.replace("{tag}", tag);
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +170,35 @@ mod tests {
         assert!(prompt.contains("fix:1"));
         assert!(prompt.contains("Quick fix"));
         assert!(!prompt.contains("Technical Details"));
+    }
+
+    #[test]
+    fn test_generate_prompt_with_template() {
+        let mut task = Task::new(
+            "auth:1".to_string(),
+            "Login Feature".to_string(),
+            "Implement login".to_string(),
+        );
+        task.complexity = 5;
+        task.details = Some("Use OAuth".to_string());
+
+        let template = "Task: {task.id} - {task.title}\nTag: {tag}\nDetails: {task.details}";
+        let prompt = generate_prompt_with_template(&task, "auth", template);
+
+        assert_eq!(prompt, "Task: auth:1 - Login Feature\nTag: auth\nDetails: Use OAuth");
+    }
+
+    #[test]
+    fn test_generate_prompt_with_template_missing_fields() {
+        let task = Task::new(
+            "1".to_string(),
+            "Title".to_string(),
+            "Desc".to_string(),
+        );
+
+        let template = "Details: {task.details} | Strategy: {task.test_strategy}";
+        let prompt = generate_prompt_with_template(&task, "test", template);
+
+        assert_eq!(prompt, "Details:  | Strategy: ");
     }
 }

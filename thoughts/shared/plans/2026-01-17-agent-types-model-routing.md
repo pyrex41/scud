@@ -172,9 +172,9 @@ In `serialize_scg()` function, add after line 487 (after assignments section):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Build succeeds: `cargo build -p scud-cli`
-- [ ] All existing tests pass: `cargo test -p scud-cli`
-- [ ] New SCG round-trip test passes (add test for agent_type)
+- [x] Build succeeds: `cargo build -p scud-cli`
+- [x] All existing tests pass: `cargo test -p scud-cli`
+- [x] New SCG round-trip test passes (add test for agent_type)
 
 #### Manual Verification:
 - [ ] Edit a `.scg` file to add `@agents` section manually
@@ -310,8 +310,8 @@ let harness_cmd = harness.command(binary_path, &prompt_file, model);
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Build succeeds: `cargo build -p scud-cli`
-- [ ] All existing tests pass: `cargo test -p scud-cli`
+- [x] Build succeeds: `cargo build -p scud-cli`
+- [x] All existing tests pass: `cargo test -p scud-cli`
 
 #### Manual Verification:
 - [ ] Spawn a task with `--dry-run` and verify no errors
@@ -571,8 +571,8 @@ model = "grok-4"
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Build succeeds: `cargo build -p scud-cli`
-- [ ] New agent tests pass: `cargo test -p scud-cli agents`
+- [x] Build succeeds: `cargo build -p scud-cli`
+- [x] New agent tests pass: `cargo test -p scud-cli agents`
 
 #### Manual Verification:
 - [ ] Create `.scud/agents/test.toml` with valid content
@@ -704,9 +704,9 @@ Then in the spawn loop, use this override if provided:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Build succeeds: `cargo build -p scud-cli`
-- [ ] All tests pass: `cargo test -p scud-cli`
-- [ ] Lint passes: `cargo clippy -p scud-cli`
+- [x] Build succeeds: `cargo build -p scud-cli`
+- [x] All tests pass: `cargo test -p scud-cli`
+- [x] Lint passes: `cargo clippy -p scud-cli`
 
 #### Manual Verification:
 - [ ] Create `.scud/agents/reviewer.toml` with `model = "opus"`

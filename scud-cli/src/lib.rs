@@ -110,6 +110,25 @@
 //!
 //! Each phase can be skipped using `no_expand` and `no_check_deps` options.
 
+/// Agent definitions for model routing.
+///
+/// Allows tasks to specify which AI harness and model should run them.
+/// Agent definitions are loaded from `.scud/agents/<name>.toml` files.
+///
+/// # Example
+///
+/// ```toml
+/// # .scud/agents/reviewer.toml
+/// [agent]
+/// name = "reviewer"
+/// description = "Code review agent using smarter model"
+///
+/// [model]
+/// harness = "claude"
+/// model = "opus"
+/// ```
+pub mod agents;
+
 /// Backpressure validation for maintaining code quality during automated execution.
 ///
 /// Runs programmatic validation (build, test, lint) after task completion.

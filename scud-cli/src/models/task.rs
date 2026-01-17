@@ -111,6 +111,10 @@ pub struct Task {
     // Assignment tracking (informational only, no locking)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assigned_to: Option<String>,
+
+    /// Agent type for model routing (e.g., "builder", "reviewer", "planner")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
 }
 
 impl Task {
@@ -139,6 +143,7 @@ impl Task {
             created_at: Some(now.clone()),
             updated_at: Some(now),
             assigned_to: None,
+            agent_type: None,
         }
     }
 

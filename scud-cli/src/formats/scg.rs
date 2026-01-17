@@ -147,6 +147,7 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
     // Type: (assigned_to, locked_by, locked_at)
     type AssignmentInfo = (Option<String>, Option<String>, Option<String>);
     let mut assignments: HashMap<String, AssignmentInfo> = HashMap::new();
+    let mut agent_types: HashMap<String, String> = HashMap::new();
 
     // Track current section
     let mut current_section: Option<&str> = None;
@@ -180,6 +181,7 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
                 "@edges" => "edges",
                 "@parents" => "parents",
                 "@assignments" => "assignments",
+                "@agents" => "agents",
                 "@details" => "details",
                 _ => continue,
             });
@@ -272,6 +274,13 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
                     assignments.insert(id, (assigned, locked_by, locked_at));
                 }
             }
+            Some("agents") => {
+                // Parse "id | agent_type"
+                let parts = split_by_pipe(trimmed);
+                if parts.len() >= 2 && !parts[1].is_empty() {
+                    agent_types.insert(parts[0].clone(), parts[1].clone());
+                }
+            }
             Some("details") => {
                 // Flush previous detail if starting new one
                 flush_detail(
@@ -339,6 +348,13 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
     for (id, (assigned, _locked_by, _locked_at)) in assignments {
         if let Some(task) = tasks.get_mut(&id) {
             task.assigned_to = assigned;
+        }
+    }
+
+    // Apply agent types
+    for (id, agent_type) in agent_types {
+        if let Some(task) = tasks.get_mut(&id) {
+            task.agent_type = Some(agent_type);
         }
     }
 
@@ -481,6 +497,25 @@ pub fn serialize_scg(phase: &Phase) -> String {
                 "{} | {}\n",
                 task.id,
                 task.assigned_to.as_deref().unwrap_or("")
+            ));
+        }
+        output.push('\n');
+    }
+
+    // Agents section
+    let agents: Vec<_> = sorted_tasks
+        .iter()
+        .filter(|t| t.agent_type.is_some())
+        .collect();
+
+    if !agents.is_empty() {
+        output.push_str("@agents\n");
+        output.push_str("# id | agent_type\n");
+        for task in agents {
+            output.push_str(&format!(
+                "{} | {}\n",
+                task.id,
+                task.agent_type.as_deref().unwrap_or("")
             ));
         }
         output.push('\n');
@@ -743,6 +778,41 @@ mod tests {
 
         let t = parsed.get_task("1").unwrap();
         assert_eq!(t.assigned_to, Some("alice".to_string()));
+    }
+
+    #[test]
+    fn test_agent_types() {
+        let mut epic = Phase::new("test".to_string());
+        let mut task1 = Task::new("1".to_string(), "Review Task".to_string(), "Desc".to_string());
+        task1.agent_type = Some("reviewer".to_string());
+
+        let mut task2 = Task::new("2".to_string(), "Build Task".to_string(), "Desc".to_string());
+        task2.agent_type = Some("builder".to_string());
+
+        let task3 = Task::new("3".to_string(), "No Agent".to_string(), "Desc".to_string());
+        // task3 has no agent_type
+
+        epic.add_task(task1);
+        epic.add_task(task2);
+        epic.add_task(task3);
+
+        let scg = serialize_scg(&epic);
+
+        // Verify @agents section is present
+        assert!(scg.contains("@agents"));
+        assert!(scg.contains("1 | reviewer"));
+        assert!(scg.contains("2 | builder"));
+
+        let parsed = parse_scg(&scg).unwrap();
+
+        let t1 = parsed.get_task("1").unwrap();
+        assert_eq!(t1.agent_type, Some("reviewer".to_string()));
+
+        let t2 = parsed.get_task("2").unwrap();
+        assert_eq!(t2.agent_type, Some("builder".to_string()));
+
+        let t3 = parsed.get_task("3").unwrap();
+        assert_eq!(t3.agent_type, None);
     }
 
     #[test]
