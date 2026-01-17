@@ -24,7 +24,7 @@ use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
 use self::monitor::SpawnSession;
-use self::terminal::{parse_terminal, Terminal};
+use self::terminal::{parse_terminal, Harness, Terminal};
 
 /// Information about a task to spawn
 struct TaskInfo<'a> {
@@ -45,6 +45,8 @@ pub fn run(
     attach: bool,
     monitor: bool,
     claim: bool,
+    harness_arg: &str,
+    model_arg: &str,
 ) -> Result<()> {
     let storage = Storage::new(project_root.clone());
 
@@ -76,6 +78,9 @@ pub fn run(
     let terminal = parse_terminal(terminal_arg)?;
     terminal::check_terminal_available(&terminal)?;
 
+    // Parse harness
+    let harness = Harness::parse(harness_arg)?;
+
     // Generate session name
     let session_name = session.unwrap_or_else(|| format!("scud-{}", phase_tag));
 
@@ -83,6 +88,8 @@ pub fn run(
     println!("{}", "SCUD Spawn".cyan().bold());
     println!("{}", "═".repeat(50));
     println!("{:<20} {}", "Terminal:".dimmed(), terminal.name().green());
+    println!("{:<20} {}", "Harness:".dimmed(), harness.name().green());
+    println!("{:<20} {}", "Model:".dimmed(), model_arg.green());
     println!("{:<20} {}", "Session:".dimmed(), session_name.cyan());
     println!("{:<20} {}", "Tasks:".dimmed(), ready_tasks.len());
     println!();
@@ -145,19 +152,23 @@ pub fn run(
     for info in &ready_tasks {
         let prompt = agent::generate_prompt(info.task, &info.tag);
 
-        match terminal::spawn_terminal(
+        match terminal::spawn_terminal_with_harness_and_model(
             &terminal,
             &info.task.id,
             &prompt,
             &working_dir,
             &session_name,
+            harness,
+            Some(model_arg),
         ) {
             Ok(()) => {
                 println!(
-                    "  {} Spawned: {} | {}",
+                    "  {} Spawned: {} | {} [{}:{}]",
                     "✓".green(),
                     info.task.id.cyan(),
-                    info.task.title.dimmed()
+                    info.task.title.dimmed(),
+                    harness.name().dimmed(),
+                    model_arg.dimmed(),
                 );
                 spawn_session.add_agent(&info.task.id, &info.task.title, &info.tag);
                 success_count += 1;

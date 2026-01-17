@@ -47,19 +47,31 @@ impl Harness {
         }
     }
 
-    /// Generate the command to run with a prompt
-    pub fn command(&self, binary_path: &str, prompt_file: &Path) -> String {
+    /// Generate the command to run with a prompt and optional model
+    pub fn command(&self, binary_path: &str, prompt_file: &Path, model: Option<&str>) -> String {
         match self {
-            Harness::Claude => format!(
-                r#"'{}' "$(cat '{}')" --dangerously-skip-permissions"#,
-                binary_path,
-                prompt_file.display()
-            ),
-            Harness::OpenCode => format!(
-                r#"'{}' run "$(cat '{}')""#,
-                binary_path,
-                prompt_file.display()
-            ),
+            Harness::Claude => {
+                let model_flag = model
+                    .map(|m| format!(" --model {}", m))
+                    .unwrap_or_default();
+                format!(
+                    r#"'{}' "$(cat '{}')" --dangerously-skip-permissions{}"#,
+                    binary_path,
+                    prompt_file.display(),
+                    model_flag
+                )
+            }
+            Harness::OpenCode => {
+                let model_flag = model
+                    .map(|m| format!(" --model {}", m))
+                    .unwrap_or_default();
+                format!(
+                    r#"'{}'{} run "$(cat '{}')""#,
+                    binary_path,
+                    model_flag,
+                    prompt_file.display()
+                )
+            }
         }
     }
 }
@@ -276,7 +288,7 @@ pub fn spawn_terminal(
     session_name: &str,
 ) -> Result<()> {
     // Default to Claude harness for backwards compatibility
-    spawn_terminal_with_harness(terminal, task_id, prompt, working_dir, session_name, Harness::Claude)
+    spawn_terminal_with_harness_and_model(terminal, task_id, prompt, working_dir, session_name, Harness::Claude, None)
 }
 
 /// Spawn a new terminal window/pane with the given command using a specific harness
@@ -288,20 +300,33 @@ pub fn spawn_terminal_with_harness(
     session_name: &str,
     harness: Harness,
 ) -> Result<()> {
+    spawn_terminal_with_harness_and_model(terminal, task_id, prompt, working_dir, session_name, harness, None)
+}
+
+/// Spawn a new terminal window/pane with the given command using a specific harness and model
+pub fn spawn_terminal_with_harness_and_model(
+    terminal: &Terminal,
+    task_id: &str,
+    prompt: &str,
+    working_dir: &Path,
+    session_name: &str,
+    harness: Harness,
+    model: Option<&str>,
+) -> Result<()> {
     // Find harness binary path upfront to fail fast if not found
     let binary_path = find_harness_binary(harness)?;
 
     match terminal {
-        Terminal::Kitty => spawn_kitty(task_id, prompt, working_dir, binary_path, harness),
-        Terminal::Wezterm => spawn_wezterm(task_id, prompt, working_dir, binary_path, harness),
-        Terminal::ITerm2 => spawn_iterm2(task_id, prompt, working_dir, binary_path, harness),
-        Terminal::Zellij => spawn_zellij(task_id, prompt, working_dir, session_name, binary_path, harness),
-        Terminal::Tmux => spawn_tmux(task_id, prompt, working_dir, session_name, binary_path, harness),
+        Terminal::Kitty => spawn_kitty(task_id, prompt, working_dir, binary_path, harness, model),
+        Terminal::Wezterm => spawn_wezterm(task_id, prompt, working_dir, binary_path, harness, model),
+        Terminal::ITerm2 => spawn_iterm2(task_id, prompt, working_dir, binary_path, harness, model),
+        Terminal::Zellij => spawn_zellij(task_id, prompt, working_dir, session_name, binary_path, harness, model),
+        Terminal::Tmux => spawn_tmux(task_id, prompt, working_dir, session_name, binary_path, harness, model),
     }
 }
 
 /// Spawn in Kitty terminal using remote control
-fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness) -> Result<()> {
+fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness, model: Option<&str>) -> Result<()> {
     let title = format!("task-{}", task_id);
 
     // Write prompt to temp file to avoid shell escaping issues
@@ -312,7 +337,7 @@ fn spawn_kitty(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &st
     // The Stop hook will read SCUD_TASK_ID and auto-complete the task
     // Use full path to harness binary to avoid PATH issues in spawned shells
     // Source shell profile to ensure PATH includes node, etc.
-    let harness_cmd = harness.command(binary_path, &prompt_file);
+    let harness_cmd = harness.command(binary_path, &prompt_file, model);
     let bash_cmd = format!(
         r#"{init}
 export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
@@ -340,7 +365,7 @@ export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
 }
 
 /// Spawn in WezTerm terminal
-fn spawn_wezterm(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness) -> Result<()> {
+fn spawn_wezterm(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness, model: Option<&str>) -> Result<()> {
     // Write prompt to temp file to avoid shell escaping issues
     let prompt_file = std::env::temp_dir().join(format!("scud-prompt-{}.txt", task_id));
     std::fs::write(&prompt_file, prompt)?;
@@ -348,7 +373,7 @@ fn spawn_wezterm(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &
     // Interactive mode with SCUD_TASK_ID for hook integration
     // Use full path to harness binary to avoid PATH issues in spawned shells
     // Source shell profile to ensure PATH includes node, etc.
-    let harness_cmd = harness.command(binary_path, &prompt_file);
+    let harness_cmd = harness.command(binary_path, &prompt_file, model);
     let bash_cmd = format!(
         r#"{init}
 export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
@@ -376,7 +401,7 @@ export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
 }
 
 /// Spawn in iTerm2 on macOS using AppleScript
-fn spawn_iterm2(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness) -> Result<()> {
+fn spawn_iterm2(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &str, harness: Harness, model: Option<&str>) -> Result<()> {
     // Write prompt to temp file
     let prompt_file = std::env::temp_dir().join(format!("scud-prompt-{}.txt", task_id));
     std::fs::write(&prompt_file, prompt)?;
@@ -386,15 +411,18 @@ fn spawn_iterm2(task_id: &str, prompt: &str, working_dir: &Path, binary_path: &s
     // Use full path to harness binary to avoid PATH issues
     // Source shell profile to ensure PATH includes node, etc.
     // Note: AppleScript requires different escaping, so we build the command manually here
+    let model_flag = model.map(|m| format!(" --model {}", m)).unwrap_or_default();
     let harness_cmd = match harness {
         Harness::Claude => format!(
-            r#"'{}' \"$(cat '{}')\" --dangerously-skip-permissions"#,
+            r#"'{}' \"$(cat '{}')\" --dangerously-skip-permissions{}"#,
             binary_path,
-            prompt_file.display()
+            prompt_file.display(),
+            model_flag
         ),
         Harness::OpenCode => format!(
-            r#"'{}' run \"$(cat '{}')\""#,
+            r#"'{}'{} run \"$(cat '{}')\""#,
             binary_path,
+            model_flag,
             prompt_file.display()
         ),
     };
@@ -444,6 +472,7 @@ fn spawn_zellij(
     session_name: &str,
     binary_path: &str,
     harness: Harness,
+    model: Option<&str>,
 ) -> Result<()> {
     let pane_name = format!("task-{}", task_id);
 
@@ -467,7 +496,7 @@ fn spawn_zellij(
         // Interactive mode with SCUD_TASK_ID for hook integration
         // Use full path to harness binary to avoid PATH issues in spawned shells
         // Source shell profile to ensure PATH includes node, etc.
-        let harness_cmd = harness.command(binary_path, &prompt_file);
+        let harness_cmd = harness.command(binary_path, &prompt_file, model);
         let bash_cmd = format!(
             r#"{init}
 cd '{wd}' && export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
@@ -504,7 +533,7 @@ cd '{wd}' && export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec b
         // Use full path to harness binary to avoid PATH issues in spawned shells
         // Source shell profile to ensure PATH includes node, etc.
 
-        let harness_cmd = harness.command(binary_path, &prompt_file);
+        let harness_cmd = harness.command(binary_path, &prompt_file, model);
         let bash_cmd = format!(
             r#"{init}
 cd '{wd}' && export SCUD_TASK_ID='{task_id}' ; {cmd} ; rm -f '{prompt}' ; exec bash"#,
@@ -597,7 +626,7 @@ pub fn zellij_session_exists(session_name: &str) -> bool {
 }
 
 /// Spawn in tmux session
-fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &str, binary_path: &str, harness: Harness) -> Result<()> {
+fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &str, binary_path: &str, harness: Harness, model: Option<&str>) -> Result<()> {
     let window_name = format!("task-{}", task_id);
 
     // Check if session exists
@@ -654,7 +683,7 @@ fn spawn_tmux(task_id: &str, prompt: &str, working_dir: &Path, session_name: &st
     // Interactive mode with SCUD_TASK_ID for hook integration
     // Use full path to harness binary to avoid PATH issues in spawned shells
     // Source shell profile to ensure PATH includes node, etc.
-    let harness_cmd = harness.command(binary_path, &prompt_file);
+    let harness_cmd = harness.command(binary_path, &prompt_file, model);
     // For tmux, we send a multi-line script via send-keys
     // First source profiles, then run the harness command
     let full_cmd = format!(

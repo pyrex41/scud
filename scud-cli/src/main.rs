@@ -538,6 +538,14 @@ enum Commands {
         /// Mark spawned tasks as in-progress
         #[arg(short, long)]
         claim: bool,
+
+        /// AI harness: claude, opencode (default: opencode)
+        #[arg(short = 'H', long, default_value = "opencode")]
+        harness: String,
+
+        /// Model to use with harness (default: grok-code-fast-1)
+        #[arg(short = 'M', long, default_value = "grok-code-fast-1")]
+        model: String,
     },
 
     /// Monitor spawn session with interactive TUI
@@ -836,6 +844,8 @@ async fn main() -> Result<()> {
             attach,
             monitor,
             claim,
+            harness,
+            model,
         } => commands::spawn::run(
             cli.project,
             tag.as_deref(),
@@ -847,6 +857,8 @@ async fn main() -> Result<()> {
             attach,
             monitor,
             claim,
+            &harness,
+            &model,
         ),
         Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
