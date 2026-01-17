@@ -88,7 +88,7 @@ enum SpawnAgentsCommands {
 
     /// Add spawn agent(s) to the project
     Add {
-        /// Agent name (builder, reviewer, planner, researcher, analyzer, fast-builder, outside-generalist)
+        /// Agent name (builder, reviewer, planner, researcher, analyzer, fast-builder, outside-generalist, repairer)
         name: Option<String>,
 
         /// Add all spawn agents
@@ -636,6 +636,22 @@ enum Commands {
         /// Skip backpressure validation after wave
         #[arg(long)]
         no_validate: bool,
+
+        /// Enable code review after each wave (samples 3 tasks per wave)
+        #[arg(long)]
+        review: bool,
+
+        /// Review all tasks after each wave (more expensive than --review)
+        #[arg(long)]
+        review_all: bool,
+
+        /// Disable automatic repair on validation failure
+        #[arg(long)]
+        no_repair: bool,
+
+        /// Maximum repair attempts per task before giving up (default: 3)
+        #[arg(long, default_value = "3")]
+        max_repair_attempts: usize,
     },
 }
 
@@ -920,6 +936,10 @@ async fn main() -> Result<()> {
             session,
             no_research,
             no_validate,
+            review,
+            review_all,
+            no_repair,
+            max_repair_attempts,
         } => commands::swarm::run(
             cli.project,
             tag.as_deref(),
@@ -931,6 +951,10 @@ async fn main() -> Result<()> {
             session,
             no_research,
             no_validate,
+            review,
+            review_all,
+            no_repair,
+            max_repair_attempts,
         ),
     }
 }

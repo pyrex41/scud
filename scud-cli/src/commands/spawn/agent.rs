@@ -2,6 +2,7 @@
 //!
 //! Creates prompts that provide task context and instructions for Claude Code agents.
 
+use crate::commands::swarm::session::WaveSummary;
 use crate::models::task::Task;
 
 /// Generate a prompt for Claude Code with task context
@@ -118,6 +119,129 @@ pub fn generate_prompt_with_template(task: &Task, tag: &str, template: &str) -> 
     result
 }
 
+/// Generate a prompt for wave review
+pub fn generate_review_prompt(
+    summary: &WaveSummary,
+    tasks: &[(String, String)], // (task_id, title)
+    review_all: bool,
+) -> String {
+    let tasks_str = if review_all {
+        tasks
+            .iter()
+            .map(|(id, title)| format!("- {} | {}", id, title))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        // Sample: first task, last task, and one random middle task
+        let sample: Vec<_> = if tasks.len() <= 3 {
+            tasks.iter().collect()
+        } else {
+            vec![&tasks[0], &tasks[tasks.len() / 2], &tasks[tasks.len() - 1]]
+        };
+        sample
+            .iter()
+            .map(|(id, title)| format!("- {} | {}", id, title))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let files_str = if summary.files_changed.len() <= 10 {
+        summary.files_changed.join("\n")
+    } else {
+        let mut s = summary.files_changed[..10].join("\n");
+        s.push_str(&format!(
+            "\n... and {} more files",
+            summary.files_changed.len() - 10
+        ));
+        s
+    };
+
+    format!(
+        r#"You are reviewing SCUD wave {wave_number}.
+
+## Tasks to Review
+{tasks}
+
+## Files Changed
+{files}
+
+## Review Process
+1. For each task, run: scud show <task_id>
+2. Read the changed files relevant to each task
+3. Check implementation quality and correctness
+
+## Output Format
+For each task:
+  PASS: <task_id> - looks good
+  IMPROVE: <task_id> - <specific issue>
+
+When complete, create marker file:
+  echo "REVIEW_COMPLETE: ALL_PASS" > .scud/review-complete-{wave_number}
+Or if improvements needed:
+  echo "REVIEW_COMPLETE: IMPROVEMENTS_NEEDED" > .scud/review-complete-{wave_number}
+  echo "IMPROVE_TASKS: <comma-separated task IDs>" >> .scud/review-complete-{wave_number}
+"#,
+        wave_number = summary.wave_number,
+        tasks = tasks_str,
+        files = files_str,
+    )
+}
+
+/// Generate a prompt for repair agent
+pub fn generate_repair_prompt(
+    task_id: &str,
+    task_title: &str,
+    failed_command: &str,
+    error_output: &str,
+    task_files: &[String],
+    error_files: &[String],
+) -> String {
+    let task_files_str = task_files.join(", ");
+    let error_files_str = error_files.join(", ");
+
+    format!(
+        r#"You are a repair agent fixing validation failures for SCUD task {task_id}: {task_title}
+
+## Validation Failure
+The following validation command failed:
+{failed_command}
+
+Error output:
+{error_output}
+
+## Attribution
+This failure has been attributed to task {task_id} based on git blame analysis.
+Files changed by this task: {task_files}
+
+## Your Mission
+1. Analyze the error output to understand what went wrong
+2. Read the relevant files: {error_files}
+3. Fix the issue while preserving the task's intended functionality
+4. Run the validation command to verify the fix: {failed_command}
+
+## Important
+- Focus on fixing the specific error, don't refactor unrelated code
+- If the fix requires changes to other tasks' code, note it but don't modify
+- After fixing, commit with: scud commit -m "fix: {task_id} - <description>"
+
+When the validation passes:
+  scud set-status {task_id} done
+  echo "REPAIR_COMPLETE: SUCCESS" > .scud/repair-complete-{task_id}
+
+If you cannot fix it:
+  scud set-status {task_id} blocked
+  echo "REPAIR_COMPLETE: BLOCKED" > .scud/repair-complete-{task_id}
+  echo "REASON: <explanation>" >> .scud/repair-complete-{task_id}
+"#,
+        task_id = task_id,
+        task_title = task_title,
+        failed_command = failed_command,
+        error_output = error_output,
+        task_files = task_files_str,
+        error_files = error_files_str,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +324,75 @@ mod tests {
         let prompt = generate_prompt_with_template(&task, "test", template);
 
         assert_eq!(prompt, "Details:  | Strategy: ");
+    }
+
+    #[test]
+    fn test_generate_review_prompt_all() {
+        let summary = WaveSummary {
+            wave_number: 1,
+            tasks_completed: vec!["auth:1".to_string(), "auth:2".to_string()],
+            files_changed: vec!["src/auth.rs".to_string(), "src/main.rs".to_string()],
+        };
+
+        let tasks = vec![
+            ("auth:1".to_string(), "Add login".to_string()),
+            ("auth:2".to_string(), "Add logout".to_string()),
+        ];
+
+        let prompt = generate_review_prompt(&summary, &tasks, true);
+
+        assert!(prompt.contains("wave 1"));
+        assert!(prompt.contains("auth:1 | Add login"));
+        assert!(prompt.contains("auth:2 | Add logout"));
+        assert!(prompt.contains("src/auth.rs"));
+    }
+
+    #[test]
+    fn test_generate_review_prompt_sampled() {
+        let summary = WaveSummary {
+            wave_number: 2,
+            tasks_completed: vec![
+                "t:1".to_string(),
+                "t:2".to_string(),
+                "t:3".to_string(),
+                "t:4".to_string(),
+                "t:5".to_string(),
+            ],
+            files_changed: vec!["a.rs".to_string()],
+        };
+
+        let tasks: Vec<_> = (1..=5)
+            .map(|i| (format!("t:{}", i), format!("Task {}", i)))
+            .collect();
+
+        let prompt = generate_review_prompt(&summary, &tasks, false);
+
+        // Should only include first, middle, and last (3 tasks sampled)
+        assert!(prompt.contains("t:1"));
+        assert!(prompt.contains("t:3")); // middle
+        assert!(prompt.contains("t:5")); // last
+        // t:2 and t:4 should not be present
+        assert!(!prompt.contains("t:2 | Task 2"));
+        assert!(!prompt.contains("t:4 | Task 4"));
+    }
+
+    #[test]
+    fn test_generate_repair_prompt() {
+        let prompt = generate_repair_prompt(
+            "auth:1",
+            "Add login",
+            "cargo build",
+            "error: mismatched types at src/main.rs:42",
+            &["src/auth.rs".to_string()],
+            &["src/main.rs".to_string()],
+        );
+
+        assert!(prompt.contains("auth:1"));
+        assert!(prompt.contains("Add login"));
+        assert!(prompt.contains("cargo build"));
+        assert!(prompt.contains("mismatched types"));
+        assert!(prompt.contains("src/auth.rs"));
+        assert!(prompt.contains("src/main.rs"));
+        assert!(prompt.contains("REPAIR_COMPLETE"));
     }
 }

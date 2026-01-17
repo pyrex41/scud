@@ -37,7 +37,9 @@ use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
-use crate::backpressure::BackpressureConfig;
+use crate::agents::AgentDef;
+use crate::attribution::{attribute_failure, AttributionConfidence};
+use crate::backpressure::{BackpressureConfig, ValidationResult};
 use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, WaveSummary};
 
 /// Main entry point for the swarm command
@@ -53,6 +55,10 @@ pub fn run(
     session_name: Option<String>,
     no_research: bool,
     no_validate: bool,
+    review: bool,
+    review_all: bool,
+    no_repair: bool,
+    max_repair_attempts: usize,
 ) -> Result<()> {
     let effective_tag = tag.unwrap_or("default");
 
@@ -129,6 +135,26 @@ pub fn run(
     );
     println!("{:<20} {}", "Terminal:".dimmed(), terminal.name().cyan());
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().cyan());
+    println!(
+        "{:<20} {}",
+        "Review:".dimmed(),
+        if review_all {
+            "all tasks".green()
+        } else if review {
+            "sample (3 per wave)".green()
+        } else {
+            "disabled".yellow()
+        }
+    );
+    println!(
+        "{:<20} {}",
+        "Repair:".dimmed(),
+        if no_repair {
+            "disabled".yellow()
+        } else {
+            format!("up to {} attempts", max_repair_attempts).green()
+        }
+    );
 
     if !bp_config.commands.is_empty() && !no_validate {
         println!(
@@ -263,28 +289,55 @@ pub fn run(
 
             if validation_result.all_passed {
                 println!("    {} All checks passed", "✓".green());
+
+                // Mark all tasks as done
+                for (task_id, tag) in wave_state.task_tags() {
+                    if let Ok(mut phase) = storage.load_group(&tag) {
+                        if let Some(task) = phase.get_task_mut(&task_id) {
+                            task.set_status(TaskStatus::Done);
+                            let _ = storage.update_group(&tag, &phase);
+                        }
+                    }
+                }
             } else {
                 println!("    {} Some checks failed:", "!".yellow());
                 for failure in &validation_result.failures {
                     println!("      - {}", failure.red());
                 }
 
-                // Mark all tasks from this wave as Failed
-                // Next wave can see them via: scud list --status failed
-                let task_tags = wave_state.task_tags();
-                for (task_id, tag) in &task_tags {
-                    if let Ok(mut phase) = storage.load_group(tag) {
-                        if let Some(task) = phase.get_task_mut(task_id) {
-                            task.set_status(TaskStatus::Failed);
-                            let _ = storage.update_group(tag, &phase);
+                if no_repair {
+                    // Old behavior: mark all tasks as failed
+                    let task_tags = wave_state.task_tags();
+                    for (task_id, tag) in &task_tags {
+                        if let Ok(mut phase) = storage.load_group(tag) {
+                            if let Some(task) = phase.get_task_mut(task_id) {
+                                task.set_status(TaskStatus::Failed);
+                                let _ = storage.update_group(tag, &phase);
+                            }
                         }
                     }
+                    println!(
+                        "    {} Marked {} task(s) as failed",
+                        "!".yellow(),
+                        task_tags.len()
+                    );
+                } else {
+                    // New behavior: run repair loop
+                    let repaired = run_repair_loop(
+                        &storage,
+                        &working_dir,
+                        &session_name,
+                        &terminal,
+                        &bp_config,
+                        &wave_state,
+                        &validation_result,
+                        max_repair_attempts,
+                    )?;
+
+                    if !repaired {
+                        println!("    {} Wave failed after repair attempts", "!".red());
+                    }
                 }
-                println!(
-                    "    {} Marked {} task(s) as failed",
-                    "!".yellow(),
-                    task_tags.len()
-                );
             }
 
             wave_state.validation = Some(validation_result);
@@ -297,7 +350,78 @@ pub fn run(
             files_changed: collect_changed_files(&working_dir, wave_state.start_commit.as_deref())
                 .unwrap_or_default(),
         };
-        wave_state.summary = Some(summary);
+        wave_state.summary = Some(summary.clone());
+
+        // === PHASE 4: REVIEW (optional) ===
+        if (review || review_all) && !dry_run {
+            // Build task list for review
+            let wave_tasks: Vec<(String, String)> = wave_state
+                .task_tags()
+                .iter()
+                .filter_map(|(id, tag)| {
+                    storage.load_group(tag).ok().and_then(|phase| {
+                        phase.get_task(id).map(|t| (id.clone(), t.title.clone()))
+                    })
+                })
+                .collect();
+
+            if !wave_tasks.is_empty() {
+                let review_result = spawn_reviewer(
+                    &working_dir,
+                    &session_name,
+                    &terminal,
+                    &summary,
+                    &wave_tasks,
+                    review_all,
+                )?;
+
+                if !review_result.all_passed && !review_result.tasks_to_improve.is_empty() {
+                    println!(
+                        "    {} Reviewer found issues in: {}",
+                        "!".yellow(),
+                        review_result.tasks_to_improve.join(", ")
+                    );
+
+                    // Spawn improvement agents for flagged tasks
+                    for task_id in &review_result.tasks_to_improve {
+                        // Find task and spawn builder to improve
+                        if let Some((task, _tag)) =
+                            find_task_with_tag(&storage, task_id, &wave_state.task_tags())
+                        {
+                            let prompt = format!(
+                                "Improve SCUD task {}: {}\n\nThe reviewer flagged this task for improvements. \
+                                 Review the implementation and make it better. When done: scud set-status {} done",
+                                task.id, task.title, task.id
+                            );
+
+                            // Use builder agent for improvements
+                            if let Some(agent_def) = AgentDef::try_load("builder", &working_dir) {
+                                let harness = agent_def.harness()?;
+                                let model = agent_def.model();
+
+                                terminal::spawn_terminal_with_harness_and_model(
+                                    &terminal,
+                                    &format!("improve-{}", task_id),
+                                    &prompt,
+                                    &working_dir,
+                                    &session_name,
+                                    harness,
+                                    model,
+                                )?;
+
+                                println!(
+                                    "    {} Spawned improvement agent for {}",
+                                    "✓".green(),
+                                    task_id
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    println!("    {} Review complete, all tasks approved", "✓".green());
+                }
+            }
+        }
 
         // Save session state
         swarm_session.waves.push(wave_state);
@@ -636,4 +760,426 @@ fn run_dry_run(
     println!("{}", "No agents spawned (dry-run mode).".yellow());
 
     Ok(())
+}
+
+// ============================================================================
+// Review Agent Support
+// ============================================================================
+
+/// Result of a review operation
+#[derive(Debug)]
+pub struct ReviewResult {
+    /// Whether all reviewed tasks passed
+    pub all_passed: bool,
+    /// Task IDs that need improvement
+    pub tasks_to_improve: Vec<String>,
+}
+
+/// Spawn a reviewer agent and wait for it to complete
+#[allow(dead_code)]
+pub fn spawn_reviewer(
+    working_dir: &std::path::Path,
+    session_name: &str,
+    terminal: &Terminal,
+    summary: &WaveSummary,
+    wave_tasks: &[(String, String)], // (id, title)
+    review_all: bool,
+) -> Result<ReviewResult> {
+    println!();
+    println!("  {} Spawning reviewer agent...", "Review:".magenta());
+
+    let prompt = agent::generate_review_prompt(summary, wave_tasks, review_all);
+
+    // Load reviewer agent definition for harness/model
+    let agent_def = AgentDef::try_load("reviewer", working_dir).unwrap_or_else(|| {
+        // Fallback: claude/opus
+        AgentDef {
+            agent: crate::agents::AgentMeta {
+                name: "reviewer".to_string(),
+                description: "Code reviewer".to_string(),
+            },
+            model: crate::agents::ModelConfig {
+                harness: "claude".to_string(),
+                model: Some("opus".to_string()),
+            },
+            prompt: Default::default(),
+        }
+    });
+
+    let harness = agent_def.harness()?;
+    let model = agent_def.model();
+
+    // Spawn reviewer
+    terminal::spawn_terminal_with_harness_and_model(
+        terminal,
+        &format!("review-wave-{}", summary.wave_number),
+        &prompt,
+        working_dir,
+        session_name,
+        harness,
+        model,
+    )?;
+
+    println!(
+        "    {} Reviewer spawned, waiting for completion...",
+        "✓".green()
+    );
+
+    // Wait for reviewer to complete by watching for output file
+    wait_for_review_completion(working_dir, summary.wave_number)
+}
+
+/// Wait for the review to complete by polling for marker file
+fn wait_for_review_completion(
+    working_dir: &std::path::Path,
+    wave_number: usize,
+) -> Result<ReviewResult> {
+    let marker_path = working_dir
+        .join(".scud")
+        .join(format!("review-complete-{}", wave_number));
+
+    let timeout = Duration::from_secs(1800); // 30 minute timeout
+    let start = std::time::Instant::now();
+
+    loop {
+        if start.elapsed() > timeout {
+            println!(
+                "    {} Review timed out after 30 minutes",
+                "!".yellow()
+            );
+            return Ok(ReviewResult {
+                all_passed: true, // Assume pass on timeout
+                tasks_to_improve: vec![],
+            });
+        }
+
+        if marker_path.exists() {
+            let content = std::fs::read_to_string(&marker_path)?;
+            std::fs::remove_file(&marker_path)?; // Clean up
+
+            let all_passed = content.contains("ALL_PASS");
+            let tasks_to_improve = if content.contains("IMPROVE_TASKS:") {
+                content
+                    .lines()
+                    .find(|l| l.starts_with("IMPROVE_TASKS:"))
+                    .map(|l| {
+                        l.strip_prefix("IMPROVE_TASKS:")
+                            .unwrap_or("")
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                vec![]
+            };
+
+            println!("    {} Review complete", "✓".green());
+            if !all_passed {
+                println!(
+                    "    {} Tasks needing improvement: {}",
+                    "!".yellow(),
+                    tasks_to_improve.join(", ")
+                );
+            }
+
+            return Ok(ReviewResult {
+                all_passed,
+                tasks_to_improve,
+            });
+        }
+
+        thread::sleep(Duration::from_secs(5));
+    }
+}
+
+// ============================================================================
+// Repair Loop Support
+// ============================================================================
+
+/// Run repair loop for failed validation
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+pub fn run_repair_loop(
+    storage: &Storage,
+    working_dir: &std::path::Path,
+    session_name: &str,
+    terminal: &Terminal,
+    bp_config: &BackpressureConfig,
+    wave_state: &WaveState,
+    validation_result: &ValidationResult,
+    max_attempts: usize,
+) -> Result<bool> {
+    let wave_tasks = wave_state.all_task_ids();
+    let task_tags = wave_state.task_tags();
+
+    println!();
+    println!(
+        "  {} Analyzing failure attribution...",
+        "Repair:".magenta()
+    );
+
+    // Get the first failed command for attribution
+    let failed_cmd = validation_result.results.iter().find(|r| !r.passed);
+    let failed_cmd = match failed_cmd {
+        Some(cmd) => cmd,
+        None => return Ok(true), // No failures? Shouldn't happen
+    };
+
+    // Attribute the failure
+    let attribution = attribute_failure(
+        working_dir,
+        &failed_cmd.stderr,
+        &failed_cmd.stdout,
+        &wave_tasks,
+        wave_state.start_commit.as_deref(),
+    )?;
+
+    match attribution.confidence {
+        AttributionConfidence::High => {
+            println!(
+                "    {} High confidence: task {} responsible",
+                "✓".green(),
+                attribution.responsible_tasks.join(", ")
+            );
+        }
+        AttributionConfidence::Medium => {
+            println!(
+                "    {} Medium confidence: tasks {} may be responsible",
+                "~".yellow(),
+                attribution.responsible_tasks.join(", ")
+            );
+        }
+        AttributionConfidence::Low => {
+            println!(
+                "    {} Low confidence: cannot determine specific task",
+                "!".red()
+            );
+        }
+    }
+
+    // Mark cleared tasks as done
+    for task_id in &attribution.cleared_tasks {
+        if let Some(tag) = task_tags
+            .iter()
+            .find(|(id, _)| id == task_id)
+            .map(|(_, t)| t)
+        {
+            if let Ok(mut phase) = storage.load_group(tag) {
+                if let Some(task) = phase.get_task_mut(task_id) {
+                    task.set_status(TaskStatus::Done);
+                    let _ = storage.update_group(tag, &phase);
+                    println!(
+                        "    {} Cleared: {} (not responsible)",
+                        "✓".green(),
+                        task_id
+                    );
+                }
+            }
+        }
+    }
+
+    // Attempt repairs on responsible tasks
+    for attempt in 1..=max_attempts {
+        println!();
+        println!(
+            "  {} Repair attempt {}/{}",
+            "Repair:".magenta(),
+            attempt,
+            max_attempts
+        );
+
+        let mut all_repaired = true;
+
+        for task_id in &attribution.responsible_tasks {
+            // Find task details
+            let (task, _tag) = match find_task_with_tag(storage, task_id, &task_tags) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            // Get files changed by this task
+            let task_files = crate::attribution::get_task_changed_files(
+                working_dir,
+                task_id,
+                wave_state.start_commit.as_deref(),
+            )?;
+
+            // Parse error files
+            let error_files: Vec<String> = crate::attribution::parse_error_locations(
+                &failed_cmd.stderr,
+                &failed_cmd.stdout,
+            )
+            .into_iter()
+            .map(|(f, _)| f)
+            .collect();
+
+            // Generate repair prompt
+            let prompt = agent::generate_repair_prompt(
+                task_id,
+                &task.title,
+                &failed_cmd.command,
+                &format!("{}\n{}", failed_cmd.stderr, failed_cmd.stdout),
+                &task_files.into_iter().collect::<Vec<_>>(),
+                &error_files,
+            );
+
+            // Spawn repairer
+            spawn_repairer(working_dir, session_name, terminal, task_id, &prompt)?;
+
+            // Wait for repair completion
+            if !wait_for_repair_completion_task(working_dir, task_id)? {
+                all_repaired = false;
+            }
+        }
+
+        if !all_repaired {
+            println!("    {} Some repairs failed or blocked", "!".yellow());
+            continue;
+        }
+
+        // Re-run validation
+        println!();
+        println!("  {} Re-running validation...", "Validate:".magenta());
+        let new_result = crate::backpressure::run_validation(working_dir, bp_config)?;
+
+        if new_result.all_passed {
+            println!(
+                "    {} Validation passed after repair!",
+                "✓".green()
+            );
+
+            // Mark all responsible tasks as done
+            for task_id in &attribution.responsible_tasks {
+                if let Some(tag) = task_tags
+                    .iter()
+                    .find(|(id, _)| id == task_id)
+                    .map(|(_, t)| t)
+                {
+                    if let Ok(mut phase) = storage.load_group(tag) {
+                        if let Some(task) = phase.get_task_mut(task_id) {
+                            task.set_status(TaskStatus::Done);
+                            let _ = storage.update_group(tag, &phase);
+                        }
+                    }
+                }
+            }
+
+            return Ok(true);
+        }
+
+        println!(
+            "    {} Validation still failing, will retry...",
+            "!".yellow()
+        );
+    }
+
+    // Max attempts reached - mark responsible tasks as failed
+    println!();
+    println!("  {} Max repair attempts reached", "!".red());
+
+    for task_id in &attribution.responsible_tasks {
+        if let Some(tag) = task_tags
+            .iter()
+            .find(|(id, _)| id == task_id)
+            .map(|(_, t)| t)
+        {
+            if let Ok(mut phase) = storage.load_group(tag) {
+                if let Some(task) = phase.get_task_mut(task_id) {
+                    task.set_status(TaskStatus::Failed);
+                    let _ = storage.update_group(tag, &phase);
+                    println!("    {} Marked failed: {}", "✗".red(), task_id);
+                }
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+/// Spawn a repairer agent for a specific task
+fn spawn_repairer(
+    working_dir: &std::path::Path,
+    session_name: &str,
+    terminal: &Terminal,
+    task_id: &str,
+    prompt: &str,
+) -> Result<()> {
+    // Load repairer agent definition
+    let agent_def = AgentDef::try_load("repairer", working_dir).unwrap_or_else(|| AgentDef {
+        agent: crate::agents::AgentMeta {
+            name: "repairer".to_string(),
+            description: "Repair agent".to_string(),
+        },
+        model: crate::agents::ModelConfig {
+            harness: "claude".to_string(),
+            model: Some("opus".to_string()),
+        },
+        prompt: Default::default(),
+    });
+
+    let harness = agent_def.harness()?;
+    let model = agent_def.model();
+
+    terminal::spawn_terminal_with_harness_and_model(
+        terminal,
+        &format!("repair-{}", task_id),
+        prompt,
+        working_dir,
+        session_name,
+        harness,
+        model,
+    )?;
+
+    println!("    {} Spawned repairer for {}", "✓".green(), task_id);
+    Ok(())
+}
+
+/// Wait for a repair to complete by polling for marker file
+fn wait_for_repair_completion_task(
+    working_dir: &std::path::Path,
+    task_id: &str,
+) -> Result<bool> {
+    let marker_path = working_dir
+        .join(".scud")
+        .join(format!("repair-complete-{}", task_id));
+
+    let timeout = Duration::from_secs(1800); // 30 minute timeout
+    let start = std::time::Instant::now();
+
+    loop {
+        if start.elapsed() > timeout {
+            println!("    {} Repair timed out for {}", "!".yellow(), task_id);
+            return Ok(false);
+        }
+
+        if marker_path.exists() {
+            let content = std::fs::read_to_string(&marker_path)?;
+            std::fs::remove_file(&marker_path)?;
+
+            let success = content.contains("SUCCESS");
+            if success {
+                println!("    {} Repair completed for {}", "✓".green(), task_id);
+            } else {
+                println!("    {} Repair blocked for {}", "!".yellow(), task_id);
+            }
+
+            return Ok(success);
+        }
+
+        thread::sleep(Duration::from_secs(5));
+    }
+}
+
+/// Find a task by ID along with its tag
+fn find_task_with_tag(
+    storage: &Storage,
+    task_id: &str,
+    task_tags: &[(String, String)],
+) -> Option<(Task, String)> {
+    let tag = task_tags.iter().find(|(id, _)| id == task_id)?.1.clone();
+    let phase = storage.load_group(&tag).ok()?;
+    let task = phase.get_task(task_id)?.clone();
+    Some((task, tag))
 }

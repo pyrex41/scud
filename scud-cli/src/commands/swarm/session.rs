@@ -107,6 +107,36 @@ impl RoundState {
     }
 }
 
+/// State of a code review for a wave
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewState {
+    /// Tasks that were reviewed
+    pub reviewed_tasks: Vec<String>,
+    /// Whether all reviewed tasks passed
+    pub all_passed: bool,
+    /// Tasks flagged for improvement
+    pub tasks_needing_improvement: Vec<String>,
+    /// When the review completed
+    pub completed_at: String,
+}
+
+/// Record of a repair attempt
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepairAttempt {
+    /// Attempt number (1-indexed)
+    pub attempt_number: usize,
+    /// Tasks attributed as responsible for the failure
+    pub attributed_tasks: Vec<String>,
+    /// Tasks cleared as not responsible
+    pub cleared_tasks: Vec<String>,
+    /// Attribution confidence level: "high", "medium", "low"
+    pub attribution_confidence: String,
+    /// Whether validation passed after this repair
+    pub validation_passed: bool,
+    /// When the repair attempt completed
+    pub completed_at: String,
+}
+
 /// State of a single wave
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WaveState {
@@ -121,6 +151,12 @@ pub struct WaveState {
     /// Git commit SHA at wave start (for tracking changes)
     #[serde(default)]
     pub start_commit: Option<String>,
+    /// Review result (if review was run)
+    #[serde(default)]
+    pub review: Option<ReviewState>,
+    /// Repair attempts (if validation failed)
+    #[serde(default)]
+    pub repairs: Vec<RepairAttempt>,
     /// Start time
     pub started_at: String,
     /// End time (set when complete)
@@ -135,6 +171,8 @@ impl WaveState {
             validation: None,
             summary: None,
             start_commit: get_current_commit(),
+            review: None,
+            repairs: Vec::new(),
             started_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
         }

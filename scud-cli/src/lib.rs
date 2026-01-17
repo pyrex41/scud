@@ -129,6 +129,37 @@
 /// ```
 pub mod agents;
 
+/// Failure attribution using git blame.
+///
+/// Maps validation errors to specific tasks by parsing error output for
+/// file:line references and using git blame to find which commits changed
+/// those lines. Task IDs are extracted from commit message prefixes like `[TASK-ID]`.
+///
+/// # Example
+///
+/// ```no_run
+/// use scud::attribution::{attribute_failure, AttributionConfidence};
+/// use std::path::Path;
+///
+/// let working_dir = Path::new(".");
+/// let wave_tasks = vec!["auth:1".to_string(), "auth:2".to_string()];
+///
+/// let attribution = attribute_failure(
+///     working_dir,
+///     "error: src/main.rs:42: undefined variable",
+///     "",
+///     &wave_tasks,
+///     None,
+/// ).unwrap();
+///
+/// match attribution.confidence {
+///     AttributionConfidence::High => println!("Clear responsible: {:?}", attribution.responsible_tasks),
+///     AttributionConfidence::Medium => println!("Multiple suspects: {:?}", attribution.responsible_tasks),
+///     AttributionConfidence::Low => println!("Cannot determine - all tasks suspect"),
+/// }
+/// ```
+pub mod attribution;
+
 /// Backpressure validation for maintaining code quality during automated execution.
 ///
 /// Runs programmatic validation (build, test, lint) after task completion.

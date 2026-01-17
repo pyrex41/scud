@@ -62,6 +62,10 @@ const EMBEDDED_SPAWN_AGENTS: &[(&str, &str)] = &[
         "outside-generalist",
         include_str!("../assets/spawn-agents/outside-generalist.toml"),
     ),
+    (
+        "repairer",
+        include_str!("../assets/spawn-agents/repairer.toml"),
+    ),
 ];
 
 /// SCUD agent definitions (legacy - keeping for compatibility)

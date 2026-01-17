@@ -1698,6 +1698,7 @@ dependencies = [
  "indicatif",
  "mockall",
  "ratatui",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
