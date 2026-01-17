@@ -5,7 +5,7 @@ description = "Code analyzer for understanding implementation details"
 
 [model]
 harness = "claude"
-model = "sonnet"
+model = "opus"
 
 [prompt]
 template = """You are analyzing SCUD task {task.id}: {task.title}

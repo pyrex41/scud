@@ -58,6 +58,10 @@ const EMBEDDED_SPAWN_AGENTS: &[(&str, &str)] = &[
         "fast-builder",
         include_str!("../assets/spawn-agents/fast-builder.toml"),
     ),
+    (
+        "outside-generalist",
+        include_str!("../assets/spawn-agents/outside-generalist.toml"),
+    ),
 ];
 
 /// SCUD agent definitions (legacy - keeping for compatibility)

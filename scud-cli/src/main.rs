@@ -88,7 +88,7 @@ enum SpawnAgentsCommands {
 
     /// Add spawn agent(s) to the project
     Add {
-        /// Agent name (builder, reviewer, planner, researcher, analyzer, fast-builder)
+        /// Agent name (builder, reviewer, planner, researcher, analyzer, fast-builder, outside-generalist)
         name: Option<String>,
 
         /// Add all spawn agents
@@ -576,11 +576,11 @@ enum Commands {
         #[arg(short, long)]
         claim: bool,
 
-        /// AI harness: claude, opencode (default: opencode)
+        /// AI harness: claude, opencode (overridden by task's agent_type if set)
         #[arg(short = 'H', long, default_value = "opencode")]
         harness: String,
 
-        /// Model to use with harness (default: grok-code-fast-1)
+        /// Model to use with harness (overridden by task's agent_type if set)
         #[arg(short = 'M', long, default_value = "grok-code-fast-1")]
         model: String,
     },

@@ -1,7 +1,7 @@
 ---
 description: Show parallel execution waves for SCUD tasks
 allowed-tools: Bash(scud:*)
-argument-hint: [--tag <tag>] [--max-parallel <n>] [--all-tags]
+argument-hint: "[--tag <tag>] [--max-parallel <n>] [--all-tags]"
 ---
 
 Compute and display parallel execution waves based on task dependencies.

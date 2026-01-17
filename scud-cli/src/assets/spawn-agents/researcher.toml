@@ -5,7 +5,7 @@ description = "Research agent for codebase investigation and documentation"
 
 [model]
 harness = "claude"
-model = "sonnet"
+model = "opus"
 
 [prompt]
 template = """You are researching SCUD task {task.id}: {task.title}

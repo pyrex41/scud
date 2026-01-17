@@ -1,7 +1,7 @@
 ---
 description: Update the status of a SCUD task
 allowed-tools: Bash(scud:*)
-argument-hint: <task-id> <status> [--tag <tag>]
+argument-hint: "<task-id> <status> [--tag <tag>]"
 ---
 
 Update a task's status. Valid statuses: pending, in-progress, done, blocked, review, deferred, cancelled.

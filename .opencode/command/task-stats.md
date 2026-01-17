@@ -1,7 +1,7 @@
 ---
 description: Show SCUD task completion statistics
 allowed-tools: Bash(scud:*)
-argument-hint: [--tag <tag>]
+argument-hint: "[--tag <tag>]"
 ---
 
 Show completion statistics for tasks.

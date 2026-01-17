@@ -1,7 +1,7 @@
 ---
 description: Find and optionally claim the next available SCUD task
 allowed-tools: Bash(scud:*)
-argument-hint: [--tag <tag>] [--spawn]
+argument-hint: "[--tag <tag>] [--spawn]"
 ---
 
 Find the next available task based on dependencies and status.

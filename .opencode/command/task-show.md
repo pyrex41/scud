@@ -1,7 +1,7 @@
 ---
 description: Show detailed information about a SCUD task
 allowed-tools: Bash(scud:*)
-argument-hint: <task-id> [--tag <tag>]
+argument-hint: "<task-id> [--tag <tag>]"
 ---
 
 Show detailed information about a specific task.
