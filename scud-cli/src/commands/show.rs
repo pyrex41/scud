@@ -26,6 +26,10 @@ pub fn run(project_root: Option<PathBuf>, task_id: &str, tag: Option<&str>) -> R
     println!("{:<20} {}", "Complexity:".yellow(), task.complexity);
     println!("{:<20} {:?}", "Priority:".yellow(), task.priority);
 
+    if let Some(ref agent_type) = task.agent_type {
+        println!("{:<20} {}", "Agent Type:".yellow(), agent_type.green());
+    }
+
     if !task.dependencies.is_empty() {
         println!("{:<20} {:?}", "Dependencies:".yellow(), task.dependencies);
     }

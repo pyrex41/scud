@@ -377,6 +377,18 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         println!("  You can install them later with: scud config agents add --all");
     }
 
+    // Install spawn agents (harness/model routing definitions)
+    println!("\n{}", "Installing spawn agent definitions...".blue());
+    if let Err(e) =
+        config_cmd::spawn_agents_add(Some(storage.project_root().to_path_buf()), None, true, false)
+    {
+        println!(
+            "{}",
+            format!("  Could not install spawn agents: {}", e).yellow()
+        );
+        println!("  You can install them later with: scud config spawn-agents add --all");
+    }
+
     // Update CLAUDE.md with SCUD instructions
     if let Err(e) = update_claude_md(&storage) {
         println!(

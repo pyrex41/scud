@@ -46,6 +46,13 @@ enum ConfigCommands {
         #[arg(long, conflicts_with_all = ["commands", "add", "remove", "list"])]
         clear: bool,
     },
+
+    /// Manage spawn agent definitions (harness/model routing)
+    #[command(name = "spawn-agents")]
+    SpawnAgents {
+        #[command(subcommand)]
+        command: SpawnAgentsCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -69,6 +76,36 @@ enum AgentsCommands {
         name: Option<String>,
 
         /// Remove all SCUD agents
+        #[arg(long)]
+        all: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SpawnAgentsCommands {
+    /// List available spawn agents
+    List,
+
+    /// Add spawn agent(s) to the project
+    Add {
+        /// Agent name (builder, reviewer, planner, researcher, analyzer, fast-builder)
+        name: Option<String>,
+
+        /// Add all spawn agents
+        #[arg(long)]
+        all: bool,
+
+        /// Interactive selection
+        #[arg(short, long)]
+        interactive: bool,
+    },
+
+    /// Remove spawn agent(s) from the project
+    Remove {
+        /// Agent name
+        name: Option<String>,
+
+        /// Remove all spawn agents
         #[arg(long)]
         all: bool,
     },
@@ -675,6 +712,17 @@ async fn main() -> Result<()> {
                 list,
                 clear,
             } => commands::config::backpressure(cli.project, commands, add, remove, list, clear),
+            ConfigCommands::SpawnAgents { command } => match command {
+                SpawnAgentsCommands::List => commands::config::spawn_agents_list(cli.project),
+                SpawnAgentsCommands::Add {
+                    name,
+                    all,
+                    interactive,
+                } => commands::config::spawn_agents_add(cli.project, name, all, interactive),
+                SpawnAgentsCommands::Remove { name, all } => {
+                    commands::config::spawn_agents_remove(cli.project, name, all)
+                }
+            },
         },
         Commands::Parse {
             file,

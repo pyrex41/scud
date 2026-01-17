@@ -1,0 +1,8 @@
+# Default builder agent - fast code implementation
+[agent]
+name = "builder"
+description = "Fast code implementation agent using Grok"
+
+[model]
+harness = "opencode"
+model = "grok-code-fast-1"

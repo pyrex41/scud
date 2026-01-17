@@ -1,0 +1,16 @@
+# Fast builder agent - optimized for quick tasks
+[agent]
+name = "fast-builder"
+description = "Fast builder for simple, quick implementation tasks"
+
+[model]
+harness = "opencode"
+model = "grok-code-fast-1"
+
+[prompt]
+template = """SCUD Task {task.id}: {task.title}
+
+{task.description}
+
+When done: scud set-status {task.id} done
+"""

@@ -31,6 +31,35 @@ const EMBEDDED_SCUD_SKILLS: &[(&str, &str)] = &[
     ("scud", include_str!("../../assets/skills/scud/SKILL.md")),
 ];
 
+/// Embedded SCUD spawn agent definitions
+/// Agent definitions for model routing (stored in .scud/agents/<name>.toml)
+const EMBEDDED_SPAWN_AGENTS: &[(&str, &str)] = &[
+    (
+        "builder",
+        include_str!("../assets/spawn-agents/builder.toml"),
+    ),
+    (
+        "reviewer",
+        include_str!("../assets/spawn-agents/reviewer.toml"),
+    ),
+    (
+        "planner",
+        include_str!("../assets/spawn-agents/planner.toml"),
+    ),
+    (
+        "researcher",
+        include_str!("../assets/spawn-agents/researcher.toml"),
+    ),
+    (
+        "analyzer",
+        include_str!("../assets/spawn-agents/analyzer.toml"),
+    ),
+    (
+        "fast-builder",
+        include_str!("../assets/spawn-agents/fast-builder.toml"),
+    ),
+];
+
 /// SCUD agent definitions (legacy - keeping for compatibility)
 /// Each agent has a filename, aliases for CLI, and description
 /// Agents are stored in .claude/commands/scud/<filename>.md
@@ -1007,5 +1036,223 @@ fn set_backpressure_commands(config: &mut toml::Value, commands: &[String]) {
 fn save_config(path: &PathBuf, config: &toml::Value) -> Result<()> {
     let content = toml::to_string_pretty(config)?;
     fs::write(path, content)?;
+    Ok(())
+}
+
+/// Get the .scud/agents directory for spawn agent definitions
+fn get_spawn_agents_dir(project_root: Option<PathBuf>) -> PathBuf {
+    let base = project_root.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    base.join(".scud").join("agents")
+}
+
+/// Install spawn agent definitions to .scud/agents/
+/// These define harness/model routing for different agent types
+pub fn spawn_agents_add(
+    project_root: Option<PathBuf>,
+    name: Option<String>,
+    all: bool,
+    interactive: bool,
+) -> Result<()> {
+    let agents_dir = get_spawn_agents_dir(project_root);
+    fs::create_dir_all(&agents_dir)?;
+
+    let agents_to_add: Vec<&str> = if all {
+        EMBEDDED_SPAWN_AGENTS.iter().map(|(n, _)| *n).collect()
+    } else if let Some(ref name) = name {
+        if EMBEDDED_SPAWN_AGENTS.iter().any(|(n, _)| *n == name.as_str()) {
+            vec![name.as_str()]
+        } else {
+            anyhow::bail!(
+                "Unknown spawn agent: '{}'. Available: {}",
+                name,
+                EMBEDDED_SPAWN_AGENTS
+                    .iter()
+                    .map(|(n, _)| *n)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    } else if interactive {
+        // Interactive selection
+        use dialoguer::MultiSelect;
+
+        let items: Vec<String> = EMBEDDED_SPAWN_AGENTS
+            .iter()
+            .map(|(name, content)| {
+                // Extract description from toml
+                let desc = content
+                    .lines()
+                    .find(|l| l.starts_with("description"))
+                    .and_then(|l| l.split('=').nth(1))
+                    .map(|s| s.trim().trim_matches('"'))
+                    .unwrap_or("");
+                format!("{} - {}", name, desc)
+            })
+            .collect();
+
+        let selections = MultiSelect::new()
+            .with_prompt("Select spawn agents to install (space to toggle)")
+            .items(&items)
+            .defaults(&vec![true; items.len()])
+            .interact()?;
+
+        selections
+            .iter()
+            .map(|&i| EMBEDDED_SPAWN_AGENTS[i].0)
+            .collect()
+    } else {
+        anyhow::bail!("Please specify an agent name, use --all, or run interactively");
+    };
+
+    if agents_to_add.is_empty() {
+        println!("{}", "No agents selected.".yellow());
+        return Ok(());
+    }
+
+    println!("{}", "Spawn Agents:".blue().bold());
+    let mut added = 0;
+    let mut existing = 0;
+
+    for agent_name in agents_to_add {
+        let dest = agents_dir.join(format!("{}.toml", agent_name));
+
+        if dest.exists() {
+            existing += 1;
+            println!("  {} {} (already installed)", "·".yellow(), agent_name);
+            continue;
+        }
+
+        if let Some((_, content)) = EMBEDDED_SPAWN_AGENTS.iter().find(|(n, _)| *n == agent_name) {
+            fs::write(&dest, content)?;
+            added += 1;
+            println!("  {} {}", "✓".green(), agent_name.green());
+        }
+    }
+
+    println!();
+    if added > 0 {
+        println!(
+            "{}",
+            format!("✅ Installed {} spawn agent(s)", added).green().bold()
+        );
+        println!(
+            "{}",
+            "Agents are used via @agents section in .scg files".dimmed()
+        );
+    }
+    if existing > 0 {
+        println!(
+            "{}",
+            format!("{} agent(s) already installed", existing).yellow()
+        );
+    }
+
+    Ok(())
+}
+
+/// List available spawn agents
+pub fn spawn_agents_list(project_root: Option<PathBuf>) -> Result<()> {
+    let agents_dir = get_spawn_agents_dir(project_root);
+
+    println!("{}", "Available Spawn Agents:".blue().bold());
+    println!();
+
+    for (name, content) in EMBEDDED_SPAWN_AGENTS {
+        let installed = agents_dir.join(format!("{}.toml", name)).exists();
+        let status = if installed {
+            "✓".green()
+        } else {
+            "·".dimmed()
+        };
+
+        // Extract description and model info from toml
+        let desc = content
+            .lines()
+            .find(|l| l.starts_with("description"))
+            .and_then(|l| l.split('=').nth(1))
+            .map(|s| s.trim().trim_matches('"'))
+            .unwrap_or("");
+
+        let harness = content
+            .lines()
+            .find(|l| l.starts_with("harness"))
+            .and_then(|l| l.split('=').nth(1))
+            .map(|s| s.trim().trim_matches('"'))
+            .unwrap_or("?");
+
+        let model = content
+            .lines()
+            .find(|l| l.trim().starts_with("model") && !l.contains('['))
+            .and_then(|l| l.split('=').nth(1))
+            .map(|s| s.trim().trim_matches('"'))
+            .unwrap_or("default");
+
+        println!(
+            "  {} {:<14} [{}:{}] {}",
+            status,
+            name.cyan(),
+            harness,
+            model,
+            desc.dimmed()
+        );
+    }
+
+    println!();
+    println!(
+        "Install: {}",
+        "scud config spawn-agents add --all".cyan()
+    );
+
+    Ok(())
+}
+
+/// Remove spawn agent definitions
+pub fn spawn_agents_remove(
+    project_root: Option<PathBuf>,
+    name: Option<String>,
+    all: bool,
+) -> Result<()> {
+    let agents_dir = get_spawn_agents_dir(project_root);
+
+    let agents_to_remove: Vec<&str> = if all {
+        EMBEDDED_SPAWN_AGENTS.iter().map(|(n, _)| *n).collect()
+    } else if let Some(ref name) = name {
+        vec![name.as_str()]
+    } else {
+        anyhow::bail!("Please specify an agent name or use --all");
+    };
+
+    println!("{}", "Removing Spawn Agents:".blue().bold());
+    let mut removed = 0;
+    let mut not_found = 0;
+
+    for agent_name in agents_to_remove {
+        let path = agents_dir.join(format!("{}.toml", agent_name));
+
+        if !path.exists() {
+            not_found += 1;
+            println!("  {} {} (not installed)", "·".yellow(), agent_name);
+            continue;
+        }
+
+        fs::remove_file(&path)?;
+        removed += 1;
+        println!("  {} {}", "✓".green(), agent_name);
+    }
+
+    println!();
+    if removed > 0 {
+        println!(
+            "{}",
+            format!("✅ Removed {} spawn agent(s)", removed).green().bold()
+        );
+    }
+    if not_found > 0 {
+        println!(
+            "{}",
+            format!("{} agent(s) were not installed", not_found).yellow()
+        );
+    }
+
     Ok(())
 }
