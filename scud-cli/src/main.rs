@@ -685,6 +685,10 @@ enum Commands {
         /// Maximum repair attempts per task before giving up (default: 3)
         #[arg(long, default_value = "3")]
         max_repair_attempts: usize,
+
+        /// Start TUI monitor for real-time visualization
+        #[arg(short, long)]
+        monitor: bool,
     },
 }
 
@@ -983,6 +987,7 @@ async fn main() -> Result<()> {
             review_all,
             no_repair,
             max_repair_attempts,
+            monitor,
         } => commands::swarm::run(
             cli.project,
             tag.as_deref(),
@@ -997,6 +1002,7 @@ async fn main() -> Result<()> {
             review_all,
             no_repair,
             max_repair_attempts,
+            monitor,
         ),
     }
 }

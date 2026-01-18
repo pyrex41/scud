@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::backpressure::ValidationResult;
+use crate::commands::spawn::monitor::{AgentState, AgentStatus, SpawnSession};
 
 /// Get the current git commit SHA
 pub fn get_current_commit() -> Option<String> {
@@ -273,6 +274,52 @@ impl SwarmSession {
         self.waves
             .last()
             .and_then(|w| w.summary.as_ref().map(|s| s.to_text()))
+    }
+
+    /// Convert to SpawnSession format for TUI compatibility
+    pub fn to_spawn_session(&self) -> SpawnSession {
+        let mut agents = Vec::new();
+
+        for wave in &self.waves {
+            for round in &wave.rounds {
+                for (idx, task_id) in round.task_ids.iter().enumerate() {
+                    let tag = round.tags.get(idx).cloned().unwrap_or_default();
+                    let failed = round.failures.contains(task_id);
+
+                    // Determine status based on wave/task state
+                    let status = if failed {
+                        AgentStatus::Failed
+                    } else if wave
+                        .validation
+                        .as_ref()
+                        .map(|v| v.all_passed)
+                        .unwrap_or(false)
+                    {
+                        AgentStatus::Completed
+                    } else {
+                        AgentStatus::Running
+                    };
+
+                    agents.push(AgentState {
+                        task_id: task_id.clone(),
+                        task_title: task_id.clone(), // Will be enriched by TUI
+                        window_name: format!("task-{}", task_id),
+                        status,
+                        started_at: wave.started_at.clone(),
+                        tag,
+                    });
+                }
+            }
+        }
+
+        SpawnSession {
+            session_name: self.session_name.clone(),
+            tag: self.tag.clone(),
+            terminal: self.terminal.clone(),
+            created_at: self.started_at.clone(),
+            working_dir: self.working_dir.clone(),
+            agents,
+        }
     }
 }
 

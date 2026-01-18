@@ -32,7 +32,9 @@ use std::time::Duration;
 use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
 use crate::commands::spawn::hooks;
+use crate::commands::spawn::monitor as spawn_monitor;
 use crate::commands::spawn::terminal::{self, Harness};
+use crate::commands::spawn::tui;
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
@@ -58,6 +60,7 @@ pub fn run(
     review_all: bool,
     no_repair: bool,
     max_repair_attempts: usize,
+    monitor: bool,
 ) -> Result<()> {
     let effective_tag = tag.unwrap_or("default");
 
@@ -189,6 +192,24 @@ pub fn run(
         &working_dir.to_string_lossy(),
         round_size,
     );
+
+    // If monitor mode, save initial session and launch TUI in background
+    if monitor && !dry_run {
+        // Save initial spawn-format session for TUI to find
+        let spawn_session = swarm_session.to_spawn_session();
+        spawn_monitor::save_session(project_root.as_ref(), &spawn_session)?;
+
+        println!();
+        println!("{}", "Starting monitor...".cyan());
+        thread::sleep(Duration::from_secs(1));
+
+        // Launch TUI in a separate thread so swarm continues executing
+        let session_name_clone = session_name.clone();
+        let project_root_clone = project_root.clone();
+        std::thread::spawn(move || {
+            let _ = tui::run(project_root_clone, &session_name_clone);
+        });
+    }
 
     // Main loop: execute waves until all tasks done
     let mut wave_number = 1;
@@ -421,6 +442,12 @@ pub fn run(
         // Save session state
         swarm_session.waves.push(wave_state);
         session::save_session(project_root.as_ref(), &swarm_session)?;
+
+        // Also save spawn-format session for TUI refresh
+        if monitor {
+            let spawn_session = swarm_session.to_spawn_session();
+            spawn_monitor::save_session(project_root.as_ref(), &spawn_session)?;
+        }
 
         wave_number += 1;
     }
