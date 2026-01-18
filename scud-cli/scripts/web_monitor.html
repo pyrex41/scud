@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCUD Monitor Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: #16213e;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #4fc3f7;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #666;
+        }
+
+        .status-indicator.connected {
+            background: #4caf50;
+            box-shadow: 0 0 8px #4caf50;
+        }
+
+        .status-indicator.disconnected {
+            background: #f44336;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #16213e;
+            padding: 15px 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: 700;
+        }
+
+        .stat-label {
+            font-size: 0.8em;
+            color: #888;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+
+        .stat-value.running { color: #4caf50; }
+        .stat-value.completed { color: #4fc3f7; }
+        .stat-value.failed { color: #f44336; }
+        .stat-value.starting { color: #ffc107; }
+
+        .panels {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            height: calc(100vh - 250px);
+        }
+
+        .panel {
+            background: #16213e;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            padding: 12px 15px;
+            background: #0f3460;
+            font-weight: 600;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .agent-item {
+            padding: 12px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 8px;
+            border-left: 4px solid transparent;
+        }
+
+        .agent-item:hover {
+            background: #1f4068;
+        }
+
+        .agent-item.selected {
+            background: #1f4068;
+            border-left-color: #4fc3f7;
+        }
+
+        .agent-item.running { border-left-color: #4caf50; }
+        .agent-item.completed { border-left-color: #4fc3f7; }
+        .agent-item.failed { border-left-color: #f44336; }
+        .agent-item.starting { border-left-color: #ffc107; }
+
+        .agent-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .agent-id {
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        .agent-status {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            margin-top: 5px;
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .agent-status.running { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+        .agent-status.completed { background: rgba(79, 195, 247, 0.2); color: #4fc3f7; }
+        .agent-status.failed { background: rgba(244, 67, 54, 0.2); color: #f44336; }
+        .agent-status.starting { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+
+        .output-panel {
+            background: #0d1117;
+            font-size: 0.85em;
+            line-height: 1.6;
+        }
+
+        .output-line {
+            padding: 2px 15px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .output-line:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .no-selection {
+            color: #666;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .event-log {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 0.8em;
+        }
+
+        .event-log-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #888;
+        }
+
+        .event {
+            padding: 4px 0;
+            border-bottom: 1px solid #222;
+        }
+
+        .event-time {
+            color: #666;
+            margin-right: 10px;
+        }
+
+        .event-type {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+            margin-right: 8px;
+        }
+
+        .event-type.session { background: rgba(79, 195, 247, 0.2); color: #4fc3f7; }
+        .event-type.agent { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+        .event-type.output { background: rgba(158, 158, 158, 0.2); color: #9e9e9e; }
+        .event-type.stats { background: rgba(156, 39, 176, 0.2); color: #ce93d8; }
+
+        #connect-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #connect-form input {
+            background: #0f3460;
+            border: 1px solid #1f4068;
+            color: #eee;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: inherit;
+            width: 250px;
+        }
+
+        #connect-form button {
+            background: #4fc3f7;
+            color: #1a1a2e;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+        }
+
+        #connect-form button:hover {
+            background: #81d4fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SCUD Monitor</h1>
+            <div class="connection-status">
+                <form id="connect-form">
+                    <input type="text" id="ws-url" placeholder="ws://localhost:8765" value="ws://localhost:8765">
+                    <button type="submit" id="connect-btn">Connect</button>
+                </form>
+                <div class="status-indicator" id="status-indicator"></div>
+                <span id="status-text">Disconnected</span>
+            </div>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-total">0</div>
+                <div class="stat-label">Total Agents</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value starting" id="stat-starting">0</div>
+                <div class="stat-label">Starting</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value running" id="stat-running">0</div>
+                <div class="stat-label">Running</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value completed" id="stat-completed">0</div>
+                <div class="stat-label">Completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value failed" id="stat-failed">0</div>
+                <div class="stat-label">Failed</div>
+            </div>
+        </div>
+
+        <div class="panels">
+            <div class="panel">
+                <div class="panel-header">Agents</div>
+                <div class="panel-content" id="agents-list">
+                    <div class="no-selection">No agents connected</div>
+                </div>
+            </div>
+
+            <div class="panel output-panel">
+                <div class="panel-header">
+                    Output: <span id="selected-agent">None</span>
+                </div>
+                <div class="panel-content" id="output-content">
+                    <div class="no-selection">Select an agent to view output</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="event-log">
+            <div class="event-log-title">Recent Events</div>
+            <div id="event-log-content"></div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let ws = null;
+        let agents = {};
+        let agentOutput = {};
+        let selectedAgent = null;
+
+        // Elements
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const connectBtn = document.getElementById('connect-btn');
+        const wsUrlInput = document.getElementById('ws-url');
+        const agentsList = document.getElementById('agents-list');
+        const outputContent = document.getElementById('output-content');
+        const selectedAgentSpan = document.getElementById('selected-agent');
+        const eventLogContent = document.getElementById('event-log-content');
+
+        // Stats elements
+        const statTotal = document.getElementById('stat-total');
+        const statStarting = document.getElementById('stat-starting');
+        const statRunning = document.getElementById('stat-running');
+        const statCompleted = document.getElementById('stat-completed');
+        const statFailed = document.getElementById('stat-failed');
+
+        // Connect form
+        document.getElementById('connect-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            } else {
+                connect(wsUrlInput.value);
+            }
+        });
+
+        function connect(url) {
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                statusIndicator.className = 'status-indicator connected';
+                statusText.textContent = 'Connected';
+                connectBtn.textContent = 'Disconnect';
+                logEvent({ type: 'session', event: 'connected', data: { url } });
+            };
+
+            ws.onclose = () => {
+                statusIndicator.className = 'status-indicator disconnected';
+                statusText.textContent = 'Disconnected';
+                connectBtn.textContent = 'Connect';
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                logEvent({ type: 'session', event: 'error', data: { error: 'Connection failed' } });
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleEvent(data);
+                } catch (e) {
+                    console.error('Failed to parse event:', e);
+                }
+            };
+        }
+
+        function handleEvent(event) {
+            const type = event.type;
+            const eventName = event.event;
+            const data = event.data || {};
+
+            // Log event (skip frequent output events)
+            if (type !== 'output') {
+                logEvent(event);
+            }
+
+            switch (type) {
+                case 'agent':
+                    handleAgentEvent(eventName, data);
+                    break;
+                case 'output':
+                    handleOutputEvent(data);
+                    break;
+                case 'stats':
+                    handleStatsEvent(data);
+                    break;
+                case 'session':
+                    // Session events are just logged
+                    break;
+            }
+        }
+
+        function handleAgentEvent(eventName, data) {
+            const taskId = data.task_id;
+
+            if (eventName === 'spawned' || eventName === 'status_changed') {
+                agents[taskId] = data;
+                if (!agentOutput[taskId]) {
+                    agentOutput[taskId] = [];
+                }
+            }
+
+            renderAgents();
+        }
+
+        function handleOutputEvent(data) {
+            const taskId = data.task_id;
+            const lines = data.lines || [];
+
+            if (!agentOutput[taskId]) {
+                agentOutput[taskId] = [];
+            }
+
+            agentOutput[taskId].push(...lines);
+            // Keep last 500 lines
+            if (agentOutput[taskId].length > 500) {
+                agentOutput[taskId] = agentOutput[taskId].slice(-500);
+            }
+
+            if (selectedAgent === taskId) {
+                renderOutput();
+            }
+        }
+
+        function handleStatsEvent(data) {
+            statTotal.textContent = data.total_agents || 0;
+            statStarting.textContent = data.starting || 0;
+            statRunning.textContent = data.running || 0;
+            statCompleted.textContent = data.completed || 0;
+            statFailed.textContent = data.failed || 0;
+        }
+
+        function renderAgents() {
+            const agentIds = Object.keys(agents);
+
+            if (agentIds.length === 0) {
+                agentsList.innerHTML = '<div class="no-selection">No agents connected</div>';
+                return;
+            }
+
+            agentsList.innerHTML = agentIds.map(taskId => {
+                const agent = agents[taskId];
+                const status = agent.status || 'unknown';
+                const isSelected = selectedAgent === taskId;
+
+                return `
+                    <div class="agent-item ${status} ${isSelected ? 'selected' : ''}"
+                         onclick="selectAgent('${taskId}')">
+                        <div class="agent-title">${agent.task_title || taskId}</div>
+                        <div class="agent-id">${taskId}</div>
+                        <span class="agent-status ${status}">${status}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectAgent(taskId) {
+            selectedAgent = taskId;
+            selectedAgentSpan.textContent = taskId;
+            renderAgents();
+            renderOutput();
+        }
+
+        function renderOutput() {
+            if (!selectedAgent || !agentOutput[selectedAgent]) {
+                outputContent.innerHTML = '<div class="no-selection">Select an agent to view output</div>';
+                return;
+            }
+
+            const lines = agentOutput[selectedAgent];
+            outputContent.innerHTML = lines.map(line =>
+                `<div class="output-line">${escapeHtml(line)}</div>`
+            ).join('');
+
+            // Auto-scroll to bottom
+            outputContent.scrollTop = outputContent.scrollHeight;
+        }
+
+        function logEvent(event) {
+            const time = new Date().toLocaleTimeString();
+            const type = event.type || 'unknown';
+            const eventName = event.event || '';
+
+            const eventEl = document.createElement('div');
+            eventEl.className = 'event';
+            eventEl.innerHTML = `
+                <span class="event-time">${time}</span>
+                <span class="event-type ${type}">${type}</span>
+                <span class="event-name">${eventName}</span>
+            `;
+
+            eventLogContent.insertBefore(eventEl, eventLogContent.firstChild);
+
+            // Keep last 50 events
+            while (eventLogContent.children.length > 50) {
+                eventLogContent.removeChild(eventLogContent.lastChild);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Auto-connect on load if URL is set
+        if (wsUrlInput.value) {
+            // Uncomment to auto-connect:
+            // connect(wsUrlInput.value);
+        }
+    </script>
+</body>
+</html>
