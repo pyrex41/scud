@@ -107,6 +107,118 @@ impl From<&SpawnSession> for SpawnStats {
     }
 }
 
+// ============================================================================
+// MonitorableSession Trait - Unified interface for TUI
+// ============================================================================
+
+/// Read-only view of an agent for display
+#[derive(Clone, Debug)]
+pub struct AgentView {
+    pub task_id: String,
+    pub task_title: String,
+    pub window_name: String,
+    pub status: AgentStatus,
+    pub tag: String,
+}
+
+/// Read-only view of a wave for display
+#[derive(Clone, Debug)]
+pub struct WaveView {
+    pub wave_number: usize,
+    pub tasks: Vec<WaveTaskView>,
+}
+
+/// Read-only view of a task within a wave
+#[derive(Clone, Debug)]
+pub struct WaveTaskView {
+    pub task_id: String,
+    pub task_title: String,
+    pub state: WaveTaskState,
+    pub complexity: Option<u32>,
+}
+
+/// State of a task within a wave
+#[derive(Clone, Debug, PartialEq)]
+pub enum WaveTaskState {
+    Ready,
+    Running,
+    Done,
+    Blocked,
+    InProgress,
+}
+
+/// Status counts for header display
+#[derive(Clone, Debug, Default)]
+pub struct StatusCounts {
+    pub starting: usize,
+    pub running: usize,
+    pub completed: usize,
+    pub failed: usize,
+}
+
+/// Trait for sessions that can be displayed in the TUI monitor
+pub trait MonitorableSession: Send + Sync {
+    /// Get the session name
+    fn session_name(&self) -> &str;
+
+    /// Get the tag/phase being worked on
+    fn tag(&self) -> &str;
+
+    /// Get the working directory
+    fn working_dir(&self) -> &str;
+
+    /// Get all agents with their current status
+    fn agents(&self) -> Vec<AgentView>;
+
+    /// Get computed waves for display (empty for SpawnSession, computed for SwarmSession)
+    fn waves(&self) -> Vec<WaveView>;
+
+    /// Get status counts for header display
+    fn status_counts(&self) -> StatusCounts;
+}
+
+impl MonitorableSession for SpawnSession {
+    fn session_name(&self) -> &str {
+        &self.session_name
+    }
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    fn working_dir(&self) -> &str {
+        &self.working_dir
+    }
+
+    fn agents(&self) -> Vec<AgentView> {
+        self.agents
+            .iter()
+            .map(|a| AgentView {
+                task_id: a.task_id.clone(),
+                task_title: a.task_title.clone(),
+                window_name: a.window_name.clone(),
+                status: a.status.clone(),
+                tag: a.tag.clone(),
+            })
+            .collect()
+    }
+
+    fn waves(&self) -> Vec<WaveView> {
+        // SpawnSession doesn't track waves natively
+        // The TUI computes waves dynamically from task storage
+        Vec::new()
+    }
+
+    fn status_counts(&self) -> StatusCounts {
+        StatusCounts {
+            starting: self.count_by_status(AgentStatus::Starting),
+            running: self.count_by_status(AgentStatus::Running),
+            completed: self.count_by_status(AgentStatus::Completed),
+            failed: self.count_by_status(AgentStatus::Failed),
+        }
+    }
+}
+
 /// Get the spawn metadata directory
 pub fn spawn_dir(project_root: Option<&PathBuf>) -> PathBuf {
     let root = project_root
@@ -221,5 +333,56 @@ mod tests {
         assert_eq!(stats.running, 1); // auth:1
         assert_eq!(stats.completed, 1); // auth:2
         assert_eq!(stats.failed, 0);
+    }
+
+    #[test]
+    fn test_spawn_session_implements_monitorable() {
+        let session = SpawnSession::new("test", "tag", "tmux", "/tmp");
+
+        // Verify trait is implemented
+        let monitorable: &dyn MonitorableSession = &session;
+        assert_eq!(monitorable.session_name(), "test");
+        assert_eq!(monitorable.tag(), "tag");
+        assert_eq!(monitorable.working_dir(), "/tmp");
+    }
+
+    #[test]
+    fn test_spawn_session_agents_view() {
+        let mut session = SpawnSession::new("test", "tag", "tmux", "/tmp");
+        session.add_agent("task-1", "Title One", "tag");
+        session.add_agent("task-2", "Title Two", "tag");
+
+        let agents = session.agents();
+        assert_eq!(agents.len(), 2);
+        assert_eq!(agents[0].task_id, "task-1");
+        assert_eq!(agents[0].task_title, "Title One");
+        assert_eq!(agents[1].task_id, "task-2");
+    }
+
+    #[test]
+    fn test_spawn_session_status_counts() {
+        let mut session = SpawnSession::new("test", "tag", "tmux", "/tmp");
+        session.add_agent("task-1", "Title", "tag");
+        session.add_agent("task-2", "Title", "tag");
+        session.add_agent("task-3", "Title", "tag");
+
+        session.update_agent_status("task-1", AgentStatus::Running);
+        session.update_agent_status("task-2", AgentStatus::Completed);
+        // task-3 stays Starting
+
+        let counts = session.status_counts();
+        assert_eq!(counts.starting, 1);
+        assert_eq!(counts.running, 1);
+        assert_eq!(counts.completed, 1);
+        assert_eq!(counts.failed, 0);
+    }
+
+    #[test]
+    fn test_spawn_session_waves_empty() {
+        let session = SpawnSession::new("test", "tag", "tmux", "/tmp");
+
+        // SpawnSession doesn't track waves, should return empty
+        let waves = session.waves();
+        assert!(waves.is_empty());
     }
 }
