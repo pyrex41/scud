@@ -32,6 +32,14 @@ fn format_priority(priority: &Priority) -> String {
     }
 }
 
+/// Format agent type for human display
+fn format_agent_type(agent_type: &Option<String>) -> String {
+    match agent_type {
+        Some(at) => at.clone(),
+        None => "-".to_string(),
+    }
+}
+
 /// Truncate long task IDs for display (e.g., UUIDs)
 /// Shows first 8 chars with "..." for IDs longer than 12 chars
 fn format_task_id(id: &str) -> String {
@@ -53,35 +61,37 @@ fn print_human_readable(phase: &Phase, phase_tag: &str) {
 
     // Header - use 11 char width for ID column to fit "8chars..." format
     println!(
-        "{:>4}  {:<11} {:<38} {:<14} {:>4}  {}",
+        "{:>4}  {:<11} {:<32} {:<14} {:>4}  {:<5} {}",
         "#".dimmed(),
         "ID".dimmed(),
         "Title".dimmed(),
         "Status".dimmed(),
         "Cplx".dimmed(),
-        "Pri".dimmed()
+        "Pri".dimmed(),
+        "Agent".dimmed()
     );
-    println!("{}", "─".repeat(82).dimmed());
+    println!("{}", "─".repeat(90).dimmed());
 
     // Sort tasks by ID for display
     let mut sorted_tasks = phase.tasks.clone();
     sorted_tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
 
     for (idx, task) in sorted_tasks.iter().enumerate() {
-        let title = if task.title.len() > 36 {
-            format!("{}...", &task.title[..33])
+        let title = if task.title.len() > 30 {
+            format!("{}...", &task.title[..27])
         } else {
             task.title.clone()
         };
 
         println!(
-            "{:>4}  {:<11} {:<38} {:<14} {:>4}  {}",
+            "{:>4}  {:<11} {:<32} {:<14} {:>4}  {:<5} {}",
             (idx + 1).to_string().dimmed(),
             format_task_id(&task.id).cyan(),
             title,
             format_status(&task.status),
             task.complexity,
-            format_priority(&task.priority)
+            format_priority(&task.priority),
+            format_agent_type(&task.agent_type).dimmed()
         );
     }
 

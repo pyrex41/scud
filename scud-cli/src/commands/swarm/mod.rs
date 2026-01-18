@@ -604,12 +604,21 @@ fn execute_round(
             session_name,
             harness,
         ) {
-            Ok(()) => {
+            Ok(window_index) => {
+                // Determine agent info for display
+                let agent_info = if let Some(ref agent_type) = info.task.agent_type {
+                    format!("@{}", agent_type)
+                } else {
+                    harness.name().to_string()
+                };
                 println!(
-                    "    {} Spawned: {} | {}",
+                    "    {} Spawned: {} | {} [{}] {}:{}",
                     "✓".green(),
                     info.task.id.cyan(),
-                    info.task.title.dimmed()
+                    info.task.title.dimmed(),
+                    agent_info.dimmed(),
+                    session_name.dimmed(),
+                    window_index.dimmed()
                 );
                 round_state.task_ids.push(info.task.id.clone());
                 round_state.tags.push(info.tag.clone());

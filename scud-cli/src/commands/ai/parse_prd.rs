@@ -17,6 +17,9 @@ struct ParsedTask {
     complexity: u32,
     #[serde(default)]
     dependencies: Vec<String>,
+    /// Agent type for model routing (e.g., "builder", "reviewer", "planner")
+    #[serde(default)]
+    agent_type: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -172,6 +175,7 @@ pub async fn run(
         );
         task.complexity = parsed.complexity;
         task.priority = priority;
+        task.agent_type = parsed.agent_type.clone();
 
         // Map 1-indexed LLM dependency references to actual task IDs
         task.dependencies = parsed

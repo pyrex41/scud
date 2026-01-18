@@ -163,12 +163,19 @@ pub fn run(
                         String::new()
                     };
 
+                    let agent = if let Some(ref agent_type) = task.agent_type {
+                        format!(" @{}", agent_type).dimmed().to_string()
+                    } else {
+                        String::new()
+                    };
+
                     println!(
-                        "    {} {} {}{}{}",
+                        "    {} {} {}{}{}{}",
                         status_indicator,
                         task_id.cyan(),
                         task.title,
                         complexity,
+                        agent,
                         deps
                     );
                 }

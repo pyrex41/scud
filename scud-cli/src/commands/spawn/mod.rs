@@ -199,18 +199,20 @@ pub fn run(
             effective_harness,
             Some(&effective_model),
         ) {
-            Ok(()) => {
+            Ok(window_index) => {
                 let agent_info = if info.task.agent_type.is_some() {
                     format!("{}:{}", effective_harness.name(), effective_model)
                 } else {
                     format!("{}:{}", harness.name(), model_arg)
                 };
                 println!(
-                    "  {} Spawned: {} | {} [{}]",
+                    "  {} Spawned: {} | {} [{}] {}:{}",
                     "✓".green(),
                     info.task.id.cyan(),
                     info.task.title.dimmed(),
                     agent_info.dimmed(),
+                    session_name.dimmed(),
+                    window_index.dimmed(),
                 );
                 spawn_session.add_agent(&info.task.id, &info.task.title, &info.tag);
                 success_count += 1;

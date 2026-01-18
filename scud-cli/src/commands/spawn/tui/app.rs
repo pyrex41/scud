@@ -1075,7 +1075,7 @@ impl App {
 
             // Spawn in tmux (always use tmux from TUI since we're in a session)
             match terminal::spawn_terminal(task_id, &prompt, &working_dir, &session_name) {
-                Ok(()) => {
+                Ok(_window_index) => {
                     spawned_count += 1;
 
                     // Add to session agents

@@ -177,12 +177,13 @@ pub fn check_tmux_available() -> Result<()> {
 }
 
 /// Spawn a new tmux window with the given command
+/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
 pub fn spawn_terminal(
     task_id: &str,
     prompt: &str,
     working_dir: &Path,
     session_name: &str,
-) -> Result<()> {
+) -> Result<String> {
     // Default to Claude harness for backwards compatibility
     spawn_terminal_with_harness_and_model(
         task_id,
@@ -195,17 +196,19 @@ pub fn spawn_terminal(
 }
 
 /// Spawn a new tmux window with the given command using a specific harness
+/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
 pub fn spawn_terminal_with_harness(
     task_id: &str,
     prompt: &str,
     working_dir: &Path,
     session_name: &str,
     harness: Harness,
-) -> Result<()> {
+) -> Result<String> {
     spawn_terminal_with_harness_and_model(task_id, prompt, working_dir, session_name, harness, None)
 }
 
 /// Spawn a new tmux window with the given command using a specific harness and model
+/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
 pub fn spawn_terminal_with_harness_and_model(
     task_id: &str,
     prompt: &str,
@@ -213,7 +216,7 @@ pub fn spawn_terminal_with_harness_and_model(
     session_name: &str,
     harness: Harness,
     model: Option<&str>,
-) -> Result<()> {
+) -> Result<String> {
     // Find harness binary path upfront to fail fast if not found
     let binary_path = find_harness_binary(harness)?;
     spawn_tmux(
@@ -228,6 +231,7 @@ pub fn spawn_terminal_with_harness_and_model(
 }
 
 /// Spawn in tmux session
+/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
 fn spawn_tmux(
     task_id: &str,
     prompt: &str,
@@ -236,7 +240,7 @@ fn spawn_tmux(
     binary_path: &str,
     harness: Harness,
     model: Option<&str>,
-) -> Result<()> {
+) -> Result<String> {
     let window_name = format!("task-{}", task_id);
 
     // Check if session exists
@@ -316,7 +320,7 @@ fn spawn_tmux(
         );
     }
 
-    Ok(())
+    Ok(window_index)
 }
 
 /// Spawn a new tmux window with Ralph loop enabled

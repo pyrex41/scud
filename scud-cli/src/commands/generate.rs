@@ -270,19 +270,23 @@ pub async fn run(
 
         if dry_run {
             println!(
-                "  {} Would validate dependencies in tag '{}'",
+                "  {} Would validate dependencies in tag '{}' against PRD",
                 "→".cyan(),
                 tag
             );
+            println!(
+                "  {} Would auto-fix issues including agent type assignments",
+                "→".cyan()
+            );
         } else {
-            // Run check-deps without PRD validation (just structural checks)
-            // Use a separate result to avoid early exit on dep issues
+            // Run check-deps with PRD validation and fix mode enabled
+            // This validates against the PRD and auto-fixes issues including agent assignments
             let check_result = check_deps::run(
                 project_root.clone(),
-                Some(tag), // tag
-                false,     // all_tags
-                None,      // prd_file - no PRD validation in generate
-                false,     // fix
+                Some(tag),  // tag
+                false,      // all_tags
+                Some(file), // prd_file - validate against PRD
+                true,       // fix - auto-fix issues
                 model,
             )
             .await;

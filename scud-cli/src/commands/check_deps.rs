@@ -48,7 +48,17 @@ pub struct PrdValidationResult {
     pub extra_tasks: Vec<ExtraTask>,
     #[serde(default)]
     pub dependency_suggestions: Vec<DependencySuggestion>,
+    #[serde(default)]
+    pub agent_type_issues: Vec<AgentTypeIssue>,
     pub summary: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AgentTypeIssue {
+    pub task_id: String,
+    pub current_agent_type: Option<String>,
+    pub suggested_agent_type: String,
+    pub reasoning: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -88,12 +98,13 @@ pub struct DependencySuggestion {
 /// Struct for PRD fix response
 #[derive(Debug, Deserialize)]
 pub struct PrdFix {
-    pub action: String, // "update_task", "add_task", "update_dependency"
+    pub action: String, // "update_task", "add_task", "update_dependency", "update_agent_type"
     pub task_id: Option<String>,
     pub new_title: Option<String>,
     pub new_description: Option<String>,
     pub add_dependencies: Option<Vec<String>>,
     pub remove_dependencies: Option<Vec<String>>,
+    pub new_agent_type: Option<String>,
     pub reasoning: String,
 }
 
@@ -309,6 +320,29 @@ pub async fn run(
                                 }
                             }
                         }
+                        "update_agent_type" => {
+                            if let Some(task_id) = &fix_item.task_id {
+                                let (fix_tag, fix_task_id) =
+                                    parse_task_id(task_id, &phases_to_check);
+
+                                if let Some(phase) = all_phases.get_mut(&fix_tag) {
+                                    if let Some(task) =
+                                        phase.tasks.iter_mut().find(|t| t.id == fix_task_id)
+                                    {
+                                        if let Some(new_agent_type) = &fix_item.new_agent_type {
+                                            println!(
+                                                "    {} {} → {}",
+                                                "Agent:".green(),
+                                                task.agent_type.as_deref().unwrap_or("none"),
+                                                new_agent_type
+                                            );
+                                            task.agent_type = Some(new_agent_type.clone());
+                                            changes_made += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         _ => {
                             println!(
                                 "    {} Unsupported action: {}",
@@ -378,6 +412,7 @@ fn build_tasks_json(
                     "priority": format!("{:?}", task.priority),
                     "complexity": task.complexity,
                     "dependencies": task.dependencies,
+                    "agent_type": task.agent_type,
                 }));
             }
         }

@@ -33,7 +33,8 @@ Parse this phase into approximately {} discrete, actionable tasks. Return a JSON
     "description": "What needs to be done (2-3 sentences)",
     "priority": "high|medium|low",
     "complexity": <1|2|3|5|8|13|21>,
-    "dependencies": []  // Use 1-indexed task references, e.g., ["1", "2"]. NEVER use "0" - indices start at 1.
+    "dependencies": [],  // Use 1-indexed task references, e.g., ["1", "2"]. NEVER use "0" - indices start at 1.
+    "agent_type": "fast-builder|builder|reviewer|planner|tester"  // Which type of agent is best suited for this task
   }}
 ]
 
@@ -53,6 +54,13 @@ Guidelines:
 - Identify dependencies where tasks must be done in specific order (use task indices, e.g., ["1", "2"])
 - Order tasks logically (foundational work first)
 - Each task should have clear success criteria
+- Assign agent_type based on BOTH task nature AND complexity:
+  * "fast-builder" = Simple implementation tasks with complexity 1-2 (quick code changes, config updates, simple features)
+  * "builder" = Complex implementation tasks with complexity 3+ (multi-file changes, new features, integrations)
+  * "reviewer" = Code review, quality checks, refactoring tasks
+  * "planner" = Design, architecture planning, research tasks
+  * "tester" = Test writing, test automation, validation tasks
+- IMPORTANT: Use "fast-builder" for complexity 1-2 implementation tasks, "builder" for complexity 3+ implementation tasks
 
 Return ONLY the JSON array, no additional explanation."#,
             guidance_section, phase_content, num_tasks, num_tasks
@@ -254,6 +262,7 @@ Compare the tasks against the PRD and identify:
 3. **Misaligned Tasks**: Tasks that don't accurately reflect what the PRD specifies
 4. **Extra Tasks**: Tasks that go beyond what the PRD requires (not necessarily bad, but note them)
 5. **Dependency Issues**: Tasks that should logically depend on others based on PRD context
+6. **Agent Type Issues**: Tasks with missing or incorrect agent_type assignments
 
 ## Analysis Guidelines
 
@@ -262,6 +271,13 @@ Compare the tasks against the PRD and identify:
 - Check that task descriptions accurately capture the PRD's intent
 - Verify task priorities align with PRD emphasis
 - Look for edge cases mentioned in PRD but missing from tasks
+- Verify every task has an appropriate agent_type assigned based on task nature AND complexity:
+  * "fast-builder" = Simple implementation tasks with complexity 0-2 (quick code changes, config updates, simple features)
+  * "builder" = Complex implementation tasks with complexity 3+ (multi-file changes, new features, integrations)
+  * "reviewer" = Code review, quality checks, refactoring tasks
+  * "planner" = Design, architecture planning, research tasks
+  * "tester" = Test writing, test automation, validation tasks
+- IMPORTANT: Check that complexity matches agent_type - complexity 0-2 should use fast-builder, complexity 3+ should use builder
 
 ## Response Format
 
@@ -303,6 +319,14 @@ Return a JSON object:
       "reasoning": "Why based on PRD context"
     }}
   ],
+  "agent_type_issues": [
+    {{
+      "task_id": "ID of task with wrong or missing agent_type",
+      "current_agent_type": null,
+      "suggested_agent_type": "fast-builder|builder|reviewer|planner|tester",
+      "reasoning": "Why this agent type is more appropriate (consider complexity: 0-2 = fast-builder, 3+ = builder)"
+    }}
+  ],
   "summary": "Brief overall assessment"
 }}
 ```
@@ -316,6 +340,7 @@ If tasks perfectly cover the PRD, return:
   "misaligned_tasks": [],
   "extra_tasks": [],
   "dependency_suggestions": [],
+  "agent_type_issues": [],
   "summary": "Tasks fully cover all PRD requirements"
 }}
 ```
@@ -355,6 +380,7 @@ Generate fixes for the issues identified in the validation. Focus on:
 1. **Misaligned Tasks**: Update task titles and descriptions to match PRD intent
 2. **Dependency Issues**: Add or remove dependencies based on logical ordering
 3. **Incomplete Coverage**: Update task descriptions to cover gaps
+4. **Agent Type Issues**: Assign or correct agent_type for each task
 
 ## Rules
 
@@ -383,9 +409,31 @@ Return a JSON array of fixes:
     "add_dependencies": ["swfix:1"],
     "remove_dependencies": [],
     "reasoning": "Task 3 needs output from task 1 per PRD"
+  }},
+  {{
+    "action": "update_agent_type",
+    "task_id": "swfix:2",
+    "new_agent_type": "builder",
+    "reasoning": "Task involves implementation work, builder agent is most appropriate"
   }}
 ]
 ```
+
+## Agent Type Guidelines
+
+When assigning agent_type, consider BOTH task nature AND complexity:
+- "fast-builder" = Simple implementation tasks with complexity 0-2 (quick code changes, config updates, simple features)
+- "builder" = Complex implementation tasks with complexity 3+ (multi-file changes, new features, integrations)
+- "reviewer" = Code review, quality checks, refactoring tasks
+- "planner" = Design, architecture planning, research tasks
+- "tester" = Test writing, test automation, validation tasks
+
+CRITICAL RULES:
+1. Every task MUST have an agent_type assigned. If a task has no agent_type (null), generate an update_agent_type fix.
+2. For implementation tasks, use complexity to choose between fast-builder and builder:
+   - Complexity 0, 1, or 2 → "fast-builder"
+   - Complexity 3, 5, 8, 13, or 21 → "builder"
+3. Subtasks (tasks with parent_id) typically have complexity 0 and should use "fast-builder" unless they are test or review tasks.
 
 Return empty array [] if no automatic fixes are possible.
 
