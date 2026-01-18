@@ -30,5 +30,8 @@ pub mod whois;
 // Parallel execution
 pub mod spawn;
 
+// Single agent execution
+pub mod run;
+
 // Swarm mode (wave-based parallel execution with backpressure)
 pub mod swarm;

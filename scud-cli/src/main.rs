@@ -595,6 +595,32 @@ enum Commands {
         verbose: bool,
     },
 
+    /// Run a single AI agent with an arbitrary prompt
+    Run {
+        /// The prompt to send to the agent
+        prompt: String,
+
+        /// AI harness: claude, opencode
+        #[arg(short = 'H', long, default_value = "opencode")]
+        harness: String,
+
+        /// Model to use with harness
+        #[arg(short = 'M', long, default_value = "grok-code-fast-1")]
+        model: String,
+
+        /// Tmux session name (default: scud-run)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Attach to tmux session after spawn
+        #[arg(long)]
+        attach: bool,
+
+        /// Window name/ID for the agent (default: auto-generated)
+        #[arg(long)]
+        name: Option<String>,
+    },
+
     /// Run swarm mode - wave-based parallel execution with backpressure
     Swarm {
         /// Phase tag (uses active phase if not provided)
@@ -916,6 +942,14 @@ async fn main() -> Result<()> {
         ),
         Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
+        Commands::Run {
+            prompt,
+            harness,
+            model,
+            session,
+            attach,
+            name,
+        } => commands::run::run(cli.project, &prompt, &harness, &model, session, attach, name),
         Commands::Swarm {
             tag,
             round_size,

@@ -1681,7 +1681,7 @@ dependencies = [
 
 [[package]]
 name = "scud-cli"
-version = "1.38.0"
+version = "1.39.0"
 dependencies = [
  "anyhow",
  "atty",
