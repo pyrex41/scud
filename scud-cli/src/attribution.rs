@@ -55,11 +55,11 @@ pub fn parse_error_locations(stderr: &str, stdout: &str) -> Vec<(String, Option<
     // Generic: filename:line or filename:line:col
 
     let patterns = [
-        r"(?:-->|error\[.*?\]:)\s+([^:\s]+):(\d+)",  // Rust
-        r"([^\s(]+)\((\d+),\d+\):",                   // TypeScript
-        r"([^\s:]+):(\d+):\d+:",                      // Go/generic
-        r#"File "([^"]+)", line (\d+)"#,              // Python
-        r"([^\s:]+):(\d+)",                           // Generic fallback
+        r"(?:-->|error\[.*?\]:)\s+([^:\s]+):(\d+)", // Rust
+        r"([^\s(]+)\((\d+),\d+\):",                 // TypeScript
+        r"([^\s:]+):(\d+):\d+:",                    // Go/generic
+        r#"File "([^"]+)", line (\d+)"#,            // Python
+        r"([^\s:]+):(\d+)",                         // Generic fallback
     ];
 
     for pattern in patterns {
@@ -91,7 +91,13 @@ pub fn extract_task_id_from_commit(message: &str) -> Option<String> {
 pub fn blame_line(working_dir: &Path, file: &str, line: u32) -> Result<Option<String>> {
     let output = Command::new("git")
         .current_dir(working_dir)
-        .args(["blame", "-L", &format!("{},{}", line, line), "--porcelain", file])
+        .args([
+            "blame",
+            "-L",
+            &format!("{},{}", line, line),
+            "--porcelain",
+            file,
+        ])
         .output()?;
 
     if !output.status.success() {
@@ -254,10 +260,7 @@ mod tests {
             extract_task_id_from_commit("[TASK-123] Fix bug"),
             Some("TASK-123".to_string())
         );
-        assert_eq!(
-            extract_task_id_from_commit("No task ID here"),
-            None
-        );
+        assert_eq!(extract_task_id_from_commit("No task ID here"), None);
     }
 
     #[test]
@@ -271,7 +274,9 @@ error[E0308]: mismatched types
 "#;
         let locations = parse_error_locations(stderr, "");
         assert!(!locations.is_empty());
-        assert!(locations.iter().any(|(f, l)| f == "src/main.rs" && *l == Some(42)));
+        assert!(locations
+            .iter()
+            .any(|(f, l)| f == "src/main.rs" && *l == Some(42)));
     }
 
     #[test]
@@ -284,7 +289,9 @@ ValueError: test
 "#;
         let locations = parse_error_locations(stderr, "");
         assert!(!locations.is_empty());
-        assert!(locations.iter().any(|(f, l)| f == "script.py" && *l == Some(10)));
+        assert!(locations
+            .iter()
+            .any(|(f, l)| f == "script.py" && *l == Some(10)));
     }
 
     #[test]
@@ -292,7 +299,9 @@ ValueError: test
         let stderr = "./main.go:15:3: undefined: foo\n";
         let locations = parse_error_locations(stderr, "");
         assert!(!locations.is_empty());
-        assert!(locations.iter().any(|(f, l)| f == "./main.go" && *l == Some(15)));
+        assert!(locations
+            .iter()
+            .any(|(f, l)| f == "./main.go" && *l == Some(15)));
     }
 
     #[test]
@@ -311,8 +320,8 @@ ValueError: test
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use tempfile::TempDir;
     use std::process::Command;
+    use tempfile::TempDir;
 
     /// Test with a real git repo to verify blame functionality
     #[test]
@@ -381,8 +390,16 @@ mod integration_tests {
 
         // Create initial commit (baseline, no task ID)
         std::fs::write(repo_dir.join("init.txt"), "init").unwrap();
-        Command::new("git").current_dir(repo_dir).args(["add", "."]).output().unwrap();
-        Command::new("git").current_dir(repo_dir).args(["commit", "-m", "Initial commit"]).output().unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["commit", "-m", "Initial commit"])
+            .output()
+            .unwrap();
 
         // Get SHA of initial commit to use as range start
         let init_sha = Command::new("git")
@@ -394,16 +411,40 @@ mod integration_tests {
 
         // Create commits with different task IDs
         std::fs::write(repo_dir.join("a.txt"), "a").unwrap();
-        Command::new("git").current_dir(repo_dir).args(["add", "."]).output().unwrap();
-        Command::new("git").current_dir(repo_dir).args(["commit", "-m", "[task:1] First"]).output().unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["commit", "-m", "[task:1] First"])
+            .output()
+            .unwrap();
 
         std::fs::write(repo_dir.join("b.txt"), "b").unwrap();
-        Command::new("git").current_dir(repo_dir).args(["add", "."]).output().unwrap();
-        Command::new("git").current_dir(repo_dir).args(["commit", "-m", "[task:2] Second"]).output().unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["commit", "-m", "[task:2] Second"])
+            .output()
+            .unwrap();
 
         std::fs::write(repo_dir.join("c.txt"), "c").unwrap();
-        Command::new("git").current_dir(repo_dir).args(["add", "."]).output().unwrap();
-        Command::new("git").current_dir(repo_dir).args(["commit", "-m", "[task:1] More for task 1"]).output().unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["commit", "-m", "[task:1] More for task 1"])
+            .output()
+            .unwrap();
 
         // Now use the init commit as range start (excludes init, includes task commits)
         let task_commits = get_task_commits(repo_dir, Some(&init_sha)).unwrap();
@@ -420,15 +461,39 @@ mod integration_tests {
         let repo_dir = temp.path();
 
         // Initialize git repo
-        Command::new("git").current_dir(repo_dir).args(["init"]).output().unwrap();
-        Command::new("git").current_dir(repo_dir).args(["config", "user.email", "test@test.com"]).output().unwrap();
-        Command::new("git").current_dir(repo_dir).args(["config", "user.name", "Test"]).output().unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["init"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["config", "user.email", "test@test.com"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["config", "user.name", "Test"])
+            .output()
+            .unwrap();
 
         // Create src directory FIRST, then write the file
         std::fs::create_dir_all(repo_dir.join("src")).unwrap();
-        std::fs::write(repo_dir.join("src/main.rs"), "fn main() {\n    let x: i32 = \"bad\";\n}\n").unwrap();
-        Command::new("git").current_dir(repo_dir).args(["add", "."]).output().unwrap();
-        Command::new("git").current_dir(repo_dir).args(["commit", "-m", "[api:1] Add main file"]).output().unwrap();
+        std::fs::write(
+            repo_dir.join("src/main.rs"),
+            "fn main() {\n    let x: i32 = \"bad\";\n}\n",
+        )
+        .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(repo_dir)
+            .args(["commit", "-m", "[api:1] Add main file"])
+            .output()
+            .unwrap();
 
         // Simulate a compilation error pointing to line 2
         let stderr = r#"error[E0308]: mismatched types

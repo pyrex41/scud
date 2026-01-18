@@ -1,11 +1,11 @@
 pub mod ai;
 pub mod check_deps;
-pub mod generate;
 pub mod clean;
 pub mod commit;
 pub mod config;
 pub mod convert;
 pub mod doctor;
+pub mod generate;
 pub mod helpers;
 pub mod init;
 pub mod install;

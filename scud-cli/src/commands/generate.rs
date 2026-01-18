@@ -180,10 +180,7 @@ pub async fn run(
     // ═══════════════════════════════════════════════════════════════════════
     // Phase 1: Parse PRD into tasks
     // ═══════════════════════════════════════════════════════════════════════
-    println!(
-        "{} Parsing PRD into tasks...",
-        "Phase 1:".yellow().bold()
-    );
+    println!("{} Parsing PRD into tasks...", "Phase 1:".yellow().bold());
 
     if dry_run {
         println!(

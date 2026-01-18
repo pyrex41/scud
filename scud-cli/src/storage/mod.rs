@@ -1588,11 +1588,14 @@ mod tests {
 
         // Modify current tasks
         let mut current = storage.load_tasks().unwrap();
-        current.get_mut("v1").unwrap().add_task(crate::models::Task::new(
-            "new".to_string(),
-            "New".to_string(),
-            "Desc".to_string(),
-        ));
+        current
+            .get_mut("v1")
+            .unwrap()
+            .add_task(crate::models::Task::new(
+                "new".to_string(),
+                "New".to_string(),
+                "Desc".to_string(),
+            ));
         storage.save_tasks(&current).unwrap();
 
         // Restore without replace - should not overwrite
@@ -1625,11 +1628,14 @@ mod tests {
 
         // Modify current tasks
         let mut current = storage.load_tasks().unwrap();
-        current.get_mut("v1").unwrap().add_task(crate::models::Task::new(
-            "new".to_string(),
-            "New".to_string(),
-            "Desc".to_string(),
-        ));
+        current
+            .get_mut("v1")
+            .unwrap()
+            .add_task(crate::models::Task::new(
+                "new".to_string(),
+                "New".to_string(),
+                "Desc".to_string(),
+            ));
         storage.save_tasks(&current).unwrap();
 
         // Restore with replace - should overwrite

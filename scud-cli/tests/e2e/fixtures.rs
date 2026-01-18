@@ -51,12 +51,24 @@ impl TestProject {
 
         let mut phase = Phase::new("test-phase".to_string());
 
-        let task1 = Task::new("1".to_string(), "Setup project".to_string(), "Initial setup".to_string());
+        let task1 = Task::new(
+            "1".to_string(),
+            "Setup project".to_string(),
+            "Initial setup".to_string(),
+        );
 
-        let mut task2 = Task::new("2".to_string(), "Build feature".to_string(), "Build the main feature".to_string());
+        let mut task2 = Task::new(
+            "2".to_string(),
+            "Build feature".to_string(),
+            "Build the main feature".to_string(),
+        );
         task2.dependencies = vec!["1".to_string()];
 
-        let mut task3 = Task::new("3".to_string(), "Write tests".to_string(), "Add test coverage".to_string());
+        let mut task3 = Task::new(
+            "3".to_string(),
+            "Write tests".to_string(),
+            "Add test coverage".to_string(),
+        );
         task3.dependencies = vec!["2".to_string()];
 
         phase.add_task(task1);
@@ -65,8 +77,14 @@ impl TestProject {
 
         let mut tasks = HashMap::new();
         tasks.insert("test-phase".to_string(), phase);
-        project.storage.save_tasks(&tasks).expect("Failed to save tasks");
-        project.storage.set_active_group("test-phase").expect("Failed to set active group");
+        project
+            .storage
+            .save_tasks(&tasks)
+            .expect("Failed to save tasks");
+        project
+            .storage
+            .set_active_group("test-phase")
+            .expect("Failed to set active group");
 
         project
     }
@@ -78,10 +96,22 @@ impl TestProject {
 
         let mut phase = Phase::new("parallel-phase".to_string());
 
-        let task1 = Task::new("1".to_string(), "Feature A".to_string(), "Build feature A".to_string());
-        let task2 = Task::new("2".to_string(), "Feature B".to_string(), "Build feature B".to_string());
+        let task1 = Task::new(
+            "1".to_string(),
+            "Feature A".to_string(),
+            "Build feature A".to_string(),
+        );
+        let task2 = Task::new(
+            "2".to_string(),
+            "Feature B".to_string(),
+            "Build feature B".to_string(),
+        );
 
-        let mut task3 = Task::new("3".to_string(), "Integration".to_string(), "Integrate features".to_string());
+        let mut task3 = Task::new(
+            "3".to_string(),
+            "Integration".to_string(),
+            "Integrate features".to_string(),
+        );
         task3.dependencies = vec!["1".to_string(), "2".to_string()];
 
         phase.add_task(task1);
@@ -90,8 +120,14 @@ impl TestProject {
 
         let mut tasks = HashMap::new();
         tasks.insert("parallel-phase".to_string(), phase);
-        project.storage.save_tasks(&tasks).expect("Failed to save tasks");
-        project.storage.set_active_group("parallel-phase").expect("Failed to set active group");
+        project
+            .storage
+            .save_tasks(&tasks)
+            .expect("Failed to save tasks");
+        project
+            .storage
+            .set_active_group("parallel-phase")
+            .expect("Failed to set active group");
 
         project
     }
@@ -102,13 +138,21 @@ impl TestProject {
 
         // Phase 1: Foundation
         let mut phase1 = Phase::new("phase1".to_string());
-        let mut task1_1 = Task::new("1".to_string(), "Database setup".to_string(), "Set up database schema".to_string());
+        let mut task1_1 = Task::new(
+            "1".to_string(),
+            "Database setup".to_string(),
+            "Set up database schema".to_string(),
+        );
         task1_1.status = TaskStatus::Pending;
         phase1.add_task(task1_1);
 
         // Phase 2: API (depends on phase 1)
         let mut phase2 = Phase::new("phase2".to_string());
-        let mut task2_1 = Task::new("1".to_string(), "API endpoints".to_string(), "Create REST API".to_string());
+        let mut task2_1 = Task::new(
+            "1".to_string(),
+            "API endpoints".to_string(),
+            "Create REST API".to_string(),
+        );
         task2_1.dependencies = vec!["phase1:1".to_string()]; // Cross-phase dependency
         task2_1.status = TaskStatus::Pending;
         phase2.add_task(task2_1);
@@ -116,8 +160,14 @@ impl TestProject {
         let mut tasks = HashMap::new();
         tasks.insert("phase1".to_string(), phase1);
         tasks.insert("phase2".to_string(), phase2);
-        project.storage.save_tasks(&tasks).expect("Failed to save tasks");
-        project.storage.set_active_group("phase1").expect("Failed to set active group");
+        project
+            .storage
+            .save_tasks(&tasks)
+            .expect("Failed to save tasks");
+        project
+            .storage
+            .set_active_group("phase1")
+            .expect("Failed to set active group");
 
         project
     }
@@ -132,18 +182,38 @@ impl TestProject {
         let mut phase = Phase::new("wave-phase".to_string());
 
         // Wave 1 - no dependencies
-        let task1 = Task::new("1".to_string(), "Research".to_string(), "Research phase".to_string());
-        let task2 = Task::new("2".to_string(), "Design".to_string(), "Design phase".to_string());
+        let task1 = Task::new(
+            "1".to_string(),
+            "Research".to_string(),
+            "Research phase".to_string(),
+        );
+        let task2 = Task::new(
+            "2".to_string(),
+            "Design".to_string(),
+            "Design phase".to_string(),
+        );
 
         // Wave 2 - depends on wave 1
-        let mut task3 = Task::new("3".to_string(), "Implement A".to_string(), "Implementation A".to_string());
+        let mut task3 = Task::new(
+            "3".to_string(),
+            "Implement A".to_string(),
+            "Implementation A".to_string(),
+        );
         task3.dependencies = vec!["1".to_string()];
 
-        let mut task4 = Task::new("4".to_string(), "Implement B".to_string(), "Implementation B".to_string());
+        let mut task4 = Task::new(
+            "4".to_string(),
+            "Implement B".to_string(),
+            "Implementation B".to_string(),
+        );
         task4.dependencies = vec!["2".to_string()];
 
         // Wave 3 - depends on wave 2
-        let mut task5 = Task::new("5".to_string(), "Integrate".to_string(), "Final integration".to_string());
+        let mut task5 = Task::new(
+            "5".to_string(),
+            "Integrate".to_string(),
+            "Final integration".to_string(),
+        );
         task5.dependencies = vec!["3".to_string(), "4".to_string()];
 
         phase.add_task(task1);
@@ -154,8 +224,14 @@ impl TestProject {
 
         let mut tasks = HashMap::new();
         tasks.insert("wave-phase".to_string(), phase);
-        project.storage.save_tasks(&tasks).expect("Failed to save tasks");
-        project.storage.set_active_group("wave-phase").expect("Failed to set active group");
+        project
+            .storage
+            .save_tasks(&tasks)
+            .expect("Failed to save tasks");
+        project
+            .storage
+            .set_active_group("wave-phase")
+            .expect("Failed to set active group");
 
         project
     }
@@ -193,8 +269,14 @@ impl TestProject {
 
         let mut tasks = HashMap::new();
         tasks.insert("stats-phase".to_string(), phase);
-        project.storage.save_tasks(&tasks).expect("Failed to save tasks");
-        project.storage.set_active_group("stats-phase").expect("Failed to set active group");
+        project
+            .storage
+            .save_tasks(&tasks)
+            .expect("Failed to save tasks");
+        project
+            .storage
+            .set_active_group("stats-phase")
+            .expect("Failed to set active group");
 
         project
     }
@@ -205,7 +287,11 @@ impl TestProject {
 
         let mut phase = Phase::new("assigned-phase".to_string());
 
-        let mut t1 = Task::new("1".to_string(), "Task for Alice".to_string(), "".to_string());
+        let mut t1 = Task::new(
+            "1".to_string(),
+            "Task for Alice".to_string(),
+            "".to_string(),
+        );
         t1.assigned_to = Some("Alice".to_string());
         t1.status = TaskStatus::InProgress;
 
@@ -213,7 +299,11 @@ impl TestProject {
         t2.assigned_to = Some("Bob".to_string());
         t2.status = TaskStatus::InProgress;
 
-        let t3 = Task::new("3".to_string(), "Unassigned task".to_string(), "".to_string());
+        let t3 = Task::new(
+            "3".to_string(),
+            "Unassigned task".to_string(),
+            "".to_string(),
+        );
 
         phase.add_task(t1);
         phase.add_task(t2);
@@ -221,8 +311,14 @@ impl TestProject {
 
         let mut tasks = HashMap::new();
         tasks.insert("assigned-phase".to_string(), phase);
-        project.storage.save_tasks(&tasks).expect("Failed to save tasks");
-        project.storage.set_active_group("assigned-phase").expect("Failed to set active group");
+        project
+            .storage
+            .save_tasks(&tasks)
+            .expect("Failed to save tasks");
+        project
+            .storage
+            .set_active_group("assigned-phase")
+            .expect("Failed to set active group");
 
         project
     }
@@ -233,13 +329,25 @@ impl TestProject {
 
         let mut phase = Phase::new("complexity-phase".to_string());
 
-        let mut t1 = Task::new("1".to_string(), "Simple task".to_string(), "A simple task".to_string());
+        let mut t1 = Task::new(
+            "1".to_string(),
+            "Simple task".to_string(),
+            "A simple task".to_string(),
+        );
         t1.complexity = 3;
 
-        let mut t2 = Task::new("2".to_string(), "Medium task".to_string(), "A medium complexity task".to_string());
+        let mut t2 = Task::new(
+            "2".to_string(),
+            "Medium task".to_string(),
+            "A medium complexity task".to_string(),
+        );
         t2.complexity = 8;
 
-        let mut t3 = Task::new("3".to_string(), "Complex task".to_string(), "A highly complex task".to_string());
+        let mut t3 = Task::new(
+            "3".to_string(),
+            "Complex task".to_string(),
+            "A highly complex task".to_string(),
+        );
         t3.complexity = 13;
 
         phase.add_task(t1);
@@ -248,8 +356,14 @@ impl TestProject {
 
         let mut tasks = HashMap::new();
         tasks.insert("complexity-phase".to_string(), phase);
-        project.storage.save_tasks(&tasks).expect("Failed to save tasks");
-        project.storage.set_active_group("complexity-phase").expect("Failed to set active group");
+        project
+            .storage
+            .save_tasks(&tasks)
+            .expect("Failed to save tasks");
+        project
+            .storage
+            .set_active_group("complexity-phase")
+            .expect("Failed to set active group");
 
         project
     }

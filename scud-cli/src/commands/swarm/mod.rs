@@ -32,15 +32,15 @@ use std::time::Duration;
 use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
 use crate::commands::spawn::hooks;
-use crate::commands::spawn::terminal::{self, parse_terminal, Harness, Terminal};
+use crate::commands::spawn::terminal::{self, Harness};
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
+use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, WaveSummary};
 use crate::agents::AgentDef;
 use crate::attribution::{attribute_failure, AttributionConfidence};
 use crate::backpressure::{BackpressureConfig, ValidationResult};
-use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, WaveSummary};
 
 /// Main entry point for the swarm command
 #[allow(clippy::too_many_arguments)]
@@ -49,7 +49,6 @@ pub fn run(
     tag: Option<&str>,
     round_size: usize,
     all_tags: bool,
-    terminal_arg: &str,
     harness_arg: &str,
     dry_run: bool,
     session_name: Option<String>,
@@ -72,6 +71,9 @@ pub fn run(
         anyhow::bail!("SCUD not initialized. Run: scud init");
     }
 
+    // Check tmux is available
+    terminal::check_tmux_available()?;
+
     // Determine phase tag
     let phase_tag = if all_tags {
         "all".to_string()
@@ -86,10 +88,6 @@ pub fn run(
     } else {
         None
     };
-
-    // Detect terminal
-    let terminal = parse_terminal(terminal_arg)?;
-    terminal::check_terminal_available(&terminal)?;
 
     // Parse harness and validate binary exists
     let harness = Harness::parse(harness_arg)?;
@@ -133,7 +131,7 @@ pub fn run(
             "enabled".green()
         }
     );
-    println!("{:<20} {}", "Terminal:".dimmed(), terminal.name().cyan());
+    println!("{:<20} {}", "Terminal:".dimmed(), "tmux".cyan());
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().cyan());
     println!(
         "{:<20} {}",
@@ -187,7 +185,7 @@ pub fn run(
     let mut swarm_session = SwarmSession::new(
         &session_name,
         &phase_tag,
-        terminal.name(),
+        "tmux",
         &working_dir.to_string_lossy(),
         round_size,
     );
@@ -265,7 +263,6 @@ pub fn run(
             let round_state = execute_round(
                 &storage,
                 round_tasks,
-                &terminal,
                 &working_dir,
                 &session_name,
                 round_idx,
@@ -327,7 +324,6 @@ pub fn run(
                         &storage,
                         &working_dir,
                         &session_name,
-                        &terminal,
                         &bp_config,
                         &wave_state,
                         &validation_result,
@@ -359,9 +355,10 @@ pub fn run(
                 .task_tags()
                 .iter()
                 .filter_map(|(id, tag)| {
-                    storage.load_group(tag).ok().and_then(|phase| {
-                        phase.get_task(id).map(|t| (id.clone(), t.title.clone()))
-                    })
+                    storage
+                        .load_group(tag)
+                        .ok()
+                        .and_then(|phase| phase.get_task(id).map(|t| (id.clone(), t.title.clone())))
                 })
                 .collect();
 
@@ -369,7 +366,6 @@ pub fn run(
                 let review_result = spawn_reviewer(
                     &working_dir,
                     &session_name,
-                    &terminal,
                     &summary,
                     &wave_tasks,
                     review_all,
@@ -400,7 +396,6 @@ pub fn run(
                                 let model = agent_def.model();
 
                                 terminal::spawn_terminal_with_harness_and_model(
-                                    &terminal,
                                     &format!("improve-{}", task_id),
                                     &prompt,
                                     &working_dir,
@@ -591,7 +586,6 @@ fn count_in_progress(
 fn execute_round(
     storage: &Storage,
     tasks: &[TaskInfo],
-    terminal: &Terminal,
     working_dir: &std::path::Path,
     session_name: &str,
     round_idx: usize,
@@ -604,7 +598,6 @@ fn execute_round(
         let prompt = agent::generate_prompt(info.task, &info.tag);
 
         match terminal::spawn_terminal_with_harness(
-            terminal,
             &info.task.id,
             &prompt,
             working_dir,
@@ -780,7 +773,6 @@ pub struct ReviewResult {
 pub fn spawn_reviewer(
     working_dir: &std::path::Path,
     session_name: &str,
-    terminal: &Terminal,
     summary: &WaveSummary,
     wave_tasks: &[(String, String)], // (id, title)
     review_all: bool,
@@ -811,7 +803,6 @@ pub fn spawn_reviewer(
 
     // Spawn reviewer
     terminal::spawn_terminal_with_harness_and_model(
-        terminal,
         &format!("review-wave-{}", summary.wave_number),
         &prompt,
         working_dir,
@@ -843,10 +834,7 @@ fn wait_for_review_completion(
 
     loop {
         if start.elapsed() > timeout {
-            println!(
-                "    {} Review timed out after 30 minutes",
-                "!".yellow()
-            );
+            println!("    {} Review timed out after 30 minutes", "!".yellow());
             return Ok(ReviewResult {
                 all_passed: true, // Assume pass on timeout
                 tasks_to_improve: vec![],
@@ -905,7 +893,6 @@ pub fn run_repair_loop(
     storage: &Storage,
     working_dir: &std::path::Path,
     session_name: &str,
-    terminal: &Terminal,
     bp_config: &BackpressureConfig,
     wave_state: &WaveState,
     validation_result: &ValidationResult,
@@ -915,10 +902,7 @@ pub fn run_repair_loop(
     let task_tags = wave_state.task_tags();
 
     println!();
-    println!(
-        "  {} Analyzing failure attribution...",
-        "Repair:".magenta()
-    );
+    println!("  {} Analyzing failure attribution...", "Repair:".magenta());
 
     // Get the first failed command for attribution
     let failed_cmd = validation_result.results.iter().find(|r| !r.passed);
@@ -970,11 +954,7 @@ pub fn run_repair_loop(
                 if let Some(task) = phase.get_task_mut(task_id) {
                     task.set_status(TaskStatus::Done);
                     let _ = storage.update_group(tag, &phase);
-                    println!(
-                        "    {} Cleared: {} (not responsible)",
-                        "✓".green(),
-                        task_id
-                    );
+                    println!("    {} Cleared: {} (not responsible)", "✓".green(), task_id);
                 }
             }
         }
@@ -1007,13 +987,11 @@ pub fn run_repair_loop(
             )?;
 
             // Parse error files
-            let error_files: Vec<String> = crate::attribution::parse_error_locations(
-                &failed_cmd.stderr,
-                &failed_cmd.stdout,
-            )
-            .into_iter()
-            .map(|(f, _)| f)
-            .collect();
+            let error_files: Vec<String> =
+                crate::attribution::parse_error_locations(&failed_cmd.stderr, &failed_cmd.stdout)
+                    .into_iter()
+                    .map(|(f, _)| f)
+                    .collect();
 
             // Generate repair prompt
             let prompt = agent::generate_repair_prompt(
@@ -1026,7 +1004,7 @@ pub fn run_repair_loop(
             );
 
             // Spawn repairer
-            spawn_repairer(working_dir, session_name, terminal, task_id, &prompt)?;
+            spawn_repairer(working_dir, session_name, task_id, &prompt)?;
 
             // Wait for repair completion
             if !wait_for_repair_completion_task(working_dir, task_id)? {
@@ -1045,10 +1023,7 @@ pub fn run_repair_loop(
         let new_result = crate::backpressure::run_validation(working_dir, bp_config)?;
 
         if new_result.all_passed {
-            println!(
-                "    {} Validation passed after repair!",
-                "✓".green()
-            );
+            println!("    {} Validation passed after repair!", "✓".green());
 
             // Mark all responsible tasks as done
             for task_id in &attribution.responsible_tasks {
@@ -1102,7 +1077,6 @@ pub fn run_repair_loop(
 fn spawn_repairer(
     working_dir: &std::path::Path,
     session_name: &str,
-    terminal: &Terminal,
     task_id: &str,
     prompt: &str,
 ) -> Result<()> {
@@ -1123,7 +1097,6 @@ fn spawn_repairer(
     let model = agent_def.model();
 
     terminal::spawn_terminal_with_harness_and_model(
-        terminal,
         &format!("repair-{}", task_id),
         prompt,
         working_dir,
@@ -1137,10 +1110,7 @@ fn spawn_repairer(
 }
 
 /// Wait for a repair to complete by polling for marker file
-fn wait_for_repair_completion_task(
-    working_dir: &std::path::Path,
-    task_id: &str,
-) -> Result<bool> {
+fn wait_for_repair_completion_task(working_dir: &std::path::Path, task_id: &str) -> Result<bool> {
     let marker_path = working_dir
         .join(".scud")
         .join(format!("repair-complete-{}", task_id));

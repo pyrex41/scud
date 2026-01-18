@@ -112,7 +112,10 @@ pub fn generate_prompt_with_template(task: &Task, tag: &str, template: &str) -> 
     result = result.replace("{task.complexity}", &task.complexity.to_string());
     result = result.replace("{task.priority}", &format!("{:?}", task.priority));
     result = result.replace("{task.details}", task.details.as_deref().unwrap_or(""));
-    result = result.replace("{task.test_strategy}", task.test_strategy.as_deref().unwrap_or(""));
+    result = result.replace(
+        "{task.test_strategy}",
+        task.test_strategy.as_deref().unwrap_or(""),
+    );
     result = result.replace("{task.dependencies}", &task.dependencies.join(", "));
     result = result.replace("{tag}", tag);
 
@@ -309,16 +312,15 @@ mod tests {
         let template = "Task: {task.id} - {task.title}\nTag: {tag}\nDetails: {task.details}";
         let prompt = generate_prompt_with_template(&task, "auth", template);
 
-        assert_eq!(prompt, "Task: auth:1 - Login Feature\nTag: auth\nDetails: Use OAuth");
+        assert_eq!(
+            prompt,
+            "Task: auth:1 - Login Feature\nTag: auth\nDetails: Use OAuth"
+        );
     }
 
     #[test]
     fn test_generate_prompt_with_template_missing_fields() {
-        let task = Task::new(
-            "1".to_string(),
-            "Title".to_string(),
-            "Desc".to_string(),
-        );
+        let task = Task::new("1".to_string(), "Title".to_string(), "Desc".to_string());
 
         let template = "Details: {task.details} | Strategy: {task.test_strategy}";
         let prompt = generate_prompt_with_template(&task, "test", template);
@@ -371,7 +373,7 @@ mod tests {
         assert!(prompt.contains("t:1"));
         assert!(prompt.contains("t:3")); // middle
         assert!(prompt.contains("t:5")); // last
-        // t:2 and t:4 should not be present
+                                         // t:2 and t:4 should not be present
         assert!(!prompt.contains("t:2 | Task 2"));
         assert!(!prompt.contains("t:4 | Task 4"));
     }

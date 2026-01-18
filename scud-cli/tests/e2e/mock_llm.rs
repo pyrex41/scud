@@ -80,7 +80,10 @@ impl MockLLMClient {
 
     /// Configure response for task expansion
     pub fn with_expand_response(self, subtasks_json: &str) -> Self {
-        self.when_prompt_contains("expand", MockLLMResponse::Success(subtasks_json.to_string()))
+        self.when_prompt_contains(
+            "expand",
+            MockLLMResponse::Success(subtasks_json.to_string()),
+        )
     }
 
     /// Configure response for dependency analysis
@@ -265,10 +268,7 @@ mod tests {
             client.call("Please parse this PRD", None).unwrap(),
             "Parsed!"
         );
-        assert_eq!(
-            client.call("Expand this task", None).unwrap(),
-            "Expanded!"
-        );
+        assert_eq!(client.call("Expand this task", None).unwrap(), "Expanded!");
         assert_eq!(
             client.call("Something else", None).unwrap(),
             "Mock response"
@@ -287,8 +287,7 @@ mod tests {
 
     #[test]
     fn test_mock_client_timeout_response() {
-        let client =
-            MockLLMClient::new().with_default_response(MockLLMResponse::Timeout);
+        let client = MockLLMClient::new().with_default_response(MockLLMResponse::Timeout);
 
         let result = client.call("test", None);
         assert!(result.is_err());

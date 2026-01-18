@@ -783,10 +783,18 @@ mod tests {
     #[test]
     fn test_agent_types() {
         let mut epic = Phase::new("test".to_string());
-        let mut task1 = Task::new("1".to_string(), "Review Task".to_string(), "Desc".to_string());
+        let mut task1 = Task::new(
+            "1".to_string(),
+            "Review Task".to_string(),
+            "Desc".to_string(),
+        );
         task1.agent_type = Some("reviewer".to_string());
 
-        let mut task2 = Task::new("2".to_string(), "Build Task".to_string(), "Desc".to_string());
+        let mut task2 = Task::new(
+            "2".to_string(),
+            "Build Task".to_string(),
+            "Desc".to_string(),
+        );
         task2.agent_type = Some("builder".to_string());
 
         let task3 = Task::new("3".to_string(), "No Agent".to_string(), "Desc".to_string());

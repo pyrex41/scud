@@ -19,7 +19,10 @@ fn test_us6_assign_sets_assignee() {
     let task = phase.get_task_mut("1").unwrap();
     task.assigned_to = Some("Alice".to_string());
 
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     // Verify assignment persisted
     let phase = project.storage.load_active_group().unwrap();
@@ -33,7 +36,9 @@ fn test_us6_assigned_project_structure() {
     let phase = project.storage.load_active_group().unwrap();
 
     // Count assigned tasks
-    let assigned_count = phase.tasks.iter()
+    let assigned_count = phase
+        .tasks
+        .iter()
         .filter(|t| t.assigned_to.is_some())
         .count();
 
@@ -46,7 +51,9 @@ fn test_us6_find_tasks_by_assignee() {
     let phase = project.storage.load_active_group().unwrap();
 
     // Find Alice's tasks
-    let alice_tasks: Vec<_> = phase.tasks.iter()
+    let alice_tasks: Vec<_> = phase
+        .tasks
+        .iter()
         .filter(|t| t.assigned_to.as_deref() == Some("Alice"))
         .collect();
 
@@ -197,11 +204,7 @@ fn test_us9_cross_phase_deps_visible() {
         for task in &phase.tasks {
             for dep in &task.dependencies {
                 if dep.contains(':') {
-                    cross_phase_deps.push((
-                        phase_name.clone(),
-                        task.id.clone(),
-                        dep.clone(),
-                    ));
+                    cross_phase_deps.push((phase_name.clone(), task.id.clone(), dep.clone()));
                 }
             }
         }

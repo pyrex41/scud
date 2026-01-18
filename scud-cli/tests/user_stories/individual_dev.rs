@@ -54,8 +54,14 @@ fn test_us2_next_respects_dependencies() {
     let mut phase = project.storage.load_active_group().unwrap();
 
     // Mark task 1 as done
-    phase.get_task_mut("1").unwrap().set_status(scud::models::TaskStatus::Done);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("1")
+        .unwrap()
+        .set_status(scud::models::TaskStatus::Done);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     // Reload and find next
     let phase = project.storage.load_active_group().unwrap();
@@ -140,14 +146,24 @@ fn test_us5_task_can_have_log_entries() {
     // Get task and add to details (log entries go in details)
     let task = phase.get_task_mut("1").unwrap();
     let original_details = task.details.clone().unwrap_or_default();
-    task.details = Some(format!("{}\n\n## Log\n- Started implementation", original_details));
+    task.details = Some(format!(
+        "{}\n\n## Log\n- Started implementation",
+        original_details
+    ));
 
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     // Reload and verify
     let phase = project.storage.load_active_group().unwrap();
     let task = phase.get_task("1").unwrap();
-    assert!(task.details.as_ref().unwrap().contains("Started implementation"));
+    assert!(task
+        .details
+        .as_ref()
+        .unwrap()
+        .contains("Started implementation"));
 }
 
 #[test]
@@ -158,7 +174,10 @@ fn test_us5_multiple_log_entries() {
     // Add multiple log entries
     let task = phase.get_task_mut("1").unwrap();
     task.details = Some("## Log\n- Entry 1\n- Entry 2\n- Entry 3".to_string());
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     // Verify all entries persisted
     let phase = project.storage.load_active_group().unwrap();

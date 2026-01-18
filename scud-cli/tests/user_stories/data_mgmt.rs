@@ -66,8 +66,16 @@ fn test_us18_task_fields_preserved() {
     assert_eq!(reloaded_task.status, TaskStatus::InProgress);
     assert!(reloaded_task.dependencies.contains(&"0".to_string()));
     assert_eq!(reloaded_task.assigned_to, Some("Alice".to_string()));
-    assert!(reloaded_task.details.as_ref().unwrap().contains("Implementation"));
-    assert!(reloaded_task.test_strategy.as_ref().unwrap().contains("Unit"));
+    assert!(reloaded_task
+        .details
+        .as_ref()
+        .unwrap()
+        .contains("Implementation"));
+    assert!(reloaded_task
+        .test_strategy
+        .as_ref()
+        .unwrap()
+        .contains("Unit"));
 }
 
 #[test]
@@ -101,7 +109,10 @@ fn test_us19_archive_phase() {
     let phases = project.storage.load_tasks().unwrap();
 
     // Archive the phase
-    let archive_path = project.storage.archive_phase(&project.tag(), &phases).unwrap();
+    let archive_path = project
+        .storage
+        .archive_phase(&project.tag(), &phases)
+        .unwrap();
 
     // Verify archive exists
     assert!(archive_path.exists());
@@ -132,7 +143,10 @@ fn test_us19_list_archives() {
     assert!(archives.is_empty());
 
     // Create an archive
-    project.storage.archive_phase(&project.tag(), &phases).unwrap();
+    project
+        .storage
+        .archive_phase(&project.tag(), &phases)
+        .unwrap();
 
     // Now should have one archive
     let archives = project.storage.list_archives().unwrap();
@@ -145,7 +159,10 @@ fn test_us19_restore_archive() {
     let original_phases = project.storage.load_tasks().unwrap();
 
     // Archive and get filename
-    let archive_path = project.storage.archive_phase(&project.tag(), &original_phases).unwrap();
+    let archive_path = project
+        .storage
+        .archive_phase(&project.tag(), &original_phases)
+        .unwrap();
     let archive_name = archive_path.file_name().unwrap().to_str().unwrap();
 
     // Clear tasks
@@ -153,7 +170,10 @@ fn test_us19_restore_archive() {
     assert!(project.storage.load_tasks().unwrap().is_empty());
 
     // Restore
-    let restored_tags = project.storage.restore_archive(archive_name, false).unwrap();
+    let restored_tags = project
+        .storage
+        .restore_archive(archive_name, false)
+        .unwrap();
     assert!(!restored_tags.is_empty());
 
     // Verify restored
@@ -168,14 +188,22 @@ fn test_us19_restore_with_replace() {
 
     // Archive original (3 tasks)
     let phases = project.storage.load_tasks().unwrap();
-    let archive_path = project.storage.archive_phase(&original_tag, &phases).unwrap();
+    let archive_path = project
+        .storage
+        .archive_phase(&original_tag, &phases)
+        .unwrap();
     let archive_name = archive_path.file_name().unwrap().to_str().unwrap();
 
     // Modify current tasks
     let mut modified_phases = project.storage.load_tasks().unwrap();
-    modified_phases.get_mut(&original_tag).unwrap().add_task(
-        Task::new("99".to_string(), "New task".to_string(), "".to_string())
-    );
+    modified_phases
+        .get_mut(&original_tag)
+        .unwrap()
+        .add_task(Task::new(
+            "99".to_string(),
+            "New task".to_string(),
+            "".to_string(),
+        ));
     project.storage.save_tasks(&modified_phases).unwrap();
 
     // Verify we have 4 tasks now
@@ -235,7 +263,7 @@ fn test_us20_find_tasks_with_missing_deps() {
     let mut phase = Phase::new("missing-deps".to_string());
 
     let mut t1 = Task::new("1".to_string(), "Task 1".to_string(), "".to_string());
-    t1.dependencies = vec!["nonexistent".to_string()];  // Reference to non-existent task
+    t1.dependencies = vec!["nonexistent".to_string()]; // Reference to non-existent task
 
     phase.add_task(t1);
 
@@ -270,7 +298,7 @@ fn test_us20_orphaned_subtasks() {
 
     // Create subtask without parent
     let mut t1_1 = Task::new("1.1".to_string(), "Subtask 1.1".to_string(), "".to_string());
-    t1_1.parent_id = Some("1".to_string());  // Parent doesn't exist
+    t1_1.parent_id = Some("1".to_string()); // Parent doesn't exist
 
     phase.add_task(t1_1);
 
@@ -290,11 +318,19 @@ fn test_us20_stale_in_progress_tasks() {
     let mut phase = Phase::new("stale".to_string());
 
     // Create tasks in-progress but potentially stale
-    let mut t1 = Task::new("1".to_string(), "Old in-progress".to_string(), "".to_string());
+    let mut t1 = Task::new(
+        "1".to_string(),
+        "Old in-progress".to_string(),
+        "".to_string(),
+    );
     t1.status = TaskStatus::InProgress;
     t1.assigned_to = Some("Claude-session-old".to_string());
 
-    let mut t2 = Task::new("2".to_string(), "Another in-progress".to_string(), "".to_string());
+    let mut t2 = Task::new(
+        "2".to_string(),
+        "Another in-progress".to_string(),
+        "".to_string(),
+    );
     t2.status = TaskStatus::InProgress;
     // No assignee - suspicious
 
@@ -309,12 +345,15 @@ fn test_us20_stale_in_progress_tasks() {
     let loaded = project.storage.load_tasks().unwrap();
     let phase = loaded.get("stale").unwrap();
 
-    let in_progress: Vec<_> = phase.tasks.iter()
+    let in_progress: Vec<_> = phase
+        .tasks
+        .iter()
         .filter(|t| t.status == TaskStatus::InProgress)
         .collect();
 
     // Find in-progress without assignee (potentially stale)
-    let potentially_stale: Vec<_> = in_progress.iter()
+    let potentially_stale: Vec<_> = in_progress
+        .iter()
         .filter(|t| t.assigned_to.is_none())
         .collect();
 
@@ -329,11 +368,19 @@ fn test_us20_duplicate_task_ids_in_model() {
     let mut phase = Phase::new("dups".to_string());
 
     // Add first task with ID 1
-    let t1 = Task::new("1".to_string(), "First task".to_string(), "First".to_string());
+    let t1 = Task::new(
+        "1".to_string(),
+        "First task".to_string(),
+        "First".to_string(),
+    );
     phase.add_task(t1);
 
     // Add second task with same ID - should replace
-    let t1_dup = Task::new("1".to_string(), "Duplicate task".to_string(), "Second".to_string());
+    let t1_dup = Task::new(
+        "1".to_string(),
+        "Duplicate task".to_string(),
+        "Second".to_string(),
+    );
     phase.add_task(t1_dup);
 
     // Verify only one task with ID 1 exists (the second one)

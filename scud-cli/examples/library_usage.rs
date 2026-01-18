@@ -8,8 +8,8 @@
 //!
 //! Run with: cargo run --example library_usage
 
-use scud::backpressure::{BackpressureConfig, run_validation};
-use scud::models::{Phase, Task, TaskStatus, Priority};
+use scud::backpressure::{run_validation, BackpressureConfig};
+use scud::models::{Phase, Priority, Task, TaskStatus};
 use scud::storage::Storage;
 use std::path::Path;
 
@@ -36,9 +36,9 @@ fn demonstrate_task_creation() {
     );
 
     // Configure task properties
-    task.complexity = 8;  // Fibonacci complexity (1, 2, 3, 5, 8, 13, 21, 34)
+    task.complexity = 8; // Fibonacci complexity (1, 2, 3, 5, 8, 13, 21, 34)
     task.priority = Priority::High;
-    task.dependencies = vec!["setup:1".to_string()];  // Cross-phase dependency
+    task.dependencies = vec!["setup:1".to_string()]; // Cross-phase dependency
 
     println!("Created task: {} - {}", task.id, task.title);
     println!("  Complexity: {}", task.complexity);
@@ -143,7 +143,10 @@ fn demonstrate_dependency_resolution() {
 
     // Find the next task with all dependencies met
     if let Some(next_task) = phase.find_next_task() {
-        println!("Next available task: {} - {}", next_task.id, next_task.title);
+        println!(
+            "Next available task: {} - {}",
+            next_task.id, next_task.title
+        );
         println!("  (Task 3 is blocked because task 2 is not done yet)\n");
     }
 
@@ -183,10 +186,7 @@ fn demonstrate_storage_operations() {
             println!();
 
             // Flatten all tasks for cross-phase dependency resolution
-            let all_tasks: Vec<&Task> = phases
-                .values()
-                .flat_map(|p| p.tasks.iter())
-                .collect();
+            let all_tasks: Vec<&Task> = phases.values().flat_map(|p| p.tasks.iter()).collect();
             println!("Total tasks across all phases: {}", all_tasks.len());
         }
         Err(e) => {
@@ -205,13 +205,14 @@ fn demonstrate_storage_operations() {
                 // Find next task with cross-phase dependency support
                 // First, load all tasks for dependency resolution
                 if let Ok(all_phases) = storage.load_tasks() {
-                    let all_tasks: Vec<&Task> = all_phases
-                        .values()
-                        .flat_map(|p| p.tasks.iter())
-                        .collect();
+                    let all_tasks: Vec<&Task> =
+                        all_phases.values().flat_map(|p| p.tasks.iter()).collect();
 
                     if let Some(next) = phase.find_next_task_cross_tag(&all_tasks) {
-                        println!("Next task in '{}': {} - {}", active_tag, next.id, next.title);
+                        println!(
+                            "Next task in '{}': {} - {}",
+                            active_tag, next.id, next.title
+                        );
                     }
                 }
             }
@@ -246,10 +247,7 @@ fn demonstrate_backpressure_validation() {
 
         // Create a custom config for demonstration
         let demo_config = BackpressureConfig {
-            commands: vec![
-                "cargo check".to_string(),
-                "cargo test --no-run".to_string(),
-            ],
+            commands: vec!["cargo check".to_string(), "cargo test --no-run".to_string()],
             stop_on_failure: true,
             timeout_secs: 300,
         };
@@ -286,15 +284,15 @@ fn demonstrate_backpressure_validation() {
             println!("\nDetailed results:");
             for cmd_result in &result.results {
                 let status = if cmd_result.passed { "PASS" } else { "FAIL" };
-                println!("  [{}] {} ({:.2}s)",
-                    status,
-                    cmd_result.command,
-                    cmd_result.duration_secs
+                println!(
+                    "  [{}] {} ({:.2}s)",
+                    status, cmd_result.command, cmd_result.duration_secs
                 );
 
                 if !cmd_result.passed && !cmd_result.stderr.is_empty() {
                     // Print first few lines of stderr
-                    let stderr_preview: String = cmd_result.stderr
+                    let stderr_preview: String = cmd_result
+                        .stderr
                         .lines()
                         .take(3)
                         .collect::<Vec<_>>()

@@ -128,15 +128,19 @@ fn test_us22_view_data_preparation() {
     let phase = project.storage.load_active_group().unwrap();
 
     // Prepare data for view (JSON format)
-    let tasks_json: Vec<_> = phase.tasks.iter().map(|t| {
-        serde_json::json!({
-            "id": t.id,
-            "title": t.title,
-            "status": format!("{:?}", t.status),
-            "dependencies": t.dependencies,
-            "complexity": t.complexity,
+    let tasks_json: Vec<_> = phase
+        .tasks
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "id": t.id,
+                "title": t.title,
+                "status": format!("{:?}", t.status),
+                "dependencies": t.dependencies,
+                "complexity": t.complexity,
+            })
         })
-    }).collect();
+        .collect();
 
     let json_output = serde_json::to_string_pretty(&tasks_json).unwrap();
 
@@ -161,14 +165,8 @@ fn test_us22_mermaid_diagram_generation() {
             scud::models::TaskStatus::InProgress => "inprogress",
             _ => "pending",
         };
-        mermaid.push_str(&format!(
-            "    {}[\"{}\"]\n",
-            task.id, task.title
-        ));
-        mermaid.push_str(&format!(
-            "    class {} {}\n",
-            task.id, status_class
-        ));
+        mermaid.push_str(&format!("    {}[\"{}\"]\n", task.id, task.title));
+        mermaid.push_str(&format!("    class {} {}\n", task.id, status_class));
 
         // Add edges
         for dep in &task.dependencies {
@@ -178,7 +176,7 @@ fn test_us22_mermaid_diagram_generation() {
 
     // Verify Mermaid output
     assert!(mermaid.contains("graph TD"));
-    assert!(mermaid.contains("-->"));  // Has edges
+    assert!(mermaid.contains("-->")); // Has edges
     assert!(mermaid.contains("Research"));
     assert!(mermaid.contains("Integrate"));
 }
@@ -246,15 +244,18 @@ fn test_us22_multi_phase_view_data() {
     let tasks = project.storage.load_tasks().unwrap();
 
     // Prepare multi-phase data for view
-    let phases_data: Vec<_> = tasks.iter().map(|(name, phase)| {
-        let stats = phase.get_stats();
-        serde_json::json!({
-            "name": name,
-            "task_count": phase.tasks.len(),
-            "done": stats.done,
-            "total": stats.total,
+    let phases_data: Vec<_> = tasks
+        .iter()
+        .map(|(name, phase)| {
+            let stats = phase.get_stats();
+            serde_json::json!({
+                "name": name,
+                "task_count": phase.tasks.len(),
+                "done": stats.done,
+                "total": stats.total,
+            })
         })
-    }).collect();
+        .collect();
 
     let json_str = serde_json::to_string_pretty(&phases_data).unwrap();
 

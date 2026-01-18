@@ -552,15 +552,11 @@ enum Commands {
         #[arg(long)]
         all_tags: bool,
 
-        /// Terminal: auto, tmux, kitty, wezterm, iterm2, zellij (default: auto)
-        #[arg(short = 'T', long, default_value = "auto")]
-        terminal: String,
-
         /// Show plan without spawning
         #[arg(long)]
         dry_run: bool,
 
-        /// Session name for tmux/zellij (default: scud-<tag>)
+        /// Session name (default: scud-<tag>)
         #[arg(long)]
         session: Option<String>,
 
@@ -613,10 +609,6 @@ enum Commands {
         #[arg(long)]
         all_tags: bool,
 
-        /// Terminal: auto, tmux, kitty, wezterm, iterm2, zellij (default: auto)
-        #[arg(short = 'T', long, default_value = "auto")]
-        terminal: String,
-
         /// AI harness: claude, opencode (default: claude)
         #[arg(short = 'H', long, default_value = "claude")]
         harness: String,
@@ -625,7 +617,7 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
 
-        /// Session name for tmux/zellij (default: swarm-<tag>)
+        /// Session name (default: swarm-<tag>)
         #[arg(long)]
         session: Option<String>,
 
@@ -902,7 +894,6 @@ async fn main() -> Result<()> {
             tag,
             limit,
             all_tags,
-            terminal,
             dry_run,
             session,
             attach,
@@ -915,7 +906,6 @@ async fn main() -> Result<()> {
             tag.as_deref(),
             limit,
             all_tags,
-            &terminal,
             dry_run,
             session,
             attach,
@@ -930,7 +920,6 @@ async fn main() -> Result<()> {
             tag,
             round_size,
             all_tags,
-            terminal,
             harness,
             dry_run,
             session,
@@ -945,7 +934,6 @@ async fn main() -> Result<()> {
             tag.as_deref(),
             round_size,
             all_tags,
-            &terminal,
             &harness,
             dry_run,
             session,

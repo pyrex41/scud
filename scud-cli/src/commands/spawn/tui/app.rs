@@ -1074,13 +1074,7 @@ impl App {
             let prompt = agent::generate_prompt(task, tag);
 
             // Spawn in tmux (always use tmux from TUI since we're in a session)
-            match terminal::spawn_terminal(
-                &terminal::Terminal::Tmux,
-                task_id,
-                &prompt,
-                &working_dir,
-                &session_name,
-            ) {
+            match terminal::spawn_terminal(task_id, &prompt, &working_dir, &session_name) {
                 Ok(()) => {
                     spawned_count += 1;
 
@@ -1208,7 +1202,6 @@ DO NOT output this promise unless task {task_id} is TRULY complete!
 
         // Spawn in tmux with Ralph loop wrapper
         match terminal::spawn_terminal_ralph(
-            &terminal::Terminal::Tmux,
             &task_id,
             &ralph_prompt,
             &working_dir,

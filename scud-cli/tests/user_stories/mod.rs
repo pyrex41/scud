@@ -8,9 +8,9 @@
 //! - `data_mgmt` - US-18 to US-20: Data management operations
 //! - `integration` - US-21 to US-22: Integration features
 
-pub mod individual_dev;
-pub mod team_coord;
 pub mod ai_powered;
-pub mod multi_agent;
 pub mod data_mgmt;
+pub mod individual_dev;
 pub mod integration;
+pub mod multi_agent;
+pub mod team_coord;

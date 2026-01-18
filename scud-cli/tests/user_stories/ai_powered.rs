@@ -12,8 +12,8 @@
 
 use crate::e2e::fixtures::{TestProject, SAMPLE_PRD};
 use crate::e2e::mock_llm::{
-    MockLLMClient, MockLLMResponse,
-    sample_parse_response, sample_complexity_response, sample_expand_response,
+    sample_complexity_response, sample_expand_response, sample_parse_response, MockLLMClient,
+    MockLLMResponse,
 };
 
 // US-10: PRD to Tasks Conversion
@@ -23,8 +23,8 @@ fn test_us10_mock_parse_response_valid_json() {
     let response = sample_parse_response();
 
     // Verify it's valid JSON
-    let parsed: serde_json::Value = serde_json::from_str(&response)
-        .expect("Sample parse response should be valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&response).expect("Sample parse response should be valid JSON");
 
     // Should be an array
     assert!(parsed.is_array());
@@ -41,8 +41,7 @@ fn test_us10_mock_parse_response_valid_json() {
 
 #[test]
 fn test_us10_mock_client_returns_parse_response() {
-    let client = MockLLMClient::new()
-        .with_parse_response(&sample_parse_response());
+    let client = MockLLMClient::new().with_parse_response(&sample_parse_response());
 
     let result = client.call("Please parse this PRD document", None);
     assert!(result.is_ok());
@@ -67,8 +66,8 @@ fn test_us10_prd_fixture_content() {
 fn test_us11_mock_complexity_response_valid_json() {
     let response = sample_complexity_response();
 
-    let parsed: serde_json::Value = serde_json::from_str(&response)
-        .expect("Sample complexity response should be valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&response).expect("Sample complexity response should be valid JSON");
 
     assert!(parsed.is_array());
     let analyses = parsed.as_array().unwrap();
@@ -82,8 +81,7 @@ fn test_us11_mock_complexity_response_valid_json() {
 
 #[test]
 fn test_us11_mock_client_returns_complexity_response() {
-    let client = MockLLMClient::new()
-        .with_complexity_response(&sample_complexity_response());
+    let client = MockLLMClient::new().with_complexity_response(&sample_complexity_response());
 
     let result = client.call("Analyze complexity of these tasks", None);
     assert!(result.is_ok());
@@ -102,8 +100,8 @@ fn test_us11_complexity_project_has_scores() {
     let t2 = phase.get_task("2").unwrap();
     let t3 = phase.get_task("3").unwrap();
 
-    assert_eq!(t1.complexity, 3);  // Simple
-    assert_eq!(t2.complexity, 8);  // Medium
+    assert_eq!(t1.complexity, 3); // Simple
+    assert_eq!(t2.complexity, 8); // Medium
     assert_eq!(t3.complexity, 13); // Complex
 }
 
@@ -113,8 +111,8 @@ fn test_us11_complexity_project_has_scores() {
 fn test_us12_mock_expand_response_valid_json() {
     let response = sample_expand_response();
 
-    let parsed: serde_json::Value = serde_json::from_str(&response)
-        .expect("Sample expand response should be valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&response).expect("Sample expand response should be valid JSON");
 
     assert!(parsed.is_array());
     let subtasks = parsed.as_array().unwrap();
@@ -122,14 +120,16 @@ fn test_us12_mock_expand_response_valid_json() {
     // Should have subtasks with hierarchical IDs
     for subtask in subtasks {
         let id = subtask.get("id").unwrap().as_str().unwrap();
-        assert!(id.contains('.'), "Subtask IDs should be hierarchical (e.g., 1.1)");
+        assert!(
+            id.contains('.'),
+            "Subtask IDs should be hierarchical (e.g., 1.1)"
+        );
     }
 }
 
 #[test]
 fn test_us12_mock_client_returns_expand_response() {
-    let client = MockLLMClient::new()
-        .with_expand_response(&sample_expand_response());
+    let client = MockLLMClient::new().with_expand_response(&sample_expand_response());
 
     let result = client.call("Expand this task into subtasks", None);
     assert!(result.is_ok());
@@ -145,9 +145,7 @@ fn test_us12_high_complexity_tasks_identified() {
     let phase = project.storage.load_active_group().unwrap();
 
     // Find tasks with complexity >= 8 (should be expanded)
-    let complex_tasks: Vec<_> = phase.tasks.iter()
-        .filter(|t| t.complexity >= 8)
-        .collect();
+    let complex_tasks: Vec<_> = phase.tasks.iter().filter(|t| t.complexity >= 8).collect();
 
     assert_eq!(complex_tasks.len(), 2); // Tasks 2 and 3
 }
@@ -209,7 +207,10 @@ fn test_us14_multi_phase_deps_structure() {
         }
     }
 
-    assert!(!cross_deps.is_empty(), "Should have cross-phase dependencies");
+    assert!(
+        !cross_deps.is_empty(),
+        "Should have cross-phase dependencies"
+    );
 }
 
 #[test]
@@ -221,22 +222,25 @@ fn test_us14_cross_phase_dep_format() {
     let task = phase2.get_task("1").unwrap();
 
     // Verify format is "phase:task_id"
-    let cross_dep = task.dependencies.iter()
+    let cross_dep = task
+        .dependencies
+        .iter()
         .find(|d| d.contains(':'))
         .expect("Should have a cross-phase dependency");
 
     let parts: Vec<_> = cross_dep.split(':').collect();
     assert_eq!(parts.len(), 2);
-    assert_eq!(parts[0], "phase1");  // Source phase
-    assert_eq!(parts[1], "1");       // Source task ID
+    assert_eq!(parts[0], "phase1"); // Source phase
+    assert_eq!(parts[1], "1"); // Source task ID
 }
 
 // Error handling tests
 
 #[test]
 fn test_mock_client_error_handling() {
-    let client = MockLLMClient::new()
-        .with_default_response(MockLLMResponse::Error("API rate limit exceeded".to_string()));
+    let client = MockLLMClient::new().with_default_response(MockLLMResponse::Error(
+        "API rate limit exceeded".to_string(),
+    ));
 
     let result = client.call("any prompt", None);
     assert!(result.is_err());
@@ -245,8 +249,7 @@ fn test_mock_client_error_handling() {
 
 #[test]
 fn test_mock_client_timeout_handling() {
-    let client = MockLLMClient::new()
-        .with_default_response(MockLLMResponse::Timeout);
+    let client = MockLLMClient::new().with_default_response(MockLLMResponse::Timeout);
 
     let result = client.call("any prompt", None);
     assert!(result.is_err());
@@ -259,10 +262,16 @@ fn test_mock_client_pattern_matching_order() {
     // matching happens based on which pattern matches first during iteration.
     // This test verifies that pattern matching works, not priority.
     let client = MockLLMClient::new()
-        .when_prompt_contains("specific_unique", MockLLMResponse::Success("Specific".to_string()))
+        .when_prompt_contains(
+            "specific_unique",
+            MockLLMResponse::Success("Specific".to_string()),
+        )
         .when_prompt_contains("general", MockLLMResponse::Success("General".to_string()));
 
     // Each pattern should match its specific prompt
-    assert_eq!(client.call("specific_unique query", None).unwrap(), "Specific");
+    assert_eq!(
+        client.call("specific_unique query", None).unwrap(),
+        "Specific"
+    );
     assert_eq!(client.call("general query", None).unwrap(), "General");
 }

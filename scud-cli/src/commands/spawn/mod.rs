@@ -1,8 +1,7 @@
-//! Spawn command - Launch parallel Claude Code agents in terminal windows
+//! Spawn command - Launch parallel Claude Code agents in tmux sessions
 //!
 //! This module provides functionality to:
-//! - Detect available terminal emulators (Kitty, WezTerm, iTerm2, tmux)
-//! - Spawn multiple terminal windows with Claude Code sessions
+//! - Spawn multiple tmux windows with Claude Code sessions
 //! - Generate task-specific prompts for each agent
 //! - Track spawn session state for TUI integration
 //! - Install Claude Code hooks for automatic task completion
@@ -25,7 +24,7 @@ use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
 use self::monitor::SpawnSession;
-use self::terminal::{parse_terminal, Harness, Terminal};
+use self::terminal::Harness;
 
 /// Information about a task to spawn
 struct TaskInfo<'a> {
@@ -40,7 +39,6 @@ pub fn run(
     tag: Option<&str>,
     limit: usize,
     all_tags: bool,
-    terminal_arg: &str,
     dry_run: bool,
     session: Option<String>,
     attach: bool,
@@ -54,6 +52,9 @@ pub fn run(
     if !storage.is_initialized() {
         anyhow::bail!("SCUD not initialized. Run: scud init");
     }
+
+    // Check tmux is available
+    terminal::check_tmux_available()?;
 
     // Load all phases for cross-tag dependency checking
     let all_phases = storage.load_tasks()?;
@@ -75,10 +76,6 @@ pub fn run(
         return Ok(());
     }
 
-    // Detect or parse terminal
-    let terminal = parse_terminal(terminal_arg)?;
-    terminal::check_terminal_available(&terminal)?;
-
     // Parse harness
     let harness = Harness::parse(harness_arg)?;
 
@@ -88,7 +85,7 @@ pub fn run(
     // Display spawn plan
     println!("{}", "SCUD Spawn".cyan().bold());
     println!("{}", "═".repeat(50));
-    println!("{:<20} {}", "Terminal:".dimmed(), terminal.name().green());
+    println!("{:<20} {}", "Terminal:".dimmed(), "tmux".green());
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().green());
     println!("{:<20} {}", "Model:".dimmed(), model_arg.green());
     println!("{:<20} {}", "Session:".dimmed(), session_name.cyan());
@@ -140,7 +137,7 @@ pub fn run(
     let mut spawn_session = SpawnSession::new(
         &session_name,
         &phase_tag,
-        terminal.name(),
+        "tmux",
         &working_dir.to_string_lossy(),
     );
 
@@ -152,36 +149,49 @@ pub fn run(
 
     for info in &ready_tasks {
         // Determine harness/model: use task's agent_type if set, otherwise CLI args
-        let (effective_harness, effective_model, prompt) = if let Some(ref agent_type) = info.task.agent_type {
-            // Try to load agent definition
-            match AgentDef::try_load(agent_type, &working_dir) {
-                Some(agent_def) => {
-                    let h = agent_def.harness().unwrap_or(harness);
-                    let m = agent_def.model().map(String::from).unwrap_or_else(|| model_arg.to_string());
-                    // Use custom prompt template if available
-                    let p = match agent_def.prompt_template(&working_dir) {
-                        Some(template) => agent::generate_prompt_with_template(info.task, &info.tag, &template),
-                        None => agent::generate_prompt(info.task, &info.tag),
-                    };
-                    (h, m, p)
+        let (effective_harness, effective_model, prompt) =
+            if let Some(ref agent_type) = info.task.agent_type {
+                // Try to load agent definition
+                match AgentDef::try_load(agent_type, &working_dir) {
+                    Some(agent_def) => {
+                        let h = agent_def.harness().unwrap_or(harness);
+                        let m = agent_def
+                            .model()
+                            .map(String::from)
+                            .unwrap_or_else(|| model_arg.to_string());
+                        // Use custom prompt template if available
+                        let p = match agent_def.prompt_template(&working_dir) {
+                            Some(template) => agent::generate_prompt_with_template(
+                                info.task, &info.tag, &template,
+                            ),
+                            None => agent::generate_prompt(info.task, &info.tag),
+                        };
+                        (h, m, p)
+                    }
+                    None => {
+                        // Agent type specified but no definition found - use defaults
+                        println!(
+                            "  {} Agent '{}' not found, using CLI defaults",
+                            "!".yellow(),
+                            agent_type
+                        );
+                        (
+                            harness,
+                            model_arg.to_string(),
+                            agent::generate_prompt(info.task, &info.tag),
+                        )
+                    }
                 }
-                None => {
-                    // Agent type specified but no definition found - use defaults
-                    println!(
-                        "  {} Agent '{}' not found, using CLI defaults",
-                        "!".yellow(),
-                        agent_type
-                    );
-                    (harness, model_arg.to_string(), agent::generate_prompt(info.task, &info.tag))
-                }
-            }
-        } else {
-            // No agent type - use CLI args
-            (harness, model_arg.to_string(), agent::generate_prompt(info.task, &info.tag))
-        };
+            } else {
+                // No agent type - use CLI args
+                (
+                    harness,
+                    model_arg.to_string(),
+                    agent::generate_prompt(info.task, &info.tag),
+                )
+            };
 
         match terminal::spawn_terminal_with_harness_and_model(
-            &terminal,
             &info.task.id,
             &prompt,
             &working_dir,
@@ -261,14 +271,12 @@ pub fn run(
     }
 
     // Setup control window for tmux
-    if terminal == Terminal::Tmux {
-        if let Err(e) = terminal::setup_tmux_control_window(&session_name, &phase_tag) {
-            println!(
-                "  {} Control window setup: {}",
-                "!".yellow(),
-                e.to_string().dimmed()
-            );
-        }
+    if let Err(e) = terminal::setup_tmux_control_window(&session_name, &phase_tag) {
+        println!(
+            "  {} Control window setup: {}",
+            "!".yellow(),
+            e.to_string().dimmed()
+        );
     }
 
     // Save session metadata
@@ -289,17 +297,15 @@ pub fn run(
         ready_tasks.len()
     );
 
-    if terminal == Terminal::Tmux {
-        println!();
-        println!(
-            "To attach: {}",
-            format!("tmux attach -t {}", session_name).cyan()
-        );
-        println!(
-            "To list:   {}",
-            format!("tmux list-windows -t {}", session_name).dimmed()
-        );
-    }
+    println!();
+    println!(
+        "To attach: {}",
+        format!("tmux attach -t {}", session_name).cyan()
+    );
+    println!(
+        "To list:   {}",
+        format!("tmux list-windows -t {}", session_name).dimmed()
+    );
 
     // Monitor takes priority over attach
     if monitor {
@@ -310,8 +316,8 @@ pub fn run(
         return tui::run(project_root, &session_name);
     }
 
-    // Attach if requested (fallback)
-    if attach && terminal == Terminal::Tmux {
+    // Attach if requested
+    if attach {
         println!();
         println!("Attaching to session...");
         terminal::tmux_attach(&session_name)?;

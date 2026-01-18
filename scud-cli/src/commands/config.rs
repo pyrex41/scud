@@ -908,7 +908,8 @@ pub fn backpressure(
 
     // Load existing config
     let content = fs::read_to_string(&config_path).unwrap_or_default();
-    let mut config: toml::Value = toml::from_str(&content).unwrap_or(toml::Value::Table(toml::map::Map::new()));
+    let mut config: toml::Value =
+        toml::from_str(&content).unwrap_or(toml::Value::Table(toml::map::Map::new()));
 
     // Get or create swarm.backpressure section
     let bp_commands = get_backpressure_commands(&config);
@@ -919,11 +920,16 @@ pub fn backpressure(
         println!();
 
         if bp_commands.is_empty() {
-            println!("  {} No commands configured (using auto-detect)", "·".yellow());
+            println!(
+                "  {} No commands configured (using auto-detect)",
+                "·".yellow()
+            );
             println!();
 
             // Show what would be auto-detected
-            let auto = crate::backpressure::BackpressureConfig::load(Some(&storage.project_root().to_path_buf()))?;
+            let auto = crate::backpressure::BackpressureConfig::load(Some(
+                &storage.project_root().to_path_buf(),
+            ))?;
             if !auto.commands.is_empty() {
                 println!("{}", "Auto-detected commands:".dimmed());
                 for cmd in &auto.commands {
@@ -955,7 +961,10 @@ pub fn backpressure(
             }
         }
         save_config(&config_path, &config)?;
-        println!("{}", "✓ Backpressure config cleared (will use auto-detect)".green());
+        println!(
+            "{}",
+            "✓ Backpressure config cleared (will use auto-detect)".green()
+        );
         return Ok(());
     }
 
@@ -984,7 +993,14 @@ pub fn backpressure(
         }
     } else {
         // No args - show list
-        return backpressure(Some(storage.project_root().to_path_buf()), vec![], None, None, true, false);
+        return backpressure(
+            Some(storage.project_root().to_path_buf()),
+            vec![],
+            None,
+            None,
+            true,
+            false,
+        );
     }
 
     // Save updated config
@@ -1015,20 +1031,33 @@ fn set_backpressure_commands(config: &mut toml::Value, commands: &[String]) {
 
     // Ensure swarm section exists
     if !table.contains_key("swarm") {
-        table.insert("swarm".to_string(), toml::Value::Table(toml::map::Map::new()));
+        table.insert(
+            "swarm".to_string(),
+            toml::Value::Table(toml::map::Map::new()),
+        );
     }
 
     let swarm = table.get_mut("swarm").unwrap().as_table_mut().unwrap();
 
     // Ensure backpressure section exists
     if !swarm.contains_key("backpressure") {
-        swarm.insert("backpressure".to_string(), toml::Value::Table(toml::map::Map::new()));
+        swarm.insert(
+            "backpressure".to_string(),
+            toml::Value::Table(toml::map::Map::new()),
+        );
     }
 
-    let bp = swarm.get_mut("backpressure").unwrap().as_table_mut().unwrap();
+    let bp = swarm
+        .get_mut("backpressure")
+        .unwrap()
+        .as_table_mut()
+        .unwrap();
 
     // Set commands array
-    let cmd_array: Vec<toml::Value> = commands.iter().map(|s| toml::Value::String(s.clone())).collect();
+    let cmd_array: Vec<toml::Value> = commands
+        .iter()
+        .map(|s| toml::Value::String(s.clone()))
+        .collect();
     bp.insert("commands".to_string(), toml::Value::Array(cmd_array));
 
     // Ensure defaults exist
@@ -1067,7 +1096,10 @@ pub fn spawn_agents_add(
     let agents_to_add: Vec<&str> = if all {
         EMBEDDED_SPAWN_AGENTS.iter().map(|(n, _)| *n).collect()
     } else if let Some(ref name) = name {
-        if EMBEDDED_SPAWN_AGENTS.iter().any(|(n, _)| *n == name.as_str()) {
+        if EMBEDDED_SPAWN_AGENTS
+            .iter()
+            .any(|(n, _)| *n == name.as_str())
+        {
             vec![name.as_str()]
         } else {
             anyhow::bail!(
@@ -1141,7 +1173,9 @@ pub fn spawn_agents_add(
     if added > 0 {
         println!(
             "{}",
-            format!("✅ Installed {} spawn agent(s)", added).green().bold()
+            format!("✅ Installed {} spawn agent(s)", added)
+                .green()
+                .bold()
         );
         println!(
             "{}",
@@ -1206,10 +1240,7 @@ pub fn spawn_agents_list(project_root: Option<PathBuf>) -> Result<()> {
     }
 
     println!();
-    println!(
-        "Install: {}",
-        "scud config spawn-agents add --all".cyan()
-    );
+    println!("Install: {}", "scud config spawn-agents add --all".cyan());
 
     Ok(())
 }
@@ -1252,7 +1283,9 @@ pub fn spawn_agents_remove(
     if removed > 0 {
         println!(
             "{}",
-            format!("✅ Removed {} spawn agent(s)", removed).green().bold()
+            format!("✅ Removed {} spawn agent(s)", removed)
+                .green()
+                .bold()
         );
     }
     if not_found > 0 {

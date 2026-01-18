@@ -194,7 +194,10 @@ template = "You are a custom agent for {task.title}"
 
         let agent = AgentDef::load("custom", temp.path()).unwrap();
         let template = agent.prompt_template(temp.path());
-        assert_eq!(template, Some("You are a custom agent for {task.title}".to_string()));
+        assert_eq!(
+            template,
+            Some("You are a custom agent for {task.title}".to_string())
+        );
     }
 
     #[test]

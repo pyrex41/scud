@@ -1,8 +1,7 @@
 //! Mock terminal manager for spawn command testing
 //!
 //! Provides `MockTerminalManager` for testing spawn commands without
-//! actually creating terminal sessions. When the `real-terminal` feature
-//! is enabled, tests can optionally use real tmux/kitty sessions.
+//! actually creating terminal sessions.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -11,10 +10,6 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone, PartialEq)]
 pub enum TerminalType {
     Tmux,
-    Kitty,
-    ITerm2,
-    VSCode,
-    WezTerm,
     Mock,
 }
 
@@ -22,10 +17,6 @@ impl std::fmt::Display for TerminalType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TerminalType::Tmux => write!(f, "tmux"),
-            TerminalType::Kitty => write!(f, "kitty"),
-            TerminalType::ITerm2 => write!(f, "iterm2"),
-            TerminalType::VSCode => write!(f, "vscode"),
-            TerminalType::WezTerm => write!(f, "wezterm"),
             TerminalType::Mock => write!(f, "mock"),
         }
     }
@@ -152,7 +143,10 @@ impl MockTerminalManager {
             output: None,
         };
 
-        self.sessions.lock().unwrap().insert(session_id.clone(), session);
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), session);
         Ok(session_id)
     }
 
@@ -244,16 +238,12 @@ pub trait TerminalDetector {
     fn is_available(terminal: &TerminalType) -> bool;
 }
 
-/// Mock terminal detector that reports all terminals as available
+/// Mock terminal detector that reports tmux as available
 pub struct MockTerminalDetector;
 
 impl TerminalDetector for MockTerminalDetector {
     fn detect_available() -> Vec<TerminalType> {
-        vec![
-            TerminalType::Tmux,
-            TerminalType::Kitty,
-            TerminalType::Mock,
-        ]
+        vec![TerminalType::Tmux, TerminalType::Mock]
     }
 
     fn is_available(_terminal: &TerminalType) -> bool {
@@ -282,9 +272,15 @@ mod tests {
     fn test_spawn_multiple_sessions() {
         let manager = MockTerminalManager::new();
 
-        manager.spawn("task-1", "cmd1", "/p1", TerminalType::Tmux).unwrap();
-        manager.spawn("task-2", "cmd2", "/p2", TerminalType::Kitty).unwrap();
-        manager.spawn("task-3", "cmd3", "/p3", TerminalType::Mock).unwrap();
+        manager
+            .spawn("task-1", "cmd1", "/p1", TerminalType::Tmux)
+            .unwrap();
+        manager
+            .spawn("task-2", "cmd2", "/p2", TerminalType::Tmux)
+            .unwrap();
+        manager
+            .spawn("task-3", "cmd3", "/p3", TerminalType::Mock)
+            .unwrap();
 
         assert_eq!(manager.spawn_count(), 3);
 
@@ -296,9 +292,15 @@ mod tests {
     fn test_sessions_for_task() {
         let manager = MockTerminalManager::new();
 
-        manager.spawn("task-1", "cmd1", "/p", TerminalType::Tmux).unwrap();
-        manager.spawn("task-1", "cmd2", "/p", TerminalType::Tmux).unwrap();
-        manager.spawn("task-2", "cmd3", "/p", TerminalType::Tmux).unwrap();
+        manager
+            .spawn("task-1", "cmd1", "/p", TerminalType::Tmux)
+            .unwrap();
+        manager
+            .spawn("task-1", "cmd2", "/p", TerminalType::Tmux)
+            .unwrap();
+        manager
+            .spawn("task-2", "cmd3", "/p", TerminalType::Tmux)
+            .unwrap();
 
         let task1_sessions = manager.sessions_for_task("task-1");
         assert_eq!(task1_sessions.len(), 2);
@@ -320,7 +322,9 @@ mod tests {
         assert_eq!(session.status, SessionStatus::Running);
 
         // Update to completed
-        manager.complete_session(&session_id, Some("Done!".to_string())).unwrap();
+        manager
+            .complete_session(&session_id, Some("Done!".to_string()))
+            .unwrap();
         let session = manager.get_session(&session_id).unwrap();
         assert_eq!(session.status, SessionStatus::Completed);
         assert_eq!(session.output, Some("Done!".to_string()));
@@ -344,9 +348,15 @@ mod tests {
     fn test_running_count() {
         let manager = MockTerminalManager::new();
 
-        let s1 = manager.spawn("task-1", "cmd", "/p", TerminalType::Tmux).unwrap();
-        let s2 = manager.spawn("task-2", "cmd", "/p", TerminalType::Tmux).unwrap();
-        manager.spawn("task-3", "cmd", "/p", TerminalType::Tmux).unwrap();
+        let s1 = manager
+            .spawn("task-1", "cmd", "/p", TerminalType::Tmux)
+            .unwrap();
+        let s2 = manager
+            .spawn("task-2", "cmd", "/p", TerminalType::Tmux)
+            .unwrap();
+        manager
+            .spawn("task-3", "cmd", "/p", TerminalType::Tmux)
+            .unwrap();
 
         assert_eq!(manager.running_count(), 3);
 
@@ -359,8 +369,9 @@ mod tests {
 
     #[test]
     fn test_always_fail_behavior() {
-        let manager = MockTerminalManager::new()
-            .with_behavior(SpawnBehavior::AlwaysFail("No terminal available".to_string()));
+        let manager = MockTerminalManager::new().with_behavior(SpawnBehavior::AlwaysFail(
+            "No terminal available".to_string(),
+        ));
 
         let result = manager.spawn("task-1", "cmd", "/p", TerminalType::Tmux);
         assert!(result.is_err());
@@ -373,20 +384,32 @@ mod tests {
             .fail_for_tasks(vec!["task-2".to_string(), "task-4".to_string()]);
 
         // These should succeed
-        assert!(manager.spawn("task-1", "cmd", "/p", TerminalType::Tmux).is_ok());
-        assert!(manager.spawn("task-3", "cmd", "/p", TerminalType::Tmux).is_ok());
+        assert!(manager
+            .spawn("task-1", "cmd", "/p", TerminalType::Tmux)
+            .is_ok());
+        assert!(manager
+            .spawn("task-3", "cmd", "/p", TerminalType::Tmux)
+            .is_ok());
 
         // These should fail
-        assert!(manager.spawn("task-2", "cmd", "/p", TerminalType::Tmux).is_err());
-        assert!(manager.spawn("task-4", "cmd", "/p", TerminalType::Tmux).is_err());
+        assert!(manager
+            .spawn("task-2", "cmd", "/p", TerminalType::Tmux)
+            .is_err());
+        assert!(manager
+            .spawn("task-4", "cmd", "/p", TerminalType::Tmux)
+            .is_err());
     }
 
     #[test]
     fn test_clear_sessions() {
         let manager = MockTerminalManager::new();
 
-        manager.spawn("task-1", "cmd", "/p", TerminalType::Tmux).unwrap();
-        manager.spawn("task-2", "cmd", "/p", TerminalType::Tmux).unwrap();
+        manager
+            .spawn("task-1", "cmd", "/p", TerminalType::Tmux)
+            .unwrap();
+        manager
+            .spawn("task-2", "cmd", "/p", TerminalType::Tmux)
+            .unwrap();
 
         assert_eq!(manager.spawn_count(), 2);
 
@@ -401,20 +424,25 @@ mod tests {
         let manager = MockTerminalManager::new();
 
         let session_id = manager
-            .spawn("my-task", "claude code --prompt 'fix bug'", "/home/user/project", TerminalType::Kitty)
+            .spawn(
+                "my-task",
+                "claude code --prompt 'fix bug'",
+                "/home/user/project",
+                TerminalType::Tmux,
+            )
             .unwrap();
 
         let session = manager.get_session(&session_id).unwrap();
         assert_eq!(session.task_id, "my-task");
         assert_eq!(session.command, "claude code --prompt 'fix bug'");
         assert_eq!(session.working_dir, "/home/user/project");
-        assert_eq!(session.terminal_type, TerminalType::Kitty);
+        assert_eq!(session.terminal_type, TerminalType::Tmux);
     }
 
     #[test]
     fn test_thread_safety() {
-        use std::thread;
         use std::sync::Arc;
+        use std::thread;
 
         let manager = Arc::new(MockTerminalManager::new());
         let mut handles = vec![];
@@ -422,7 +450,8 @@ mod tests {
         for i in 0..10 {
             let m = Arc::clone(&manager);
             let handle = thread::spawn(move || {
-                m.spawn(&format!("task-{}", i), "cmd", "/p", TerminalType::Mock).unwrap();
+                m.spawn(&format!("task-{}", i), "cmd", "/p", TerminalType::Mock)
+                    .unwrap();
             });
             handles.push(handle);
         }
@@ -437,7 +466,6 @@ mod tests {
     #[test]
     fn test_terminal_type_display() {
         assert_eq!(format!("{}", TerminalType::Tmux), "tmux");
-        assert_eq!(format!("{}", TerminalType::Kitty), "kitty");
         assert_eq!(format!("{}", TerminalType::Mock), "mock");
     }
 

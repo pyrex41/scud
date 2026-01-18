@@ -84,10 +84,7 @@ fn configure_backpressure_interactive(storage: &Storage) -> Result<()> {
         "{}",
         "Backpressure runs validation commands between task waves".dimmed()
     );
-    println!(
-        "{}",
-        "to catch build/test failures early.".dimmed()
-    );
+    println!("{}", "to catch build/test failures early.".dimmed());
     println!();
 
     // Get auto-detected commands
@@ -182,10 +179,7 @@ fn configure_backpressure_commands(auto_detected: &[String]) -> Result<Vec<Strin
         .defaults(&defaults)
         .interact()?;
 
-    let mut commands: Vec<String> = selections
-        .iter()
-        .map(|&i| items[i].to_string())
-        .collect();
+    let mut commands: Vec<String> = selections.iter().map(|&i| items[i].to_string()).collect();
 
     // Allow adding custom commands
     loop {
@@ -198,9 +192,7 @@ fn configure_backpressure_commands(auto_detected: &[String]) -> Result<Vec<Strin
             break;
         }
 
-        let custom: String = Input::new()
-            .with_prompt("Enter command")
-            .interact_text()?;
+        let custom: String = Input::new().with_prompt("Enter command").interact_text()?;
 
         if !custom.trim().is_empty() {
             commands.push(custom.trim().to_string());
@@ -243,11 +235,7 @@ fn save_backpressure_config(storage: &Storage, commands: &[String]) -> Result<()
         );
     }
 
-    let swarm = table
-        .get_mut("swarm")
-        .unwrap()
-        .as_table_mut()
-        .unwrap();
+    let swarm = table.get_mut("swarm").unwrap().as_table_mut().unwrap();
 
     // Create backpressure section
     let mut bp = toml::map::Map::new();
@@ -379,9 +367,12 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
 
     // Install spawn agents (harness/model routing definitions)
     println!("\n{}", "Installing spawn agent definitions...".blue());
-    if let Err(e) =
-        config_cmd::spawn_agents_add(Some(storage.project_root().to_path_buf()), None, true, false)
-    {
+    if let Err(e) = config_cmd::spawn_agents_add(
+        Some(storage.project_root().to_path_buf()),
+        None,
+        true,
+        false,
+    ) {
         println!(
             "{}",
             format!("  Could not install spawn agents: {}", e).yellow()
