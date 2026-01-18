@@ -38,7 +38,7 @@ fn default_provider() -> String {
 }
 
 fn default_model() -> String {
-    std::env::var("SCUD_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string())
+    std::env::var("SCUD_MODEL").unwrap_or_else(|_| "xai/grok-code-fast-1".to_string())
 }
 
 fn default_smart_provider() -> String {
@@ -54,7 +54,7 @@ fn default_fast_provider() -> String {
 }
 
 fn default_fast_model() -> String {
-    std::env::var("SCUD_FAST_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string())
+    std::env::var("SCUD_FAST_MODEL").unwrap_or_else(|_| "xai/grok-code-fast-1".to_string())
 }
 
 fn default_max_tokens() -> u32 {
@@ -141,13 +141,13 @@ impl Config {
 
     pub fn default_model_for_provider(provider: &str) -> &str {
         match provider {
-            "xai" => "grok-code-fast-1",
+            "xai" => "xai/grok-code-fast-1",
             "anthropic" => "claude-sonnet-4-5-20250929",
             "openai" => "o3-mini",
             "openrouter" => "anthropic/claude-sonnet-4.5",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
             "codex" => "gpt-5.1",     // Codex CLI default model
-            _ => "grok-code-fast-1",
+            _ => "xai/grok-code-fast-1",
         }
     }
 
@@ -155,10 +155,10 @@ impl Config {
     pub fn suggested_models_for_provider(provider: &str) -> Vec<&str> {
         match provider {
             "xai" => vec![
-                "grok-code-fast-1",
-                "grok-4-1-fast-reasoning",
-                "grok-4-1-fast",
-                "grok-3-fast",
+                "xai/grok-code-fast-1",
+                "xai/grok-4-1-fast",
+                "xai/grok-4-fast",
+                "xai/grok-3-fast",
             ],
             "anthropic" => vec![
                 "claude-sonnet-4-5-20250929",
@@ -227,15 +227,15 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        // Default provider is xai with grok-code-fast-1 for speed
+        // Default provider is xai with xai/grok-code-fast-1 for speed
         assert_eq!(config.llm.provider, "xai");
-        assert_eq!(config.llm.model, "grok-code-fast-1");
+        assert_eq!(config.llm.model, "xai/grok-code-fast-1");
         // Smart tier uses claude-cli with opus
         assert_eq!(config.llm.smart_provider, "claude-cli");
         assert_eq!(config.llm.smart_model, "opus");
-        // Fast tier uses xai with grok-code-fast-1
+        // Fast tier uses xai with xai/grok-code-fast-1
         assert_eq!(config.llm.fast_provider, "xai");
-        assert_eq!(config.llm.fast_model, "grok-code-fast-1");
+        assert_eq!(config.llm.fast_model, "xai/grok-code-fast-1");
         assert_eq!(config.llm.max_tokens, 16000);
     }
 
@@ -245,7 +245,7 @@ mod tests {
         assert_eq!(config.smart_provider(), "claude-cli");
         assert_eq!(config.smart_model(), "opus");
         assert_eq!(config.fast_provider(), "xai");
-        assert_eq!(config.fast_model(), "grok-code-fast-1");
+        assert_eq!(config.fast_model(), "xai/grok-code-fast-1");
     }
 
     #[test]
@@ -324,7 +324,7 @@ mod tests {
     fn test_default_models() {
         assert_eq!(
             Config::default_model_for_provider("xai"),
-            "grok-code-fast-1"
+            "xai/grok-code-fast-1"
         );
         assert_eq!(
             Config::default_model_for_provider("anthropic"),
@@ -345,7 +345,7 @@ mod tests {
             &config_path,
             r#"[llm]
 provider = "xai"
-model = "grok-code-fast-1"
+model = "xai/grok-code-fast-1"
 max_tokens = 4096
 "#,
         )
@@ -353,11 +353,11 @@ max_tokens = 4096
 
         let loaded = Config::load(&config_path).unwrap();
         assert_eq!(loaded.llm.provider, "xai");
-        assert_eq!(loaded.llm.model, "grok-code-fast-1");
+        assert_eq!(loaded.llm.model, "xai/grok-code-fast-1");
         // Should use defaults for missing fields
         assert_eq!(loaded.llm.smart_provider, "claude-cli");
         assert_eq!(loaded.llm.smart_model, "opus");
         assert_eq!(loaded.llm.fast_provider, "xai");
-        assert_eq!(loaded.llm.fast_model, "grok-code-fast-1");
+        assert_eq!(loaded.llm.fast_model, "xai/grok-code-fast-1");
     }
 }

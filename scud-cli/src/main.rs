@@ -577,7 +577,7 @@ enum Commands {
         harness: String,
 
         /// Model to use with harness (overridden by task's agent_type if set)
-        #[arg(short = 'M', long, default_value = "grok-code-fast-1")]
+        #[arg(short = 'M', long, default_value = "xai/grok-code-fast-1")]
         model: String,
     },
 
@@ -605,7 +605,7 @@ enum Commands {
         harness: String,
 
         /// Model to use with harness
-        #[arg(short = 'M', long, default_value = "grok-code-fast-1")]
+        #[arg(short = 'M', long, default_value = "xai/grok-code-fast-1")]
         model: String,
 
         /// Tmux session name (default: scud-run)

@@ -44,7 +44,7 @@ fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
     let default_model_index = if tier == "fast" && provider == "xai" {
         suggested
             .iter()
-            .position(|m| *m == "grok-code-fast-1")
+            .position(|m| *m == "xai/grok-code-fast-1")
             .unwrap_or(0)
     } else if tier == "smart" && provider == "claude-cli" {
         suggested.iter().position(|m| *m == "opus").unwrap_or(0)

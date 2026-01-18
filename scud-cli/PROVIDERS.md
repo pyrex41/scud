@@ -5,7 +5,7 @@ SCUD supports multiple LLM providers. You can configure your preferred provider 
 ## Supported Providers
 
 ### xAI (Grok)
-**Default Model:** `grok-code-fast-1`
+**Default Model:** `xai/grok-code-fast-1`
 
 ```bash
 # Initialize with xAI
@@ -55,7 +55,7 @@ The configuration is stored in `.taskmaster/config.toml`:
 ```toml
 [llm]
 provider = "xai"
-model = "grok-code-fast-1"
+model = "xai/grok-code-fast-1"
 max_tokens = 4096
 ```
 

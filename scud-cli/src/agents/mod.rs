@@ -106,7 +106,7 @@ impl AgentDef {
         None
     }
 
-    /// Create a default agent (OpenCode with grok-code-fast-1, no custom prompt)
+    /// Create a default agent (OpenCode with xai/grok-code-fast-1, no custom prompt)
     pub fn default_builder() -> Self {
         AgentDef {
             agent: AgentMeta {
@@ -115,7 +115,7 @@ impl AgentDef {
             },
             model: ModelConfig {
                 harness: "opencode".to_string(),
-                model: Some("grok-code-fast-1".to_string()),
+                model: Some("xai/grok-code-fast-1".to_string()),
             },
             prompt: PromptConfig::default(),
         }
@@ -163,7 +163,7 @@ model = "opus"
         let agent = AgentDef::default_builder();
         assert_eq!(agent.agent.name, "builder");
         assert_eq!(agent.model.harness, "opencode");
-        assert_eq!(agent.model.model, Some("grok-code-fast-1".to_string()));
+        assert_eq!(agent.model.model, Some("xai/grok-code-fast-1".to_string()));
     }
 
     #[test]

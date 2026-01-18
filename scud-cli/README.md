@@ -221,7 +221,7 @@ The configuration is stored in `.scud/config.toml`:
 ```toml
 [llm]
 provider = "xai"
-model = "grok-code-fast-1"
+model = "xai/grok-code-fast-1"
 max_tokens = 4096
 ```
 
@@ -231,7 +231,7 @@ For complete provider documentation, see [PROVIDERS.md](./PROVIDERS.md).
 
 | Provider | Environment Variable | Default Model |
 |----------|---------------------|---------------|
-| xAI | `XAI_API_KEY` | `grok-code-fast-1` |
+| xAI | `XAI_API_KEY` | `xai/grok-code-fast-1` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4-turbo` |
 | OpenRouter | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
@@ -269,7 +269,7 @@ struct Phase {
 ```toml
 [llm]
 provider = "xai"
-model = "grok-code-fast-1"
+model = "xai/grok-code-fast-1"
 max_tokens = 4096
 ```
 
