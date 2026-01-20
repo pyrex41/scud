@@ -41,13 +41,14 @@ regex = "1"       # Pattern matching for error parsing
 ratatui = "0.29"      # Terminal UI framework
 crossterm = "0.28"    # Cross-platform terminal manipulation
 
-# Socket feed (ZeroMQ)
-zeromq = "0.4"        # Async ZeroMQ bindings for socket feed
+# Socket feed (ZeroMQ) - optional
+zeromq = { version = "0.4", optional = true }
 
 [features]
 default = []
 real-llm = []        # Enable tests with real LLM API calls
 real-terminal = []   # Enable tests with real terminal sessions (tmux/kitty)
+socket-feed = ["zeromq"]  # Enable ZMQ socket feed for remote monitoring
 
 [dev-dependencies]
 tempfile = "3.8"  # Temporary directories for tests

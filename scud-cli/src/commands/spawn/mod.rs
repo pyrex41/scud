@@ -7,6 +7,7 @@
 //! - Install Claude Code hooks for automatic task completion
 
 pub mod agent;
+#[cfg(feature = "socket-feed")]
 pub mod feed;
 pub mod hooks;
 pub mod monitor;

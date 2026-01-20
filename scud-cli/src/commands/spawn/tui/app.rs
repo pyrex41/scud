@@ -13,13 +13,16 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "socket-feed")]
 use crate::commands::spawn::feed::{
     create_agent_update, create_output_message, session_to_snapshot, FeedHandleSync,
     StatsSnapshot, TaskSnapshot, WaveSnapshot, WaveUpdate,
 };
 use crate::commands::spawn::monitor::{
-    load_session, save_session, AgentState, AgentStatus, SpawnSession, SpawnStats,
+    load_session, save_session, AgentState, AgentStatus, SpawnSession,
 };
+#[cfg(feature = "socket-feed")]
+use crate::commands::spawn::monitor::SpawnStats;
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
@@ -136,10 +139,13 @@ pub struct App {
     last_ralph_check: Instant,
 
     // === Socket Feed ===
+    #[cfg(feature = "socket-feed")]
     /// Optional handle to ZMQ feed publisher
     feed_handle: Option<FeedHandleSync>,
+    #[cfg(feature = "socket-feed")]
     /// Previous agent statuses for change detection
     previous_agent_statuses: HashMap<String, AgentStatus>,
+    #[cfg(feature = "socket-feed")]
     /// Last time we published to the feed
     last_feed_publish: Instant,
 }
@@ -181,9 +187,12 @@ impl App {
             ralph_mode: false,
             ralph_max_parallel: 5,
             last_ralph_check: Instant::now(),
-            // Feed
+            // Feed (only when socket-feed feature is enabled)
+            #[cfg(feature = "socket-feed")]
             feed_handle: None,
+            #[cfg(feature = "socket-feed")]
             previous_agent_statuses: HashMap::new(),
+            #[cfg(feature = "socket-feed")]
             last_feed_publish: Instant::now(),
         };
         app.refresh()?;
@@ -192,17 +201,34 @@ impl App {
         Ok(app)
     }
 
+    // === Socket Feed Methods (feature-gated) ===
+
     /// Set the socket feed handle
+    #[cfg(feature = "socket-feed")]
     pub fn set_feed_handle(&mut self, handle: Option<FeedHandleSync>) {
         self.feed_handle = handle;
     }
 
+    /// Set the socket feed handle (stub when feature disabled)
+    #[cfg(not(feature = "socket-feed"))]
+    pub fn set_feed_handle(&mut self, _handle: Option<()>) {
+        // No-op when socket-feed feature is disabled
+    }
+
     /// Check if feed is active
+    #[cfg(feature = "socket-feed")]
     pub fn has_feed(&self) -> bool {
         self.feed_handle.is_some()
     }
 
+    /// Check if feed is active (always false when feature disabled)
+    #[cfg(not(feature = "socket-feed"))]
+    pub fn has_feed(&self) -> bool {
+        false
+    }
+
     /// Publish full session snapshot to feed
+    #[cfg(feature = "socket-feed")]
     pub fn publish_session_snapshot(&self) {
         if let (Some(handle), Some(session)) = (&self.feed_handle, &self.session) {
             let snapshot = session_to_snapshot(session);
@@ -210,7 +236,14 @@ impl App {
         }
     }
 
+    /// Publish full session snapshot to feed (stub when feature disabled)
+    #[cfg(not(feature = "socket-feed"))]
+    pub fn publish_session_snapshot(&self) {
+        // No-op when socket-feed feature is disabled
+    }
+
     /// Publish live output to feed
+    #[cfg(feature = "socket-feed")]
     pub fn publish_output(&self) {
         if let Some(handle) = &self.feed_handle {
             if let Some(agent) = self.selected_agent() {
@@ -220,7 +253,14 @@ impl App {
         }
     }
 
+    /// Publish live output to feed (stub when feature disabled)
+    #[cfg(not(feature = "socket-feed"))]
+    pub fn publish_output(&self) {
+        // No-op when socket-feed feature is disabled
+    }
+
     /// Publish wave/task progress to feed
+    #[cfg(feature = "socket-feed")]
     pub fn publish_wave_update(&self) {
         if let Some(handle) = &self.feed_handle {
             let waves: Vec<WaveSnapshot> = self
@@ -256,7 +296,14 @@ impl App {
         }
     }
 
+    /// Publish wave/task progress to feed (stub when feature disabled)
+    #[cfg(not(feature = "socket-feed"))]
+    pub fn publish_wave_update(&self) {
+        // No-op when socket-feed feature is disabled
+    }
+
     /// Publish stats to feed
+    #[cfg(feature = "socket-feed")]
     pub fn publish_stats(&self) {
         if let (Some(handle), Some(session)) = (&self.feed_handle, &self.session) {
             let stats = SpawnStats::from(session);
@@ -265,7 +312,14 @@ impl App {
         }
     }
 
+    /// Publish stats to feed (stub when feature disabled)
+    #[cfg(not(feature = "socket-feed"))]
+    pub fn publish_stats(&self) {
+        // No-op when socket-feed feature is disabled
+    }
+
     /// Check for and publish agent status changes
+    #[cfg(feature = "socket-feed")]
     pub fn publish_agent_changes(&mut self) {
         // Collect updates first to avoid borrow issues
         let updates: Vec<_> = if self.feed_handle.is_some() {
@@ -309,13 +363,20 @@ impl App {
         }
     }
 
+    /// Check for and publish agent status changes (stub when feature disabled)
+    #[cfg(not(feature = "socket-feed"))]
+    pub fn publish_agent_changes(&mut self) {
+        // No-op when socket-feed feature is disabled
+    }
+
     /// Shutdown the feed
     pub fn shutdown_feed(&self) {
         // Feed will shutdown when handle is dropped
         // Nothing explicit needed here
     }
 
-    /// Count wave task states
+    /// Count wave task states (only used by socket-feed)
+    #[cfg(feature = "socket-feed")]
     fn count_wave_states(&self) -> (usize, usize, usize, usize) {
         let mut ready = 0;
         let mut running = 0;
@@ -509,7 +570,8 @@ impl App {
             }
         }
 
-        // Periodic full session snapshot (less frequent)
+        // Periodic full session snapshot (less frequent) - only when socket-feed enabled
+        #[cfg(feature = "socket-feed")]
         if self.has_feed() && self.last_feed_publish.elapsed() >= Duration::from_secs(5) {
             self.publish_session_snapshot();
             self.last_feed_publish = Instant::now();

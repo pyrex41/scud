@@ -31,6 +31,7 @@ use std::time::Duration;
 
 use self::app::{App, FocusedPanel, ViewMode};
 use self::ui::render;
+#[cfg(feature = "socket-feed")]
 use super::feed::{self, FeedConfig};
 
 /// Run the TUI monitor
@@ -39,7 +40,8 @@ pub fn run(
     session_name: &str,
     feed_endpoint: Option<String>,
 ) -> Result<()> {
-    // Start socket feed if endpoint provided
+    // Start socket feed if endpoint provided (requires socket-feed feature)
+    #[cfg(feature = "socket-feed")]
     let feed_handle = if let Some(endpoint) = feed_endpoint {
         let config = FeedConfig::from_endpoint(&endpoint);
         match feed::start_feed_sync(config) {
@@ -61,6 +63,17 @@ pub fn run(
             }
         }
     } else {
+        None
+    };
+
+    #[cfg(not(feature = "socket-feed"))]
+    let feed_handle: Option<()> = {
+        if feed_endpoint.is_some() {
+            eprintln!(
+                "{} Socket feed requires 'socket-feed' feature. Build with: cargo build --features socket-feed",
+                ColoredColorize::yellow("!")
+            );
+        }
         None
     };
 
