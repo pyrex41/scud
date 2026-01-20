@@ -18,7 +18,6 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use crate::agents::AgentDef;
 use crate::commands::helpers::{flatten_all_tasks, resolve_group_tag};
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
@@ -148,69 +147,39 @@ pub fn run(
     let mut claimed_tasks: Vec<(String, String)> = Vec::new(); // (task_id, tag) pairs for claiming
 
     for info in &ready_tasks {
-        // Determine harness/model: use task's agent_type if set, otherwise CLI args
-        let (effective_harness, effective_model, prompt) =
-            if let Some(ref agent_type) = info.task.agent_type {
-                // Try to load agent definition
-                match AgentDef::try_load(agent_type, &working_dir) {
-                    Some(agent_def) => {
-                        let h = agent_def.harness().unwrap_or(harness);
-                        let m = agent_def
-                            .model()
-                            .map(String::from)
-                            .unwrap_or_else(|| model_arg.to_string());
-                        // Use custom prompt template if available
-                        let p = match agent_def.prompt_template(&working_dir) {
-                            Some(template) => agent::generate_prompt_with_template(
-                                info.task, &info.tag, &template,
-                            ),
-                            None => agent::generate_prompt(info.task, &info.tag),
-                        };
-                        (h, m, p)
-                    }
-                    None => {
-                        // Agent type specified but no definition found - use defaults
-                        println!(
-                            "  {} Agent '{}' not found, using CLI defaults",
-                            "!".yellow(),
-                            agent_type
-                        );
-                        (
-                            harness,
-                            model_arg.to_string(),
-                            agent::generate_prompt(info.task, &info.tag),
-                        )
-                    }
-                }
-            } else {
-                // No agent type - use CLI args
-                (
-                    harness,
-                    model_arg.to_string(),
-                    agent::generate_prompt(info.task, &info.tag),
-                )
-            };
+        // Resolve agent config (harness, model, prompt) from task's agent_type
+        let config = agent::resolve_agent_config(
+            info.task,
+            &info.tag,
+            harness,
+            Some(model_arg),
+            &working_dir,
+        );
+
+        // Warn if agent type was specified but definition not found
+        if info.task.agent_type.is_some() && !config.from_agent_def {
+            println!(
+                "  {} Agent '{}' not found, using CLI defaults",
+                "!".yellow(),
+                info.task.agent_type.as_deref().unwrap_or("unknown")
+            );
+        }
 
         match terminal::spawn_terminal_with_harness_and_model(
             &info.task.id,
-            &prompt,
+            &config.prompt,
             &working_dir,
             &session_name,
-            effective_harness,
-            Some(&effective_model),
+            config.harness,
+            config.model.as_deref(),
         ) {
             Ok(window_index) => {
-                let agent_info = if info.task.agent_type.is_some() {
-                    format!("{}:{}", effective_harness.name(), effective_model)
-                } else {
-                    format!("{}:{}", harness.name(), model_arg)
-                };
                 println!(
                     "  {} Spawned: {} | {} [{}] {}:{}",
                     "✓".green(),
                     info.task.id.cyan(),
                     info.task.title.dimmed(),
-                    agent_info.dimmed(),
+                    config.display_info().dimmed(),
                     session_name.dimmed(),
                     window_index.dimmed(),
                 );

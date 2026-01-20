@@ -2,8 +2,109 @@
 //!
 //! Creates prompts that provide task context and instructions for Claude Code agents.
 
+use crate::agents::AgentDef;
+use crate::commands::spawn::terminal::Harness;
 use crate::commands::swarm::session::WaveSummary;
 use crate::models::task::Task;
+use std::path::Path;
+
+/// Resolved configuration for spawning an agent
+#[derive(Debug, Clone)]
+pub struct ResolvedAgentConfig {
+    /// The harness to use (claude or opencode)
+    pub harness: Harness,
+    /// The model to use (if specified)
+    pub model: Option<String>,
+    /// The prompt to send to the agent
+    pub prompt: String,
+    /// Whether this config came from an agent definition
+    pub from_agent_def: bool,
+    /// The agent type name (if from agent def)
+    pub agent_type: Option<String>,
+}
+
+/// Resolve the agent configuration for a task.
+///
+/// If the task has an `agent_type`, attempts to load the agent definition
+/// from `.scud/agents/<agent_type>.toml` and uses its harness, model, and
+/// prompt template. Falls back to defaults if the agent definition is not found.
+///
+/// # Arguments
+/// * `task` - The task to resolve configuration for
+/// * `tag` - The task's tag/phase name
+/// * `default_harness` - Harness to use if no agent definition specifies one
+/// * `default_model` - Model to use if no agent definition specifies one
+/// * `working_dir` - Project root for loading agent definitions
+pub fn resolve_agent_config(
+    task: &Task,
+    tag: &str,
+    default_harness: Harness,
+    default_model: Option<&str>,
+    working_dir: &Path,
+) -> ResolvedAgentConfig {
+    if let Some(ref agent_type) = task.agent_type {
+        // Try to load agent definition
+        match AgentDef::try_load(agent_type, working_dir) {
+            Some(agent_def) => {
+                let harness = agent_def.harness().unwrap_or(default_harness);
+                let model = agent_def
+                    .model()
+                    .map(String::from)
+                    .or_else(|| default_model.map(String::from));
+
+                // Use custom prompt template if available
+                let prompt = match agent_def.prompt_template(working_dir) {
+                    Some(template) => generate_prompt_with_template(task, tag, &template),
+                    None => generate_prompt(task, tag),
+                };
+
+                ResolvedAgentConfig {
+                    harness,
+                    model,
+                    prompt,
+                    from_agent_def: true,
+                    agent_type: Some(agent_type.clone()),
+                }
+            }
+            None => {
+                // Agent type specified but no definition found - use defaults
+                ResolvedAgentConfig {
+                    harness: default_harness,
+                    model: default_model.map(String::from),
+                    prompt: generate_prompt(task, tag),
+                    from_agent_def: false,
+                    agent_type: Some(agent_type.clone()),
+                }
+            }
+        }
+    } else {
+        // No agent type - use defaults
+        ResolvedAgentConfig {
+            harness: default_harness,
+            model: default_model.map(String::from),
+            prompt: generate_prompt(task, tag),
+            from_agent_def: false,
+            agent_type: None,
+        }
+    }
+}
+
+impl ResolvedAgentConfig {
+    /// Get a display string for logging (e.g., "opencode:grok-code-fast-1@fast-builder")
+    pub fn display_info(&self) -> String {
+        let model_str = self
+            .model
+            .as_deref()
+            .map(|m| format!(":{}", m))
+            .unwrap_or_default();
+
+        if let Some(ref agent_type) = self.agent_type {
+            format!("{}{}@{}", self.harness.name(), model_str, agent_type)
+        } else {
+            format!("{}{}", self.harness.name(), model_str)
+        }
+    }
+}
 
 /// Generate a prompt for Claude Code with task context
 pub fn generate_prompt(task: &Task, tag: &str) -> String {
@@ -412,5 +513,175 @@ mod tests {
         assert!(prompt.contains("src/auth.rs"));
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("REPAIR_COMPLETE"));
+    }
+
+    // =========================================================================
+    // Tests for resolve_agent_config
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_agent_config_no_agent_type() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let task = Task::new("1".to_string(), "Test".to_string(), "Desc".to_string());
+
+        let config = resolve_agent_config(&task, "test", Harness::Claude, None, temp.path());
+
+        assert_eq!(config.harness, Harness::Claude);
+        assert_eq!(config.model, None);
+        assert!(!config.from_agent_def);
+        assert!(config.agent_type.is_none());
+    }
+
+    #[test]
+    fn test_resolve_agent_config_uses_default_model() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let task = Task::new("1".to_string(), "Test".to_string(), "Desc".to_string());
+
+        let config =
+            resolve_agent_config(&task, "test", Harness::Claude, Some("opus"), temp.path());
+
+        assert_eq!(config.harness, Harness::Claude);
+        assert_eq!(config.model, Some("opus".to_string()));
+        assert!(!config.from_agent_def);
+    }
+
+    #[test]
+    fn test_resolve_agent_config_agent_type_not_found() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut task = Task::new("1".to_string(), "Test".to_string(), "Desc".to_string());
+        task.agent_type = Some("nonexistent".to_string());
+
+        let config =
+            resolve_agent_config(&task, "test", Harness::Claude, Some("sonnet"), temp.path());
+
+        // Should fall back to defaults when agent def not found
+        assert_eq!(config.harness, Harness::Claude);
+        assert_eq!(config.model, Some("sonnet".to_string()));
+        assert!(!config.from_agent_def);
+        assert_eq!(config.agent_type, Some("nonexistent".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_agent_config_from_agent_def() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let agents_dir = temp.path().join(".scud").join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+
+        // Create a fast-builder agent definition with opencode harness
+        let agent_file = agents_dir.join("fast-builder.toml");
+        std::fs::write(
+            &agent_file,
+            r#"
+[agent]
+name = "fast-builder"
+description = "Fast builder"
+
+[model]
+harness = "opencode"
+model = "grok-code-fast-1"
+"#,
+        )
+        .unwrap();
+
+        let mut task = Task::new("1".to_string(), "Test".to_string(), "Desc".to_string());
+        task.agent_type = Some("fast-builder".to_string());
+
+        // Default harness is claude, but agent def should override to opencode
+        let config =
+            resolve_agent_config(&task, "test", Harness::Claude, Some("opus"), temp.path());
+
+        assert_eq!(config.harness, Harness::OpenCode);
+        assert_eq!(config.model, Some("grok-code-fast-1".to_string()));
+        assert!(config.from_agent_def);
+        assert_eq!(config.agent_type, Some("fast-builder".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_agent_config_agent_def_without_model_uses_default() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let agents_dir = temp.path().join(".scud").join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+
+        // Agent def with harness but no model
+        let agent_file = agents_dir.join("custom.toml");
+        std::fs::write(
+            &agent_file,
+            r#"
+[agent]
+name = "custom"
+
+[model]
+harness = "opencode"
+"#,
+        )
+        .unwrap();
+
+        let mut task = Task::new("1".to_string(), "Test".to_string(), "Desc".to_string());
+        task.agent_type = Some("custom".to_string());
+
+        let config =
+            resolve_agent_config(&task, "test", Harness::Claude, Some("opus"), temp.path());
+
+        // Harness comes from agent def, model falls back to default
+        assert_eq!(config.harness, Harness::OpenCode);
+        assert_eq!(config.model, Some("opus".to_string()));
+        assert!(config.from_agent_def);
+    }
+
+    #[test]
+    fn test_resolve_agent_config_uses_custom_prompt_template() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let agents_dir = temp.path().join(".scud").join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+
+        let agent_file = agents_dir.join("templated.toml");
+        std::fs::write(
+            &agent_file,
+            r#"
+[agent]
+name = "templated"
+
+[model]
+harness = "claude"
+
+[prompt]
+template = "Custom: {task.title} in {tag}"
+"#,
+        )
+        .unwrap();
+
+        let mut task = Task::new("1".to_string(), "My Task".to_string(), "Desc".to_string());
+        task.agent_type = Some("templated".to_string());
+
+        let config = resolve_agent_config(&task, "my-tag", Harness::Claude, None, temp.path());
+
+        assert_eq!(config.prompt, "Custom: My Task in my-tag");
+        assert!(config.from_agent_def);
+    }
+
+    #[test]
+    fn test_resolved_agent_config_display_info() {
+        let config = ResolvedAgentConfig {
+            harness: Harness::OpenCode,
+            model: Some("grok-code-fast-1".to_string()),
+            prompt: "test".to_string(),
+            from_agent_def: true,
+            agent_type: Some("fast-builder".to_string()),
+        };
+
+        assert_eq!(
+            config.display_info(),
+            "opencode:grok-code-fast-1@fast-builder"
+        );
+
+        let config_no_model = ResolvedAgentConfig {
+            harness: Harness::Claude,
+            model: None,
+            prompt: "test".to_string(),
+            from_agent_def: false,
+            agent_type: None,
+        };
+
+        assert_eq!(config_no_model.display_info(), "claude");
     }
 }

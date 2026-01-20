@@ -729,34 +729,39 @@ fn execute_round(
     working_dir: &std::path::Path,
     session_name: &str,
     round_idx: usize,
-    harness: Harness,
+    default_harness: Harness,
 ) -> Result<RoundState> {
     let mut round_state = RoundState::new(round_idx);
 
     for info in tasks.iter() {
-        // Generate prompt - agents self-orient using scud CLI commands
-        let prompt = agent::generate_prompt(info.task, &info.tag);
+        // Resolve agent config (harness, model, prompt) from task's agent_type
+        let config =
+            agent::resolve_agent_config(info.task, &info.tag, default_harness, None, working_dir);
 
-        match terminal::spawn_terminal_with_harness(
+        // Warn if agent type was specified but definition not found
+        if info.task.agent_type.is_some() && !config.from_agent_def {
+            println!(
+                "    {} Agent '{}' not found, using defaults",
+                "!".yellow(),
+                info.task.agent_type.as_deref().unwrap_or("unknown")
+            );
+        }
+
+        match terminal::spawn_terminal_with_harness_and_model(
             &info.task.id,
-            &prompt,
+            &config.prompt,
             working_dir,
             session_name,
-            harness,
+            config.harness,
+            config.model.as_deref(),
         ) {
             Ok(window_index) => {
-                // Determine agent info for display
-                let agent_info = if let Some(ref agent_type) = info.task.agent_type {
-                    format!("@{}", agent_type)
-                } else {
-                    harness.name().to_string()
-                };
                 println!(
                     "    {} Spawned: {} | {} [{}] {}:{}",
                     "✓".green(),
                     info.task.id.cyan(),
                     info.task.title.dimmed(),
-                    agent_info.dimmed(),
+                    config.display_info().dimmed(),
                     session_name.dimmed(),
                     window_index.dimmed()
                 );
