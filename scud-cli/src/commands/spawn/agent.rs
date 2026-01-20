@@ -62,15 +62,23 @@ Dependencies (should be done):
     prompt.push_str(&format!(
         r#"
 Instructions:
-1. First, explore the codebase to understand the context for this task
-2. Implement the task following project conventions and patterns
-3. Write tests if applicable based on the test strategy
-4. When complete, run: scud set-status {} done
-5. If blocked by issues, run: scud set-status {} blocked
+1. Check for discoveries from other agents: scud log-all --limit 10
+2. Explore the codebase to understand the context for this task
+3. Implement the task following project conventions and patterns
+4. Log important discoveries to share with other agents:
+   scud log {id} "Found X in Y, useful for Z"
+5. Write tests if applicable based on the test strategy
+6. When complete, run: scud set-status {id} done
+7. If blocked by issues, run: scud set-status {id} blocked
 
-Begin by understanding what needs to be done and exploring relevant code.
+Discovery Logging:
+- Log findings that other agents might benefit from (file locations, patterns, gotchas)
+- Keep logs concise but informative (1-3 sentences)
+- Example: scud log {id} "Auth helpers are in lib/auth.rs, not utils/"
+
+Begin by checking recent logs and exploring relevant code.
 "#,
-        task.id, task.id
+        id = task.id
     ));
 
     prompt
@@ -79,15 +87,20 @@ Begin by understanding what needs to be done and exploring relevant code.
 /// Generate a shorter prompt for tasks with less context
 pub fn generate_minimal_prompt(task: &Task, tag: &str) -> String {
     format!(
-        r#"SCUD Task {}: {}
+        r#"SCUD Task {id}: {title}
 
-Tag: {}
-Description: {}
+Tag: {tag}
+Description: {description}
 
-When done: scud set-status {} done
-If blocked: scud set-status {} blocked
+First: scud log-all --limit 5 (check recent discoveries)
+Log findings: scud log {id} "your discovery"
+When done: scud set-status {id} done
+If blocked: scud set-status {id} blocked
 "#,
-        task.id, task.title, tag, task.description, task.id, task.id
+        id = task.id,
+        title = task.title,
+        tag = tag,
+        description = task.description
     )
 }
 
@@ -226,12 +239,15 @@ Files changed by this task: {task_files}
 - Focus on fixing the specific error, don't refactor unrelated code
 - If the fix requires changes to other tasks' code, note it but don't modify
 - After fixing, commit with: scud commit -m "fix: {task_id} - <description>"
+- Log what you fixed for other agents: scud log {task_id} "Fixed: <brief description>"
 
 When the validation passes:
+  scud log {task_id} "Repair successful: <what was fixed>"
   scud set-status {task_id} done
   echo "REPAIR_COMPLETE: SUCCESS" > .scud/repair-complete-{task_id}
 
 If you cannot fix it:
+  scud log {task_id} "Repair blocked: <reason>"
   scud set-status {task_id} blocked
   echo "REPAIR_COMPLETE: BLOCKED" > .scud/repair-complete-{task_id}
   echo "REASON: <explanation>" >> .scud/repair-complete-{task_id}

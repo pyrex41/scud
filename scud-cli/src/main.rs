@@ -524,6 +524,17 @@ enum Commands {
         task_id: String,
     },
 
+    /// Show recent log entries from all tasks (for discovery sharing)
+    LogAll {
+        /// Maximum number of entries to show (default: 20)
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+
+        /// Only show logs from tasks in this tag
+        #[arg(short, long)]
+        tag: Option<String>,
+    },
+
     /// Quick orientation for new session (show recent commits, active sessions, next task)
     Warmup,
 
@@ -912,6 +923,9 @@ async fn main() -> Result<()> {
             tag,
         } => commands::log::run(cli.project, &task_id, &summary, tag.as_deref()),
         Commands::LogShow { task_id } => commands::log::show(cli.project, &task_id),
+        Commands::LogAll { limit, tag } => {
+            commands::log::show_all(cli.project, limit, tag.as_deref())
+        }
         Commands::Warmup => commands::warmup::run(cli.project),
         Commands::Commit { message, all } => {
             commands::commit::run(cli.project, message.as_deref(), all)
