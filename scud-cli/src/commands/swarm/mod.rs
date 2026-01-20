@@ -190,6 +190,87 @@ pub fn run(
         round_size,
     );
 
+    // Detect orphan in-progress tasks (tasks with no running tmux window)
+    let all_phases = storage.load_tasks()?;
+    let orphans = find_orphan_tasks(&all_phases, &phase_tag, all_tags, &session_name);
+
+    if !orphans.is_empty() {
+        println!();
+        println!(
+            "{}",
+            "Detected orphan in-progress tasks (no tmux window):".yellow()
+        );
+        for (task_id, tag) in &orphans {
+            println!(
+                "  {} {} (tag: {})",
+                "*".yellow(),
+                task_id.cyan(),
+                tag.dimmed()
+            );
+        }
+        println!();
+
+        // Prompt user for action
+        let choices = vec![
+            "Reset to pending and re-run",
+            "Kill existing windows (if any) and restart",
+            "Skip and continue (leave as in-progress)",
+            "Abort",
+        ];
+
+        let selection = dialoguer::Select::new()
+            .with_prompt("How should orphan tasks be handled?")
+            .items(&choices)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => {
+                // Reset to pending
+                for (task_id, tag) in &orphans {
+                    if let Ok(mut phase) = storage.load_group(tag) {
+                        if let Some(task) = phase.get_task_mut(task_id) {
+                            task.set_status(TaskStatus::Pending);
+                            storage.update_group(tag, &phase)?;
+                            println!("  {} {} -> pending", "v".green(), task_id);
+                        }
+                    }
+                }
+            }
+            1 => {
+                // Kill and restart - first try to kill any matching windows
+                for (task_id, _) in &orphans {
+                    let window_name = format!("task-{}", task_id);
+                    let _ = terminal::kill_tmux_window(&session_name, &window_name);
+                }
+                // Reset to pending so they'll be picked up
+                for (task_id, tag) in &orphans {
+                    if let Ok(mut phase) = storage.load_group(tag) {
+                        if let Some(task) = phase.get_task_mut(task_id) {
+                            task.set_status(TaskStatus::Pending);
+                            storage.update_group(tag, &phase)?;
+                            println!(
+                                "  {} {} -> pending (will re-spawn)",
+                                "v".green(),
+                                task_id
+                            );
+                        }
+                    }
+                }
+            }
+            2 => {
+                // Skip - do nothing, leave as in-progress
+                println!("{}", "Leaving orphan tasks as in-progress.".dimmed());
+            }
+            3 => {
+                // Abort
+                anyhow::bail!("Aborted by user");
+            }
+            _ => {}
+        }
+        println!();
+    }
+
     // Main loop: execute waves until all tasks done
     let mut wave_number = 1;
     loop {
@@ -493,16 +574,38 @@ fn compute_waves_from_tasks<'a>(
     let mut in_degree: HashMap<String, usize> = HashMap::new();
     let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
 
+    // Collect in-progress task IDs for blocking check
+    let in_progress_ids: HashSet<String> = {
+        let tags: Vec<&str> = if all_tags {
+            all_phases.keys().map(|s| s.as_str()).collect()
+        } else {
+            vec![phase_tag]
+        };
+
+        tags.iter()
+            .filter_map(|tag| all_phases.get(*tag))
+            .flat_map(|phase| &phase.tasks)
+            .filter(|t| t.status == TaskStatus::InProgress)
+            .map(|t| t.id.clone())
+            .collect()
+    };
+
     for info in &actionable {
         in_degree.entry(info.task.id.clone()).or_insert(0);
         for dep in &info.task.dependencies {
             if task_ids.contains(dep) {
+                // Dependency is pending - will be in a wave
                 *in_degree.entry(info.task.id.clone()).or_insert(0) += 1;
                 dependents
                     .entry(dep.clone())
                     .or_default()
                     .push(info.task.id.clone());
+            } else if in_progress_ids.contains(dep) {
+                // Dependency is in-progress - block this task
+                // Set very high in-degree so it never becomes ready
+                *in_degree.entry(info.task.id.clone()).or_insert(0) += 1000;
             }
+            // If dep is Done/Failed/etc, it's satisfied - do nothing
         }
     }
 
@@ -581,6 +684,43 @@ fn count_in_progress(
         .flat_map(|phase| &phase.tasks)
         .filter(|t| t.status == TaskStatus::InProgress)
         .count()
+}
+
+/// Check if a tmux window exists for a task
+fn tmux_window_exists_for_task(session_name: &str, task_id: &str) -> bool {
+    let window_name = format!("task-{}", task_id);
+    terminal::tmux_window_exists(session_name, &window_name)
+}
+
+/// Find in-progress tasks that have no running tmux window (orphans)
+fn find_orphan_tasks(
+    all_phases: &HashMap<String, Phase>,
+    phase_tag: &str,
+    all_tags: bool,
+    session_name: &str,
+) -> Vec<(String, String)> {
+    // (task_id, tag) pairs
+    let tags: Vec<&str> = if all_tags {
+        all_phases.keys().map(|s| s.as_str()).collect()
+    } else {
+        vec![phase_tag]
+    };
+
+    let mut orphans = Vec::new();
+
+    for tag in tags {
+        if let Some(phase) = all_phases.get(tag) {
+            for task in &phase.tasks {
+                if task.status == TaskStatus::InProgress
+                    && !tmux_window_exists_for_task(session_name, &task.id)
+                {
+                    orphans.push((task.id.clone(), tag.to_string()));
+                }
+            }
+        }
+    }
+
+    orphans
 }
 
 fn execute_round(

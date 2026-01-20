@@ -580,3 +580,29 @@ pub fn setup_tmux_control_window(session_name: &str, tag: &str) -> Result<()> {
 
     Ok(())
 }
+
+/// Check if a specific window exists in a tmux session
+pub fn tmux_window_exists(session_name: &str, window_name: &str) -> bool {
+    let output = Command::new("tmux")
+        .args(["list-windows", "-t", session_name, "-F", "#{window_name}"])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let windows = String::from_utf8_lossy(&out.stdout);
+            windows
+                .lines()
+                .any(|w| w == window_name || w.starts_with(&format!("{}-", window_name)))
+        }
+        _ => false,
+    }
+}
+
+/// Kill a specific tmux window
+pub fn kill_tmux_window(session_name: &str, window_name: &str) -> Result<()> {
+    let target = format!("{}:{}", session_name, window_name);
+    Command::new("tmux")
+        .args(["kill-window", "-t", &target])
+        .output()?;
+    Ok(())
+}

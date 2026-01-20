@@ -175,15 +175,32 @@ enum Commands {
     },
 
     /// Update task status
+    ///
+    /// Single task: scud set-status <task_id> <status>
+    /// Multiple tasks: scud set-status <status> <task_id> [task_id...]
+    /// Bulk transition: scud set-status --from <status> --to <status>
     SetStatus {
-        /// Task ID
-        task_id: String,
-        /// New status
-        status: String,
+        /// Status (for multi-task mode) or task ID (for single task mode)
+        first_arg: Option<String>,
+
+        /// Task IDs (for multi-task mode) or status (for single task mode)
+        rest: Vec<String>,
+
+        /// Source status for bulk transition
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Target status for bulk transition
+        #[arg(long)]
+        to: Option<String>,
 
         /// Phase tag (uses active phase if not provided)
         #[arg(short, long)]
         tag: Option<String>,
+
+        /// Apply to all tags
+        #[arg(long)]
+        all_tags: bool,
     },
 
     /// Find next available task
@@ -720,10 +737,21 @@ async fn main() -> Result<()> {
             commands::show::run(cli.project, &task_id, tag.as_deref())
         }
         Commands::SetStatus {
-            task_id,
-            status,
+            first_arg,
+            rest,
+            from,
+            to,
             tag,
-        } => commands::set_status::run(cli.project, &task_id, &status, tag.as_deref()),
+            all_tags,
+        } => commands::set_status::run(
+            cli.project,
+            first_arg.as_deref(),
+            &rest,
+            from.as_deref(),
+            to.as_deref(),
+            tag.as_deref(),
+            all_tags,
+        ),
         Commands::Next {
             tag,
             spawn,
