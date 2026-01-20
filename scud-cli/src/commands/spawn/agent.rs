@@ -578,7 +578,7 @@ description = "Fast builder"
 
 [model]
 harness = "opencode"
-model = "grok-code-fast-1"
+model = "xai/grok-code-fast-1"
 "#,
         )
         .unwrap();
@@ -591,7 +591,7 @@ model = "grok-code-fast-1"
             resolve_agent_config(&task, "test", Harness::Claude, Some("opus"), temp.path());
 
         assert_eq!(config.harness, Harness::OpenCode);
-        assert_eq!(config.model, Some("grok-code-fast-1".to_string()));
+        assert_eq!(config.model, Some("xai/grok-code-fast-1".to_string()));
         assert!(config.from_agent_def);
         assert_eq!(config.agent_type, Some("fast-builder".to_string()));
     }
@@ -663,7 +663,7 @@ template = "Custom: {task.title} in {tag}"
     fn test_resolved_agent_config_display_info() {
         let config = ResolvedAgentConfig {
             harness: Harness::OpenCode,
-            model: Some("grok-code-fast-1".to_string()),
+            model: Some("xai/grok-code-fast-1".to_string()),
             prompt: "test".to_string(),
             from_agent_def: true,
             agent_type: Some("fast-builder".to_string()),
@@ -671,7 +671,7 @@ template = "Custom: {task.title} in {tag}"
 
         assert_eq!(
             config.display_info(),
-            "opencode:grok-code-fast-1@fast-builder"
+            "opencode:xai/grok-code-fast-1@fast-builder"
         );
 
         let config_no_model = ResolvedAgentConfig {
