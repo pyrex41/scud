@@ -13,8 +13,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use crate::commands::spawn::feed::{
+    create_agent_update, create_output_message, session_to_snapshot, FeedHandleSync,
+    StatsSnapshot, TaskSnapshot, WaveSnapshot, WaveUpdate,
+};
 use crate::commands::spawn::monitor::{
-    load_session, save_session, AgentState, AgentStatus, SpawnSession,
+    load_session, save_session, AgentState, AgentStatus, SpawnSession, SpawnStats,
 };
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
@@ -130,6 +134,14 @@ pub struct App {
     pub ralph_max_parallel: usize,
     /// Last time we checked for new tasks to spawn in Ralph mode
     last_ralph_check: Instant,
+
+    // === Socket Feed ===
+    /// Optional handle to ZMQ feed publisher
+    feed_handle: Option<FeedHandleSync>,
+    /// Previous agent statuses for change detection
+    previous_agent_statuses: HashMap<String, AgentStatus>,
+    /// Last time we published to the feed
+    last_feed_publish: Instant,
 }
 
 impl App {
@@ -169,11 +181,159 @@ impl App {
             ralph_mode: false,
             ralph_max_parallel: 5,
             last_ralph_check: Instant::now(),
+            // Feed
+            feed_handle: None,
+            previous_agent_statuses: HashMap::new(),
+            last_feed_publish: Instant::now(),
         };
         app.refresh()?;
         app.refresh_waves();
         app.refresh_live_output();
         Ok(app)
+    }
+
+    /// Set the socket feed handle
+    pub fn set_feed_handle(&mut self, handle: Option<FeedHandleSync>) {
+        self.feed_handle = handle;
+    }
+
+    /// Check if feed is active
+    pub fn has_feed(&self) -> bool {
+        self.feed_handle.is_some()
+    }
+
+    /// Publish full session snapshot to feed
+    pub fn publish_session_snapshot(&self) {
+        if let (Some(handle), Some(session)) = (&self.feed_handle, &self.session) {
+            let snapshot = session_to_snapshot(session);
+            handle.publish_session(snapshot);
+        }
+    }
+
+    /// Publish live output to feed
+    pub fn publish_output(&self) {
+        if let Some(handle) = &self.feed_handle {
+            if let Some(agent) = self.selected_agent() {
+                let output = create_output_message(&agent.task_id, self.live_output.clone());
+                handle.try_publish_output(output);
+            }
+        }
+    }
+
+    /// Publish wave/task progress to feed
+    pub fn publish_wave_update(&self) {
+        if let Some(handle) = &self.feed_handle {
+            let waves: Vec<WaveSnapshot> = self
+                .waves
+                .iter()
+                .map(|w| WaveSnapshot {
+                    number: w.number,
+                    tasks: w
+                        .tasks
+                        .iter()
+                        .map(|t| TaskSnapshot {
+                            id: t.id.clone(),
+                            title: t.title.clone(),
+                            state: format!("{:?}", t.state).to_lowercase(),
+                            complexity: t.complexity,
+                        })
+                        .collect(),
+                })
+                .collect();
+
+            let (ready, running, done, blocked) = self.count_wave_states();
+
+            let update = WaveUpdate {
+                waves,
+                ready_count: ready,
+                running_count: running,
+                done_count: done,
+                blocked_count: blocked,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            };
+
+            handle.publish_wave_update(update);
+        }
+    }
+
+    /// Publish stats to feed
+    pub fn publish_stats(&self) {
+        if let (Some(handle), Some(session)) = (&self.feed_handle, &self.session) {
+            let stats = SpawnStats::from(session);
+            let snapshot = StatsSnapshot::from(&stats);
+            handle.publish_stats(snapshot);
+        }
+    }
+
+    /// Check for and publish agent status changes
+    pub fn publish_agent_changes(&mut self) {
+        // Collect updates first to avoid borrow issues
+        let updates: Vec<_> = if self.feed_handle.is_some() {
+            self.agents()
+                .iter()
+                .filter_map(|agent| {
+                    let prev = self.previous_agent_statuses.get(&agent.task_id);
+                    if prev != Some(&agent.status) {
+                        Some(create_agent_update(
+                            &agent.task_id,
+                            &agent.status,
+                            prev,
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Publish updates
+        if let Some(handle) = &self.feed_handle {
+            for update in updates {
+                handle.publish_agent_update(update);
+            }
+        }
+
+        // Collect new statuses to avoid borrow issues
+        let new_statuses: Vec<_> = self
+            .agents()
+            .iter()
+            .map(|a| (a.task_id.clone(), a.status.clone()))
+            .collect();
+
+        // Update previous statuses
+        self.previous_agent_statuses.clear();
+        for (id, status) in new_statuses {
+            self.previous_agent_statuses.insert(id, status);
+        }
+    }
+
+    /// Shutdown the feed
+    pub fn shutdown_feed(&self) {
+        // Feed will shutdown when handle is dropped
+        // Nothing explicit needed here
+    }
+
+    /// Count wave task states
+    fn count_wave_states(&self) -> (usize, usize, usize, usize) {
+        let mut ready = 0;
+        let mut running = 0;
+        let mut done = 0;
+        let mut blocked = 0;
+
+        for wave in &self.waves {
+            for task in &wave.tasks {
+                match task.state {
+                    WaveTaskState::Ready => ready += 1,
+                    WaveTaskState::Running | WaveTaskState::InProgress => running += 1,
+                    WaveTaskState::Done => done += 1,
+                    WaveTaskState::Blocked => blocked += 1,
+                }
+            }
+        }
+
+        (ready, running, done, blocked)
     }
 
     /// Refresh session data from disk and update agent statuses
@@ -330,11 +490,29 @@ impl App {
         if self.last_refresh.elapsed() >= self.refresh_interval {
             self.refresh()?;
             self.refresh_waves();
+
+            // Publish changes to feed
+            if self.has_feed() {
+                self.publish_agent_changes();
+                self.publish_wave_update();
+                self.publish_stats();
+            }
         }
 
         // Refresh live output more frequently
         if self.last_output_refresh.elapsed() >= self.output_refresh_interval {
             self.refresh_live_output();
+
+            // Publish output to feed
+            if self.has_feed() {
+                self.publish_output();
+            }
+        }
+
+        // Periodic full session snapshot (less frequent)
+        if self.has_feed() && self.last_feed_publish.elapsed() >= Duration::from_secs(5) {
+            self.publish_session_snapshot();
+            self.last_feed_publish = Instant::now();
         }
 
         // Ralph mode: auto-spawn ready tasks

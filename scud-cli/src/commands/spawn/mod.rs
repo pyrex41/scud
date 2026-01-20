@@ -7,6 +7,7 @@
 //! - Install Claude Code hooks for automatic task completion
 
 pub mod agent;
+pub mod feed;
 pub mod hooks;
 pub mod monitor;
 pub mod terminal;
@@ -315,7 +316,7 @@ pub fn run(
         println!("Starting monitor...");
         // Small delay to let agents start
         thread::sleep(Duration::from_secs(1));
-        return tui::run(project_root, &session_name);
+        return tui::run(project_root, &session_name, None);
     }
 
     // Attach if requested
@@ -329,7 +330,11 @@ pub fn run(
 }
 
 /// Run the TUI monitor for a spawn session
-pub fn run_monitor(project_root: Option<PathBuf>, session: Option<String>) -> Result<()> {
+pub fn run_monitor(
+    project_root: Option<PathBuf>,
+    session: Option<String>,
+    feed_endpoint: Option<String>,
+) -> Result<()> {
     use colored::Colorize;
 
     // List available sessions if none specified
@@ -352,7 +357,7 @@ pub fn run_monitor(project_root: Option<PathBuf>, session: Option<String>) -> Re
         }
     };
 
-    tui::run(project_root, &session_name)
+    tui::run(project_root, &session_name, feed_endpoint)
 }
 
 /// List spawn sessions

@@ -41,6 +41,9 @@ regex = "1"       # Pattern matching for error parsing
 ratatui = "0.29"      # Terminal UI framework
 crossterm = "0.28"    # Cross-platform terminal manipulation
 
+# Socket feed (ZeroMQ)
+zeromq = "0.4"        # Async ZeroMQ bindings for socket feed
+
 [features]
 default = []
 real-llm = []        # Enable tests with real LLM API calls

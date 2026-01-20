@@ -597,6 +597,10 @@ enum Commands {
         /// Session name to monitor (auto-detects if only one exists)
         #[arg(short, long)]
         session: Option<String>,
+
+        /// Enable socket feed for external consumers (e.g., tcp://*:5555 or ipc:///tmp/scud.sock)
+        #[arg(short, long)]
+        feed: Option<String>,
     },
 
     /// List spawn sessions
@@ -954,7 +958,9 @@ async fn main() -> Result<()> {
             &harness,
             &model,
         ),
-        Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
+        Commands::Monitor { session, feed } => {
+            commands::spawn::run_monitor(cli.project, session, feed)
+        }
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
         Commands::Run {
             prompt,

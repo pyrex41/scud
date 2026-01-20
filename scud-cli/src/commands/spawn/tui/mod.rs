@@ -6,11 +6,19 @@
 //! - Bottom: Live terminal output from selected agent
 //!
 //! Tab switches focus between panels. Space toggles task selection for spawning.
+//!
+//! ## Socket Feed
+//!
+//! When started with `--feed <endpoint>`, publishes monitor state via ZMQ PUB socket.
+//! External consumers can subscribe to receive real-time updates.
+//!
+//! Example: `scud monitor --session my-session --feed tcp://*:5555`
 
 pub mod app;
 pub mod ui;
 
 use anyhow::Result;
+use colored::Colorize as ColoredColorize;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
@@ -23,9 +31,39 @@ use std::time::Duration;
 
 use self::app::{App, FocusedPanel, ViewMode};
 use self::ui::render;
+use super::feed::{self, FeedConfig};
 
 /// Run the TUI monitor
-pub fn run(project_root: Option<PathBuf>, session_name: &str) -> Result<()> {
+pub fn run(
+    project_root: Option<PathBuf>,
+    session_name: &str,
+    feed_endpoint: Option<String>,
+) -> Result<()> {
+    // Start socket feed if endpoint provided
+    let feed_handle = if let Some(endpoint) = feed_endpoint {
+        let config = FeedConfig::from_endpoint(&endpoint);
+        match feed::start_feed_sync(config) {
+            Ok((handle, bound_endpoint)) => {
+                eprintln!(
+                    "{} Socket feed bound to {}",
+                    ColoredColorize::green("✓"),
+                    ColoredColorize::cyan(bound_endpoint.as_str())
+                );
+                Some(handle)
+            }
+            Err(e) => {
+                eprintln!(
+                    "{} Failed to start socket feed: {}",
+                    ColoredColorize::yellow("!"),
+                    ColoredColorize::dimmed(e.to_string().as_str())
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -33,11 +71,18 @@ pub fn run(project_root: Option<PathBuf>, session_name: &str) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app state
+    // Create app state with optional feed handle
     let mut app = App::new(project_root, session_name)?;
+    app.set_feed_handle(feed_handle);
+
+    // Publish initial state if feed is active
+    app.publish_session_snapshot();
 
     // Main loop
     let result = run_app(&mut terminal, &mut app);
+
+    // Shutdown feed
+    app.shutdown_feed();
 
     // Restore terminal
     disable_raw_mode()?;
