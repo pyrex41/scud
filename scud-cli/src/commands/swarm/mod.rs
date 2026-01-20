@@ -207,7 +207,7 @@ pub fn run(
         let session_name_clone = session_name.clone();
         let project_root_clone = project_root.clone();
         std::thread::spawn(move || {
-            let _ = tui::run(project_root_clone, &session_name_clone);
+            let _ = tui::run(project_root_clone, &session_name_clone, None);
         });
     }
 
