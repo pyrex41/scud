@@ -699,6 +699,33 @@ enum Commands {
         #[arg(long, default_value = "3")]
         max_repair_attempts: usize,
     },
+
+    /// Run tests and spawn repair agents until they pass
+    Test {
+        /// Test command to run (uses backpressure config if not provided)
+        #[arg(short, long)]
+        command: Option<String>,
+
+        /// Maximum repair attempts before giving up (default: 10)
+        #[arg(short = 'n', long, default_value = "10")]
+        max_attempts: usize,
+
+        /// AI harness: claude, opencode (default: claude)
+        #[arg(short = 'H', long, default_value = "claude")]
+        harness: String,
+
+        /// Agent type to use for repairs (default: repairer)
+        #[arg(short, long, default_value = "repairer")]
+        agent: String,
+
+        /// Tmux session name (default: scud-test)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Attach to tmux session while agent works
+        #[arg(long)]
+        attach: bool,
+    },
 }
 
 #[tokio::main]
@@ -1019,6 +1046,22 @@ async fn main() -> Result<()> {
             review_all,
             no_repair,
             max_repair_attempts,
+        ),
+        Commands::Test {
+            command,
+            max_attempts,
+            harness,
+            agent,
+            session,
+            attach,
+        } => commands::test::run(
+            cli.project,
+            command.as_deref(),
+            max_attempts,
+            &harness,
+            &agent,
+            session,
+            attach,
         ),
     }
 }

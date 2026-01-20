@@ -35,3 +35,6 @@ pub mod run;
 
 // Swarm mode (wave-based parallel execution with backpressure)
 pub mod swarm;
+
+// Test and fix loop
+pub mod test;
