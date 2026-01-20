@@ -5,7 +5,7 @@ description = "Generalist agent providing fresh perspective and secondary opinio
 
 [model]
 harness = "opencode"
-model = "grok-4.1-fast"
+model = "xai/grok-4-1-fast"
 
 [prompt]
 template = """SCUD Task {task.id}: {task.title}
