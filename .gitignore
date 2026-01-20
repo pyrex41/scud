@@ -32,3 +32,6 @@ coverage/
 
 # SCUD
 .scud/
+
+# Generated artifacts
+repomix-output.xml
