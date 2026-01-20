@@ -32,10 +32,12 @@ use std::time::Duration;
 use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
 use crate::commands::spawn::hooks;
+use crate::commands::spawn::monitor::{save_session, SpawnSession};
 use crate::commands::spawn::terminal::{self, Harness};
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
+use std::path::Path;
 
 use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, WaveSummary};
 use crate::agents::AgentDef;
@@ -249,11 +251,7 @@ pub fn run(
                         if let Some(task) = phase.get_task_mut(task_id) {
                             task.set_status(TaskStatus::Pending);
                             storage.update_group(tag, &phase)?;
-                            println!(
-                                "  {} {} -> pending (will re-spawn)",
-                                "v".green(),
-                                task_id
-                            );
+                            println!("  {} {} -> pending (will re-spawn)", "v".green(), task_id);
                         }
                     }
                 }
@@ -275,7 +273,7 @@ pub fn run(
     let mut wave_number = 1;
     loop {
         // Load fresh task state
-        let all_phases = storage.load_tasks()?;
+        let _all_phases = storage.load_tasks()?;
 
         // Compute waves from current state
         let waves = compute_waves_from_tasks(&all_phases, &phase_tag, all_tags)?;
@@ -507,6 +505,16 @@ pub fn run(
     }
 
     // Final summary
+    // Bridge for spawn monitor/TUI compatibility
+    create_and_save_spawn_proxy(
+        &storage,
+        project_root.as_ref(),
+        &session_name,
+        &phase_tag,
+        &working_dir,
+        &swarm_session,
+    )?;
+
     println!();
     println!("{}", "Swarm Session Summary".blue().bold());
     println!("{}", "═".repeat(40).blue());
@@ -523,7 +531,54 @@ pub fn run(
         .sum();
     println!("  Tasks executed: {}", total_tasks.to_string().green());
 
+    println!("  {} Spawn proxy created for monitor/TUI", "✓".green());
+
     Ok(())
+}
+
+fn create_and_save_spawn_proxy(
+    storage: &Storage,
+    project_root: Option<&PathBuf>,
+    session_name: &str,
+    phase_tag: &str,
+    working_dir: &Path,
+    swarm_session: &SwarmSession,
+) -> Result<()> {
+    let all_phases = storage.load_tasks()?;
+    let all_phases = storage.load_tasks()?;
+
+    let mut spawn_session = SpawnSession::new(
+        session_name,
+        phase_tag,
+        "tmux",
+        &working_dir.to_string_lossy(),
+    );
+
+    let spawned_tasks: Vec<String> = swarm_session
+        .waves
+        .iter()
+        .flat_map(|w| w.all_task_ids())
+        .collect();
+
+    for task_id in &spawned_tasks {
+        if let Some((title, tag)) = find_task_title_tag(&all_phases, task_id) {
+            spawn_session.add_agent(task_id, &title, &tag);
+        }
+    }
+
+    save_session(project_root, &spawn_session)
+}
+
+fn find_task_title_tag<'a>(
+    phases: &'a HashMap<String, crate::models::phase::Phase>,
+    task_id: &str,
+) -> Option<(String, String)> {
+    for (tag, phase) in phases {
+        if let Some(task) = phase.get_task(task_id) {
+            return Some((task.title.clone(), tag.clone()));
+        }
+    }
+    None
 }
 
 /// Task info for wave computation
