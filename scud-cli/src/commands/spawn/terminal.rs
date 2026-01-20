@@ -298,18 +298,35 @@ fn spawn_tmux(
     // Use full path to harness binary to avoid PATH issues in spawned shells
     // Source shell profile to ensure PATH includes node, etc.
     let harness_cmd = harness.command(binary_path, &prompt_file, model);
-    // For tmux, we send a multi-line script via send-keys
-    // First source profiles, then run the harness command
-    let full_cmd = format!(
-        r#"source ~/.bash_profile 2>/dev/null; source ~/.zshrc 2>/dev/null; export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"; [ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh"; export SCUD_TASK_ID='{}' ; {} ; rm -f '{}'"#,
-        task_id,
-        harness_cmd,
-        prompt_file.display()
+
+    // Write a bash script to handle shell-agnostic execution
+    // This ensures it works even if the user's shell is fish, zsh, etc.
+    let spawn_script = format!(
+        r#"#!/usr/bin/env bash
+# Source shell profile for PATH setup
+source ~/.bash_profile 2>/dev/null
+source ~/.zshrc 2>/dev/null
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+[ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh"
+
+export SCUD_TASK_ID='{task_id}'
+{harness_cmd}
+rm -f '{prompt_file}'
+"#,
+        task_id = task_id,
+        harness_cmd = harness_cmd,
+        prompt_file = prompt_file.display()
     );
+
+    let script_file = std::env::temp_dir().join(format!("scud-spawn-{}.sh", task_id));
+    std::fs::write(&script_file, &spawn_script)?;
+
+    // Run the script with bash explicitly (works in any shell including fish)
+    let run_cmd = format!("bash '{}'", script_file.display());
 
     let target = format!("{}:{}", session_name, window_index);
     let send_result = Command::new("tmux")
-        .args(["send-keys", "-t", &target, &full_cmd, "Enter"])
+        .args(["send-keys", "-t", &target, &run_cmd, "Enter"])
         .output()
         .context("Failed to send command to tmux window")?;
 
@@ -449,7 +466,7 @@ fn spawn_tmux_ralph(
     // Use full path to harness binary to avoid PATH issues in spawned shells
     // Source shell profile to ensure PATH includes node, etc.
     let ralph_script = format!(
-        r#"
+        r#"#!/usr/bin/env bash
 # Source shell profile for PATH setup
 [ -f /etc/profile ] && . /etc/profile
 [ -f ~/.profile ] && . ~/.profile
@@ -518,12 +535,8 @@ done
     let script_file = std::env::temp_dir().join(format!("scud-ralph-script-{}.sh", task_id));
     std::fs::write(&script_file, &ralph_script)?;
 
-    // Make it executable and run it
-    let cmd = format!(
-        "chmod +x '{}' && '{}'",
-        script_file.display(),
-        script_file.display()
-    );
+    // Run it with bash explicitly (works in any shell including fish)
+    let cmd = format!("bash '{}'", script_file.display());
 
     let target = format!("{}:{}", session_name, window_index);
     let send_result = Command::new("tmux")
