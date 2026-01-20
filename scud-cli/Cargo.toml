@@ -1,6 +1,6 @@
 [package]
 name = "scud-cli"
-version = "1.41.0"
+version = "1.41.1"
 edition = "2021"
 authors = ["SCUD Team"]
 description = "Fast, simple task master for AI-driven development"
