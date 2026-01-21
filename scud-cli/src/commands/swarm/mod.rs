@@ -351,7 +351,7 @@ pub fn run(
             wave_state.rounds.push(round_state.clone());
 
             // Create/update spawn proxy immediately for monitor real-time visibility
-            create_and_update_spawn_proxy(
+            let _proxy_path = create_and_update_spawn_proxy(
                 &storage,
                 project_root.as_ref(),
                 &session_name,
@@ -556,7 +556,7 @@ fn create_and_update_spawn_proxy(
     working_dir: &Path,
     swarm_session: &SwarmSession,
     latest_round: Option<&RoundState>,
-) -> Result<()> {
+) -> Result<Option<PathBuf>> {
     let all_phases = storage.load_tasks()?;
 
     // Try to load existing proxy session, or create new one
@@ -595,7 +595,8 @@ fn create_and_update_spawn_proxy(
         }
     }
 
-    monitor::save_session(project_root, &spawn_session)
+    let session_file = monitor::save_session(project_root, &spawn_session)?;
+    Ok(Some(session_file))
 }
 
 fn find_task_title_tag<'a>(

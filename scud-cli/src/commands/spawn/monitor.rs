@@ -121,15 +121,15 @@ pub fn session_file(project_root: Option<&PathBuf>, session_name: &str) -> PathB
 }
 
 /// Save spawn session metadata
-pub fn save_session(project_root: Option<&PathBuf>, session: &SpawnSession) -> Result<()> {
+pub fn save_session(project_root: Option<&PathBuf>, session: &SpawnSession) -> Result<PathBuf> {
     let dir = spawn_dir(project_root);
     fs::create_dir_all(&dir)?;
 
     let file = session_file(project_root, &session.session_name);
     let json = serde_json::to_string_pretty(session)?;
-    fs::write(file, json)?;
+    fs::write(&file, json)?;
 
-    Ok(())
+    Ok(file)
 }
 
 /// Load spawn session metadata

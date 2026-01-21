@@ -301,12 +301,39 @@ pub fn run(
 pub fn run_monitor(project_root: Option<PathBuf>, session: Option<String>) -> Result<()> {
     use colored::Colorize;
 
+    // Debug: show project root being used
+    let project_root_display = project_root
+        .as_ref()
+        .and_then(|p| p.to_str())
+        .unwrap_or("current directory");
+    eprintln!(
+        "{} Monitor looking for sessions in: {}",
+        "DEBUG:".yellow(),
+        project_root_display
+    );
+
     // List available sessions if none specified
     let session_name = match session {
         Some(s) => s,
         None => {
             let sessions = monitor::list_sessions(project_root.as_ref())?;
+            eprintln!(
+                "{} Found {} session(s): {:?}",
+                "DEBUG:".yellow(),
+                sessions.len(),
+                sessions
+            );
             if sessions.is_empty() {
+                eprintln!(
+                    "{} No spawn sessions found in: {}",
+                    "DEBUG:".yellow(),
+                    project_root_display
+                );
+                eprintln!(
+                    "{} Run: scud spawn --project {} (if needed)",
+                    "HINT:".cyan(),
+                    project_root_display
+                );
                 anyhow::bail!("No spawn sessions found. Run: scud spawn");
             }
             if sessions.len() == 1 {
