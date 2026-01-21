@@ -75,7 +75,13 @@ pub struct ModelInfo {
 
 impl std::fmt::Display for ModelInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} model: {}/{}", self.tier, self.provider, self.model)
+        // Avoid double-prefixing if model already contains provider prefix
+        let prefix = format!("{}/", self.provider);
+        if self.model.starts_with(&prefix) {
+            write!(f, "{} model: {}", self.tier, self.model)
+        } else {
+            write!(f, "{} model: {}/{}", self.tier, self.provider, self.model)
+        }
     }
 }
 
@@ -185,7 +191,7 @@ impl LLMClient {
                     .await
             }
             "xai" | "openai" | "openrouter" => {
-                self.complete_openai_compatible_with_model(prompt, model_override)
+                self.complete_openai_compatible_with_model(prompt, model_override, provider)
                     .await
             }
             _ => anyhow::bail!("Unsupported provider: {}", self.config.llm.provider),
@@ -240,10 +246,28 @@ impl LLMClient {
         &self,
         prompt: &str,
         model_override: Option<&str>,
+        provider: &str,
     ) -> Result<String> {
         let model = model_override.unwrap_or(&self.config.llm.model);
+        // Strip provider prefix for native APIs (xai/, openai/)
+        // OpenRouter needs the prefix, native APIs don't
+        let model_for_api = if provider != "openrouter" {
+            let prefix = format!("{}/", provider);
+            model.strip_prefix(&prefix).unwrap_or(model)
+        } else {
+            model
+        };
+
+        // Get the correct endpoint for this provider
+        let endpoint = match provider {
+            "xai" => "https://api.x.ai/v1/chat/completions",
+            "openai" => "https://api.openai.com/v1/chat/completions",
+            "openrouter" => "https://openrouter.ai/api/v1/chat/completions",
+            _ => "https://api.x.ai/v1/chat/completions",
+        };
+
         let request = OpenAIRequest {
-            model: model.to_string(),
+            model: model_for_api.to_string(),
             max_tokens: self.config.llm.max_tokens,
             messages: vec![OpenAIMessage {
                 role: "user".to_string(),
@@ -253,12 +277,12 @@ impl LLMClient {
 
         let mut request_builder = self
             .client
-            .post(self.config.api_endpoint())
+            .post(endpoint)
             .header("authorization", format!("Bearer {}", self.api_key))
             .header("content-type", "application/json");
 
         // OpenRouter requires additional headers
-        if self.config.llm.provider == "openrouter" {
+        if provider == "openrouter" {
             request_builder = request_builder
                 .header("HTTP-Referer", "https://github.com/scud-cli")
                 .header("X-Title", "SCUD Task Master");
@@ -268,24 +292,18 @@ impl LLMClient {
             .json(&request)
             .send()
             .await
-            .with_context(|| {
-                format!("Failed to send request to {} API", self.config.llm.provider)
-            })?;
+            .with_context(|| format!("Failed to send request to {} API", provider))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "{} API error ({}): {}",
-                self.config.llm.provider,
-                status,
-                error_text
-            );
+            anyhow::bail!("{} API error ({}): {}", provider, status, error_text);
         }
 
-        let api_response: OpenAIResponse = response.json().await.with_context(|| {
-            format!("Failed to parse {} API response", self.config.llm.provider)
-        })?;
+        let api_response: OpenAIResponse = response
+            .json()
+            .await
+            .with_context(|| format!("Failed to parse {} API response", provider))?;
 
         Ok(api_response
             .choices
