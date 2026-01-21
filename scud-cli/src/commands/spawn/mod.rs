@@ -284,7 +284,7 @@ pub fn run(
         println!("Starting monitor...");
         // Small delay to let agents start
         thread::sleep(Duration::from_secs(1));
-        return tui::run(project_root, &session_name);
+        return tui::run(project_root, &session_name, false); // spawn mode, not swarm
     }
 
     // Attach if requested
@@ -297,8 +297,13 @@ pub fn run(
     Ok(())
 }
 
-/// Run the TUI monitor for a spawn session
-pub fn run_monitor(project_root: Option<PathBuf>, session: Option<String>) -> Result<()> {
+/// Run the TUI monitor for a spawn or swarm session
+pub fn run_monitor(
+    project_root: Option<PathBuf>,
+    session: Option<String>,
+    swarm_mode: bool,
+) -> Result<()> {
+    use crate::commands::swarm::session as swarm_session;
     use colored::Colorize;
 
     // Debug: show project root being used
@@ -306,49 +311,63 @@ pub fn run_monitor(project_root: Option<PathBuf>, session: Option<String>) -> Re
         .as_ref()
         .and_then(|p| p.to_str())
         .unwrap_or("current directory");
+
+    let mode_label = if swarm_mode { "swarm" } else { "spawn" };
     eprintln!(
-        "{} Monitor looking for sessions in: {}",
+        "{} Monitor ({}) looking for sessions in: {}",
         "DEBUG:".yellow(),
+        mode_label,
         project_root_display
     );
 
-    // List available sessions if none specified
+    // List available sessions based on mode
     let session_name = match session {
         Some(s) => s,
         None => {
-            let sessions = monitor::list_sessions(project_root.as_ref())?;
+            let sessions = if swarm_mode {
+                swarm_session::list_sessions(project_root.as_ref())?
+            } else {
+                monitor::list_sessions(project_root.as_ref())?
+            };
             eprintln!(
-                "{} Found {} session(s): {:?}",
+                "{} Found {} {} session(s): {:?}",
                 "DEBUG:".yellow(),
                 sessions.len(),
+                mode_label,
                 sessions
             );
             if sessions.is_empty() {
+                let cmd = if swarm_mode { "scud swarm" } else { "scud spawn" };
                 eprintln!(
-                    "{} No spawn sessions found in: {}",
+                    "{} No {} sessions found in: {}",
                     "DEBUG:".yellow(),
+                    mode_label,
                     project_root_display
                 );
                 eprintln!(
-                    "{} Run: scud spawn --project {} (if needed)",
+                    "{} Run: {} --project {} (if needed)",
                     "HINT:".cyan(),
+                    cmd,
                     project_root_display
                 );
-                anyhow::bail!("No spawn sessions found. Run: scud spawn");
+                anyhow::bail!("No {} sessions found. Run: {}", mode_label, cmd);
             }
             if sessions.len() == 1 {
                 sessions[0].clone()
             } else {
-                println!("{}", "Available sessions:".cyan().bold());
+                println!("{}", format!("Available {} sessions:", mode_label).cyan().bold());
                 for (i, s) in sessions.iter().enumerate() {
                     println!("  {} {}", format!("[{}]", i + 1).dimmed(), s);
                 }
-                anyhow::bail!("Multiple sessions found. Specify one with --session <name>");
+                anyhow::bail!(
+                    "Multiple {} sessions found. Specify one with --session <name>",
+                    mode_label
+                );
             }
         }
     };
 
-    tui::run(project_root, &session_name)
+    tui::run(project_root, &session_name, swarm_mode)
 }
 
 /// List spawn sessions

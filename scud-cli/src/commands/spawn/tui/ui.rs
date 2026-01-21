@@ -142,6 +142,19 @@ fn render_input_footer(frame: &mut Frame, area: Rect) {
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let (starting, running, completed, failed) = app.status_counts();
 
+    // Swarm mode indicator
+    let swarm_indicator = if app.swarm_mode {
+        vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                "SWARM ",
+                Style::default().fg(Color::Rgb(168, 85, 247)).bold(), // Purple for swarm
+            ),
+        ]
+    } else {
+        vec![]
+    };
+
     // Ralph mode indicator
     let ralph_indicator = if app.ralph_mode {
         vec![
@@ -160,6 +173,7 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled(" ", Style::default()),
         Span::styled(&app.session_name, Style::default().fg(ACCENT).bold()),
     ];
+    spans.extend(swarm_indicator);
     spans.extend(ralph_indicator);
     spans.extend(vec![
         Span::styled("    ", Style::default()),
@@ -273,7 +287,11 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let ready_count = app.ready_task_count();
     let selected_count = app.selected_task_count();
-    let title = if selected_count > 0 {
+    let title = if app.swarm_mode {
+        // Swarm mode: show SWARM indicator and wave count
+        let wave_count = app.waves.len();
+        format!(" SWARM Waves ({} waves) ", wave_count)
+    } else if selected_count > 0 {
         format!(
             " Waves & Tasks ({} selected / {} ready) ",
             selected_count, ready_count
@@ -303,22 +321,86 @@ fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
     let mut task_index = 0;
 
     for wave in &app.waves {
-        // Wave header
-        let ready_in_wave = wave
-            .tasks
-            .iter()
-            .filter(|t| t.state == WaveTaskState::Ready)
-            .count();
-        let wave_header = Line::from(vec![
-            Span::styled(
-                format!("Wave {} ", wave.number),
-                Style::default().fg(ACCENT).bold(),
-            ),
-            Span::styled(
-                format!("({} tasks, {} ready)", wave.tasks.len(), ready_in_wave),
-                Style::default().fg(TEXT_MUTED),
-            ),
-        ]);
+        // Wave header - different format for swarm vs spawn mode
+        let wave_header = if app.swarm_mode {
+            // In swarm mode, show validation status from actual wave data
+            let validation_info = if let Some(ref swarm) = app.swarm_session_data {
+                if let Some(wave_state) = swarm.waves.iter().find(|w| w.wave_number == wave.number) {
+                    match &wave_state.validation {
+                        Some(v) if v.all_passed => ("✓", STATUS_COMPLETED, "VALIDATED"),
+                        Some(_) => ("✗", Color::Rgb(239, 68, 68), "FAILED"),
+                        None if wave_state.completed_at.is_some() => ("◌", TEXT_MUTED, "NO VALIDATION"),
+                        None => ("●", STATUS_RUNNING, "IN PROGRESS"),
+                    }
+                } else {
+                    ("◌", TEXT_MUTED, "PENDING")
+                }
+            } else {
+                ("◌", TEXT_MUTED, "PENDING")
+            };
+
+            let round_count = if let Some(ref swarm) = app.swarm_session_data {
+                swarm.waves
+                    .iter()
+                    .find(|w| w.wave_number == wave.number)
+                    .map(|w| w.rounds.len())
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let repair_count = if let Some(ref swarm) = app.swarm_session_data {
+                swarm.waves
+                    .iter()
+                    .find(|w| w.wave_number == wave.number)
+                    .map(|w| w.repairs.len())
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let repair_info = if repair_count > 0 {
+                format!(" [{} repairs]", repair_count)
+            } else {
+                String::new()
+            };
+
+            Line::from(vec![
+                Span::styled(
+                    format!("Wave {} ", wave.number),
+                    Style::default().fg(ACCENT).bold(),
+                ),
+                Span::styled(
+                    format!("{} ", validation_info.0),
+                    Style::default().fg(validation_info.1),
+                ),
+                Span::styled(
+                    format!("{} ", validation_info.2),
+                    Style::default().fg(validation_info.1),
+                ),
+                Span::styled(
+                    format!("({} tasks, {} rounds{})", wave.tasks.len(), round_count, repair_info),
+                    Style::default().fg(TEXT_MUTED),
+                ),
+            ])
+        } else {
+            // Spawn mode: original format
+            let ready_in_wave = wave
+                .tasks
+                .iter()
+                .filter(|t| t.state == WaveTaskState::Ready)
+                .count();
+            Line::from(vec![
+                Span::styled(
+                    format!("Wave {} ", wave.number),
+                    Style::default().fg(ACCENT).bold(),
+                ),
+                Span::styled(
+                    format!("({} tasks, {} ready)", wave.tasks.len(), ready_in_wave),
+                    Style::default().fg(TEXT_MUTED),
+                ),
+            ])
+        };
         all_items.push(ListItem::new(wave_header));
 
         // Tasks in wave

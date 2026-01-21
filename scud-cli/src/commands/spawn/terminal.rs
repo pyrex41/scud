@@ -58,8 +58,10 @@ impl Harness {
             }
             Harness::OpenCode => {
                 let model_flag = model.map(|m| format!(" --model {}", m)).unwrap_or_default();
+                // Use --variant minimal to reduce reasoning overhead and avoid
+                // "reasoning part not found" errors with some models
                 format!(
-                    r#"'{}'{} run "$(cat '{}')""#,
+                    r#"'{}'{} run --variant minimal "$(cat '{}')""#,
                     binary_path,
                     model_flag,
                     prompt_file.display()
@@ -452,7 +454,7 @@ fn spawn_tmux_ralph(
             prompt_file = prompt_file.display()
         ),
         Harness::OpenCode => format!(
-            "'{binary_path}' run \"$(cat '{prompt_file}')\"",
+            "'{binary_path}' run --variant minimal \"$(cat '{prompt_file}')\"",
             binary_path = binary_path,
             prompt_file = prompt_file.display()
         ),

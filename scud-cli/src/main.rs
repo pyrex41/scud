@@ -614,6 +614,10 @@ enum Commands {
         /// Session name to monitor (auto-detects if only one exists)
         #[arg(short, long)]
         session: Option<String>,
+
+        /// Read from swarm session (shows actual wave/round structure)
+        #[arg(long)]
+        swarm: bool,
     },
 
     /// List spawn sessions
@@ -621,6 +625,32 @@ enum Commands {
         /// Show detailed info for each session
         #[arg(short, long)]
         verbose: bool,
+    },
+
+    /// Restart a task - reset status to pending and spawn in tmux
+    Restart {
+        /// Task ID to restart
+        task_id: String,
+
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// AI harness: claude, opencode (overridden by task's agent_type if set)
+        #[arg(short = 'H', long, default_value = "opencode")]
+        harness: String,
+
+        /// Model to use with harness (overridden by task's agent_type if set)
+        #[arg(short = 'M', long, default_value = "xai/grok-code-fast-1")]
+        model: String,
+
+        /// Tmux session name (default: scud-<tag>)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Attach to tmux session after spawn
+        #[arg(long)]
+        attach: bool,
     },
 
     /// Run a single AI agent with an arbitrary prompt
@@ -1009,8 +1039,26 @@ async fn main() -> Result<()> {
             &harness,
             &model,
         ),
-        Commands::Monitor { session } => commands::spawn::run_monitor(cli.project, session),
+        Commands::Monitor { session, swarm } => {
+            commands::spawn::run_monitor(cli.project, session, swarm)
+        }
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
+        Commands::Restart {
+            task_id,
+            tag,
+            harness,
+            model,
+            session,
+            attach,
+        } => commands::restart::run(
+            cli.project,
+            &task_id,
+            tag.as_deref(),
+            &harness,
+            &model,
+            session,
+            attach,
+        ),
         Commands::Run {
             prompt,
             harness,

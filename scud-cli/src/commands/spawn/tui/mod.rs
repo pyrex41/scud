@@ -25,7 +25,7 @@ use self::app::{App, FocusedPanel, ViewMode};
 use self::ui::render;
 
 /// Run the TUI monitor
-pub fn run(project_root: Option<PathBuf>, session_name: &str) -> Result<()> {
+pub fn run(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -34,7 +34,7 @@ pub fn run(project_root: Option<PathBuf>, session_name: &str) -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Create app state
-    let mut app = App::new(project_root, session_name)?;
+    let mut app = App::new(project_root, session_name, swarm_mode)?;
 
     // Main loop
     let result = run_app(&mut terminal, &mut app);

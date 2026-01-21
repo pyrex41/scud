@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use crate::commands::spawn::monitor::{
     load_session, save_session, AgentState, AgentStatus, SpawnSession,
 };
+use crate::commands::swarm::session as swarm_session;
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
@@ -130,11 +131,17 @@ pub struct App {
     pub ralph_max_parallel: usize,
     /// Last time we checked for new tasks to spawn in Ralph mode
     last_ralph_check: Instant,
+
+    // === Swarm Mode ===
+    /// Whether we're monitoring a swarm session (vs spawn session)
+    pub swarm_mode: bool,
+    /// Swarm session data (when swarm_mode is true)
+    pub swarm_session_data: Option<swarm_session::SwarmSession>,
 }
 
 impl App {
     /// Create new app state
-    pub fn new(project_root: Option<PathBuf>, session_name: &str) -> Result<Self> {
+    pub fn new(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) -> Result<Self> {
         // Load storage to get active tag and phases
         let storage = Storage::new(project_root.clone());
         let active_tag = storage.get_active_group().ok().flatten();
@@ -169,6 +176,9 @@ impl App {
             ralph_mode: false,
             ralph_max_parallel: 5,
             last_ralph_check: Instant::now(),
+            // Swarm mode
+            swarm_mode,
+            swarm_session_data: None,
         };
         app.refresh()?;
         app.refresh_waves();
@@ -178,19 +188,33 @@ impl App {
 
     /// Refresh session data from disk and update agent statuses
     pub fn refresh(&mut self) -> Result<()> {
-        match load_session(self.project_root.as_ref(), &self.session_name) {
-            Ok(mut session) => {
-                // Update agent statuses from tmux and SCUD task status
-                self.refresh_agent_statuses(&mut session);
-
-                // Save updated session back to disk
-                let _ = save_session(self.project_root.as_ref(), &session);
-
-                self.session = Some(session);
-                self.error = None;
+        if self.swarm_mode {
+            // Load swarm session
+            match swarm_session::load_session(self.project_root.as_ref(), &self.session_name) {
+                Ok(session) => {
+                    self.swarm_session_data = Some(session);
+                    self.error = None;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to load swarm session: {}", e));
+                }
             }
-            Err(e) => {
-                self.error = Some(format!("Failed to load session: {}", e));
+        } else {
+            // Load spawn session
+            match load_session(self.project_root.as_ref(), &self.session_name) {
+                Ok(mut session) => {
+                    // Update agent statuses from tmux and SCUD task status
+                    self.refresh_agent_statuses(&mut session);
+
+                    // Save updated session back to disk
+                    let _ = save_session(self.project_root.as_ref(), &session);
+
+                    self.session = Some(session);
+                    self.error = None;
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to load session: {}", e));
+                }
             }
         }
         self.last_refresh = Instant::now();
@@ -665,6 +689,12 @@ impl App {
         let storage = Storage::new(self.project_root.clone());
         self.phases = storage.load_tasks().unwrap_or_default();
 
+        // In swarm mode, use actual wave data from swarm session
+        if self.swarm_mode {
+            self.waves = self.compute_swarm_waves();
+            return;
+        }
+
         // Get running agent task IDs
         let running_task_ids: HashSet<String> = self
             .agents()
@@ -691,6 +721,81 @@ impl App {
 
         // Build waves using topological sort
         self.waves = self.compute_waves(phase, &running_task_ids);
+    }
+
+    /// Compute waves from swarm session data (shows actual execution waves)
+    fn compute_swarm_waves(&self) -> Vec<Wave> {
+        let Some(ref swarm) = self.swarm_session_data else {
+            return Vec::new();
+        };
+
+        let tag = &swarm.tag;
+        let phase = self.phases.get(tag);
+
+        swarm
+            .waves
+            .iter()
+            .map(|wave_state| {
+                // Collect all task IDs from all rounds in this wave
+                let task_ids: Vec<String> = wave_state
+                    .rounds
+                    .iter()
+                    .flat_map(|round| round.task_ids.iter().cloned())
+                    .collect();
+
+                let tasks: Vec<WaveTask> = task_ids
+                    .iter()
+                    .map(|task_id| {
+                        // Try to get task info from phase
+                        let (title, complexity, dependencies, task_status) =
+                            if let Some(phase) = phase {
+                                if let Some(task) = phase.get_task(task_id) {
+                                    (
+                                        task.title.clone(),
+                                        task.complexity,
+                                        task.dependencies.clone(),
+                                        Some(task.status.clone()),
+                                    )
+                                } else {
+                                    (task_id.clone(), 1, vec![], None)
+                                }
+                            } else {
+                                (task_id.clone(), 1, vec![], None)
+                            };
+
+                        // Determine state based on task status and wave completion
+                        let state = match task_status {
+                            Some(TaskStatus::Done) => WaveTaskState::Done,
+                            Some(TaskStatus::InProgress) => WaveTaskState::Running,
+                            Some(TaskStatus::Blocked) => WaveTaskState::Blocked,
+                            Some(TaskStatus::Pending) => {
+                                if wave_state.completed_at.is_some() {
+                                    // Wave completed but task still pending = failed/blocked
+                                    WaveTaskState::Blocked
+                                } else {
+                                    WaveTaskState::Ready
+                                }
+                            }
+                            _ => WaveTaskState::Ready,
+                        };
+
+                        WaveTask {
+                            id: task_id.clone(),
+                            title,
+                            tag: tag.clone(),
+                            state,
+                            complexity,
+                            dependencies,
+                        }
+                    })
+                    .collect();
+
+                Wave {
+                    number: wave_state.wave_number,
+                    tasks,
+                }
+            })
+            .collect()
     }
 
     /// Compute execution waves for a phase

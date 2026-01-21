@@ -33,6 +33,9 @@ pub mod spawn;
 // Single agent execution
 pub mod run;
 
+// Task restart (reset + spawn)
+pub mod restart;
+
 // Swarm mode (wave-based parallel execution with backpressure)
 pub mod swarm;
 
