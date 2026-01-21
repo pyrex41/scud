@@ -32,7 +32,7 @@ use std::time::Duration;
 use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
 use crate::commands::spawn::hooks;
-use crate::commands::spawn::monitor::{save_session, SpawnSession};
+use crate::commands::spawn::monitor::{self, SpawnSession};
 use crate::commands::spawn::terminal::{self, Harness};
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
@@ -348,7 +348,18 @@ pub fn run(
                 harness,
             )?;
 
-            wave_state.rounds.push(round_state);
+            wave_state.rounds.push(round_state.clone());
+
+            // Create/update spawn proxy immediately for monitor real-time visibility
+            create_and_update_spawn_proxy(
+                &storage,
+                project_root.as_ref(),
+                &session_name,
+                &phase_tag,
+                &working_dir,
+                &swarm_session,
+                Some(&round_state),
+            )?;
 
             // Wait for round completion
             println!("    Waiting for round completion...");
@@ -505,14 +516,15 @@ pub fn run(
     }
 
     // Final summary
-    // Bridge for spawn monitor/TUI compatibility
-    create_and_save_spawn_proxy(
+    // Final bridge update for spawn monitor/TUI compatibility
+    create_and_update_spawn_proxy(
         &storage,
         project_root.as_ref(),
         &session_name,
         &phase_tag,
         &working_dir,
         &swarm_session,
+        None, // Final update - include all rounds
     )?;
 
     println!();
@@ -531,42 +543,59 @@ pub fn run(
         .sum();
     println!("  Tasks executed: {}", total_tasks.to_string().green());
 
-    println!("  {} Spawn proxy created for monitor/TUI", "✓".green());
+    println!("  {} Spawn proxy updated for monitor/TUI", "✓".green());
 
     Ok(())
 }
 
-fn create_and_save_spawn_proxy(
+fn create_and_update_spawn_proxy(
     storage: &Storage,
     project_root: Option<&PathBuf>,
     session_name: &str,
     phase_tag: &str,
     working_dir: &Path,
     swarm_session: &SwarmSession,
+    latest_round: Option<&RoundState>,
 ) -> Result<()> {
     let all_phases = storage.load_tasks()?;
-    let all_phases = storage.load_tasks()?;
 
-    let mut spawn_session = SpawnSession::new(
-        session_name,
-        phase_tag,
-        "tmux",
-        &working_dir.to_string_lossy(),
-    );
+    // Try to load existing proxy session, or create new one
+    let mut spawn_session = match monitor::load_session(project_root, session_name) {
+        Ok(existing) => existing,
+        Err(_) => SpawnSession::new(
+            session_name,
+            phase_tag,
+            "tmux",
+            &working_dir.to_string_lossy(),
+        ),
+    };
 
-    let spawned_tasks: Vec<String> = swarm_session
-        .waves
+    // Get tasks to add (either from latest round or all tasks)
+    let tasks_to_add: Vec<String> = match latest_round {
+        Some(round) => round.task_ids.clone(),
+        None => swarm_session
+            .waves
+            .iter()
+            .flat_map(|w| w.all_task_ids())
+            .collect(),
+    };
+
+    // Add new agents (skip duplicates)
+    let existing_task_ids: std::collections::HashSet<String> = spawn_session
+        .agents
         .iter()
-        .flat_map(|w| w.all_task_ids())
+        .map(|a| a.task_id.clone())
         .collect();
 
-    for task_id in &spawned_tasks {
-        if let Some((title, tag)) = find_task_title_tag(&all_phases, task_id) {
-            spawn_session.add_agent(task_id, &title, &tag);
+    for task_id in &tasks_to_add {
+        if !existing_task_ids.contains(task_id) {
+            if let Some((title, tag)) = find_task_title_tag(&all_phases, task_id) {
+                spawn_session.add_agent(task_id, &title, &tag);
+            }
         }
     }
 
-    save_session(project_root, &spawn_session)
+    monitor::save_session(project_root, &spawn_session)
 }
 
 fn find_task_title_tag<'a>(
