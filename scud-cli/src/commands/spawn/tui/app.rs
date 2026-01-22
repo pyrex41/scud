@@ -1225,6 +1225,71 @@ impl App {
         Ok(spawned_count)
     }
 
+    /// Prepare to start swarm - returns swarm command and tag
+    pub fn prepare_swarm_start(&self) -> Option<(String, String)> {
+        // Get tag from session or active tag
+        let tag = self
+            .session
+            .as_ref()
+            .map(|s| s.tag.clone())
+            .or_else(|| self.active_tag.clone())?;
+
+        // Build swarm command
+        let session_base = self
+            .session_name
+            .replace("swarm-", "")
+            .replace("scud-", "");
+        let cmd = format!("scud swarm --tag {} --session {}", tag, session_base);
+
+        Some((cmd, tag))
+    }
+
+    /// Update the status of the currently selected agent's task
+    pub fn set_selected_task_status(&mut self, new_status: TaskStatus) -> Result<()> {
+        let Some(ref session) = self.session else {
+            self.error = Some("No session loaded".to_string());
+            return Ok(());
+        };
+
+        let agents = session.agents.clone();
+        if agents.is_empty() || self.selected >= agents.len() {
+            self.error = Some("No agent selected".to_string());
+            return Ok(());
+        }
+
+        let agent = &agents[self.selected];
+        let task_id = &agent.task_id;
+        let tag = &agent.tag;
+
+        // Update task status in storage
+        let storage = Storage::new(self.project_root.clone());
+        if let Ok(mut phase) = storage.load_group(tag) {
+            if let Some(task) = phase.get_task_mut(task_id) {
+                task.set_status(new_status.clone());
+                if let Err(e) = storage.update_group(tag, &phase) {
+                    self.error = Some(format!("Failed to save: {}", e));
+                    return Ok(());
+                }
+                // Show confirmation
+                self.error = Some(format!(
+                    "✓ {} → {}",
+                    task_id,
+                    new_status.as_str()
+                ));
+            } else {
+                self.error = Some(format!("Task {} not found", task_id));
+            }
+        } else {
+            self.error = Some(format!("Failed to load phase {}", tag));
+        }
+
+        // Refresh to show updated status
+        self.refresh()?;
+        self.refresh_waves();
+
+        Ok(())
+    }
+
     /// Spawn a single task with Ralph loop enabled
     /// The agent will keep trying until the task is marked done
     fn spawn_task_with_ralph(&mut self, task_id: &str) -> Result<()> {

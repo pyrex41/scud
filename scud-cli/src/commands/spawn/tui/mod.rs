@@ -19,10 +19,23 @@ use crossterm::{
 use ratatui::prelude::*;
 use std::io;
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::Duration;
 
 use self::app::{App, FocusedPanel, ViewMode};
 use self::ui::render;
+
+/// Result of the TUI app exit
+enum AppExit {
+    /// Normal quit
+    Quit,
+    /// Start swarm in tmux
+    StartSwarm {
+        command: String,
+        tag: String,
+        session_name: String,
+    },
+}
 
 /// Run the TUI monitor
 pub fn run(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) -> Result<()> {
@@ -34,7 +47,7 @@ pub fn run(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) 
     let mut terminal = Terminal::new(backend)?;
 
     // Create app state
-    let mut app = App::new(project_root, session_name, swarm_mode)?;
+    let mut app = App::new(project_root.clone(), session_name, swarm_mode)?;
 
     // Main loop
     let result = run_app(&mut terminal, &mut app);
@@ -48,10 +61,73 @@ pub fn run(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) 
     )?;
     terminal.show_cursor()?;
 
-    result
+    // Handle result
+    match result? {
+        AppExit::Quit => Ok(()),
+        AppExit::StartSwarm {
+            command,
+            tag,
+            session_name,
+        } => {
+            use colored::Colorize;
+
+            // Print swarm start message
+            println!();
+            println!("{}", Colorize::bold(Colorize::cyan("Starting swarm...")));
+            println!("Tag: {}", Colorize::green(tag.as_str()));
+            println!();
+
+            // Spawn swarm in tmux window
+            let window_name = format!("swarm-{}", tag);
+            let tmux_session = session_name.clone();
+
+            // Build script to run in tmux
+            let script = format!(
+                "cd {} && {}",
+                project_root
+                    .as_ref()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("."),
+                command
+            );
+
+            let status = Command::new("tmux")
+                .args([
+                    "new-window",
+                    "-t",
+                    &tmux_session,
+                    "-n",
+                    &window_name,
+                    "bash",
+                    "-c",
+                    &format!("{}; read -p 'Press enter to close...'", script),
+                ])
+                .status();
+
+            match status {
+                Ok(s) if s.success() => {
+                    println!(
+                        "Swarm started in tmux window: {}:{}",
+                        tmux_session, window_name
+                    );
+                    println!();
+                    let attach_cmd = format!("tmux attach -t {}", tmux_session);
+                    println!("To attach: {}", Colorize::cyan(attach_cmd.as_str()));
+                    let monitor_cmd = format!("scud monitor --swarm --session {}", session_name);
+                    println!("To monitor: {}", Colorize::cyan(monitor_cmd.as_str()));
+                }
+                _ => {
+                    println!("{}", Colorize::red("Failed to start swarm in tmux"));
+                    println!("Run manually: {}", Colorize::yellow(command.as_str()));
+                }
+            }
+
+            Ok(())
+        }
+    }
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<AppExit> {
     loop {
         // Draw UI
         terminal.draw(|frame| render(frame, app))?;
@@ -86,7 +162,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                 match (key.modifiers, key.code) {
                     // Quit
                     (_, KeyCode::Char('q')) | (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-                        return Ok(());
+                        return Ok(AppExit::Quit);
                     }
 
                     // Tab: switch panel focus
@@ -210,6 +286,46 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> 
                     // R: Toggle Ralph mode (autonomous wave execution)
                     (KeyModifiers::SHIFT, KeyCode::Char('R')) | (_, KeyCode::Char('R')) => {
                         app.toggle_ralph_mode();
+                    }
+
+                    // d: Mark task as Done (in Agents panel)
+                    (_, KeyCode::Char('d')) => {
+                        if app.focused_panel == FocusedPanel::Agents {
+                            let _ = app.set_selected_task_status(
+                                crate::models::task::TaskStatus::Done,
+                            );
+                        }
+                    }
+
+                    // p: Mark task as Pending (in Agents panel)
+                    (_, KeyCode::Char('p')) => {
+                        if app.focused_panel == FocusedPanel::Agents {
+                            let _ = app.set_selected_task_status(
+                                crate::models::task::TaskStatus::Pending,
+                            );
+                        }
+                    }
+
+                    // b: Mark task as Blocked (in Agents panel)
+                    (_, KeyCode::Char('b')) => {
+                        if app.focused_panel == FocusedPanel::Agents {
+                            let _ = app.set_selected_task_status(
+                                crate::models::task::TaskStatus::Blocked,
+                            );
+                        }
+                    }
+
+                    // W: Start swarm (exits TUI and spawns swarm in tmux)
+                    (KeyModifiers::SHIFT, KeyCode::Char('W')) | (_, KeyCode::Char('W')) => {
+                        if let Some((cmd, tag)) = app.prepare_swarm_start() {
+                            return Ok(AppExit::StartSwarm {
+                                command: cmd,
+                                tag,
+                                session_name: app.session_name.clone(),
+                            });
+                        } else {
+                            app.error = Some("No tag available for swarm".to_string());
+                        }
                     }
 
                     _ => {}

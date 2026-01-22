@@ -691,9 +691,9 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         "R Ralph"
     };
     let help_text = match app.focused_panel {
-        FocusedPanel::Waves => format!(" Tab Panel  ·  j/k Navigate  ·  Space Select  ·  a All  ·  s Spawn  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
-        FocusedPanel::Agents => format!(" Tab Panel  ·  j/k Navigate  ·  Enter View  ·  i Input  ·  x Stop  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
-        FocusedPanel::Output => format!(" Tab Panel  ·  ↑↓ Scroll  ·  G Bottom  ·  Enter Fullscreen  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
+        FocusedPanel::Waves => format!(" Tab Panel  ·  j/k Navigate  ·  Space Select  ·  a All  ·  s Spawn  ·  W Swarm  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
+        FocusedPanel::Agents => format!(" Tab Panel  ·  j/k Navigate  ·  d Done  ·  p Pending  ·  b Blocked  ·  W Swarm  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
+        FocusedPanel::Output => format!(" Tab Panel  ·  ↑↓ Scroll  ·  G Bottom  ·  Enter Fullscreen  ·  W Swarm  ·  {}  ·  ? Help  ·  q Quit ", ralph_hint),
     };
 
     let mut line = Line::from(vec![Span::styled(
@@ -781,6 +781,14 @@ fn render_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(" x ", Style::default().fg(ACCENT)),
             Span::styled("Stop", Style::default().fg(TEXT_PRIMARY)),
         ]),
+        Line::from(vec![
+            Span::styled(" d ", Style::default().fg(ACCENT)),
+            Span::styled("Done ", Style::default().fg(TEXT_PRIMARY)),
+            Span::styled(" p ", Style::default().fg(ACCENT)),
+            Span::styled("Pending ", Style::default().fg(TEXT_PRIMARY)),
+            Span::styled(" b ", Style::default().fg(ACCENT)),
+            Span::styled("Blocked", Style::default().fg(TEXT_PRIMARY)),
+        ]),
         Line::from(""),
         Line::from(Span::styled(" Output:", Style::default().fg(TEXT_MUTED))),
         Line::from(vec![
@@ -793,9 +801,11 @@ fn render_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(""),
         Line::from(vec![
+            Span::styled(" W ", Style::default().fg(ACCENT)),
+            Span::styled("Start Swarm ", Style::default().fg(TEXT_PRIMARY)),
             Span::styled(" ? ", Style::default().fg(ACCENT)),
             Span::styled("Help ", Style::default().fg(TEXT_PRIMARY)),
-            Span::styled(" q/Esc ", Style::default().fg(ACCENT)),
+            Span::styled(" q ", Style::default().fg(ACCENT)),
             Span::styled("Quit", Style::default().fg(TEXT_PRIMARY)),
         ]),
         Line::from(""),
