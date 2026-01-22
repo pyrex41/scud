@@ -459,6 +459,26 @@ impl Storage {
         Ok(())
     }
 
+    /// Update a single task's status within a group
+    /// Convenience method that loads, modifies, and saves the group atomically
+    pub fn update_task_status(
+        &self,
+        group_tag: &str,
+        task_id: &str,
+        status: crate::models::task::TaskStatus,
+    ) -> Result<()> {
+        let mut group = self.load_group(group_tag)?;
+
+        let task = group
+            .tasks
+            .iter_mut()
+            .find(|t| t.id == task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task '{}' not found in group '{}'", task_id, group_tag))?;
+
+        task.status = status;
+        self.update_group(group_tag, &group)
+    }
+
     pub fn read_file(&self, path: &Path) -> Result<String> {
         fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
     }

@@ -39,5 +39,8 @@ pub mod restart;
 // Swarm mode (wave-based parallel execution with backpressure)
 pub mod swarm;
 
+// Ralph mode (sequential iteration with fresh context)
+pub mod ralph;
+
 // Test and fix loop
 pub mod test;

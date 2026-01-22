@@ -756,6 +756,49 @@ enum Commands {
         #[arg(long)]
         attach: bool,
     },
+
+    /// Run Ralph mode - sequential iteration loop with fresh context per task
+    Ralph {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Maximum iterations (0 = unlimited)
+        #[arg(short = 'n', long, default_value = "0")]
+        max_iterations: usize,
+
+        /// Skip backpressure validation
+        #[arg(long)]
+        no_validate: bool,
+
+        /// Disable automatic repair on validation failure
+        #[arg(long)]
+        no_repair: bool,
+
+        /// Maximum repair attempts per task (default: 3)
+        #[arg(long, default_value = "3")]
+        max_repair_attempts: usize,
+
+        /// AI harness: claude, opencode
+        #[arg(short = 'H', long, default_value = "claude")]
+        harness: String,
+
+        /// Model to use with harness
+        #[arg(short = 'M', long)]
+        model: Option<String>,
+
+        /// Session name (default: ralph-<tag>)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Show plan without executing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Push to git after each successful iteration
+        #[arg(long)]
+        push: bool,
+    },
 }
 
 #[tokio::main]
@@ -1110,6 +1153,30 @@ async fn main() -> Result<()> {
             &agent,
             session,
             attach,
+        ),
+        Commands::Ralph {
+            tag,
+            max_iterations,
+            no_validate,
+            no_repair,
+            max_repair_attempts,
+            harness,
+            model,
+            session,
+            dry_run,
+            push,
+        } => commands::ralph::run(
+            cli.project,
+            tag.as_deref(),
+            max_iterations,
+            no_validate,
+            no_repair,
+            max_repair_attempts,
+            &harness,
+            model.as_deref(),
+            session,
+            dry_run,
+            push,
         ),
     }
 }

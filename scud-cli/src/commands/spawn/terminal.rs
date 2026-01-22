@@ -621,3 +621,82 @@ pub fn kill_tmux_window(session_name: &str, window_name: &str) -> Result<()> {
         .output()?;
     Ok(())
 }
+
+/// Spawn a command in a tmux window (simpler than spawn_tmux which does more setup)
+pub fn spawn_in_tmux(
+    session_name: &str,
+    window_name: &str,
+    command: &str,
+    working_dir: &Path,
+) -> Result<()> {
+    // Check if session exists, create if not
+    let session_exists = Command::new("tmux")
+        .args(["has-session", "-t", session_name])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !session_exists {
+        // Create new session with a control window
+        Command::new("tmux")
+            .args([
+                "new-session",
+                "-d",
+                "-s",
+                session_name,
+                "-n",
+                "ctrl",
+                "-c",
+                &working_dir.to_string_lossy(),
+            ])
+            .output()
+            .context("Failed to create tmux session")?;
+    }
+
+    // Create new window for this task
+    let output = Command::new("tmux")
+        .args([
+            "new-window",
+            "-t",
+            session_name,
+            "-n",
+            window_name,
+            "-c",
+            &working_dir.to_string_lossy(),
+            "-P",
+            "-F",
+            "#{window_index}",
+        ])
+        .output()
+        .context("Failed to create tmux window")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "Failed to create tmux window: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let window_index = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Send the command to the window
+    let send_result = Command::new("tmux")
+        .args([
+            "send-keys",
+            "-t",
+            &format!("{}:{}", session_name, window_index),
+            command,
+            "Enter",
+        ])
+        .output()
+        .context("Failed to send command to tmux window")?;
+
+    if !send_result.status.success() {
+        anyhow::bail!(
+            "Failed to send command: {}",
+            String::from_utf8_lossy(&send_result.stderr)
+        );
+    }
+
+    Ok(())
+}
