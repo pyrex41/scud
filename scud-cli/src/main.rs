@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use scud::commands;
+use scud::SwarmMode;
 use std::path::PathBuf;
 
 #[derive(Subcommand)]
@@ -109,6 +110,27 @@ enum SpawnAgentsCommands {
         #[arg(long)]
         all: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum DoctorCommands {
+    /// Diagnose stuck task states (legacy functionality)
+    Workflow {
+        /// Phase tag (checks all phases if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Stale lock threshold in hours (default: 24)
+        #[arg(long, default_value = "24")]
+        stale_hours: f64,
+
+        /// Attempt auto-fix for recoverable issues
+        #[arg(long)]
+        fix: bool,
+    },
+
+    /// Validate extension installations
+    ScanExt,
 }
 
 #[derive(Parser)]
@@ -473,19 +495,10 @@ enum Commands {
         backup: bool,
     },
 
-    /// [EXPERIMENTAL] Diagnose stuck task states
+    /// [EXPERIMENTAL] Diagnose workflow and extension issues
     Doctor {
-        /// Phase tag (checks all phases if not provided)
-        #[arg(short, long)]
-        tag: Option<String>,
-
-        /// Stale lock threshold in hours (default: 24)
-        #[arg(long, default_value = "24")]
-        stale_hours: f64,
-
-        /// Attempt auto-fix for recoverable issues
-        #[arg(long)]
-        fix: bool,
+        #[command(subcommand)]
+        command: DoctorCommands,
     },
 
     /// Check dependency validity and optionally validate against PRD
@@ -697,6 +710,10 @@ enum Commands {
         #[arg(short = 'H', long, default_value = "claude")]
         harness: String,
 
+        /// Execution mode: tmux (default) or extensions (no tmux dependency)
+        #[arg(long, value_enum, default_value_t = SwarmMode::Tmux)]
+        swarm_mode: SwarmMode,
+
         /// Show execution plan without spawning
         #[arg(long)]
         dry_run: bool,
@@ -813,6 +830,9 @@ enum Commands {
         #[arg(short = 'M', long)]
         model: Option<String>,
     },
+
+    // /// Start interactive REPL for task management - temporarily disabled
+    // Repl,
 }
 
 #[tokio::main]
@@ -1034,11 +1054,14 @@ async fn main() -> Result<()> {
         Commands::Convert { from, to, backup } => {
             commands::convert::run(cli.project, &from, &to, backup)
         }
-        Commands::Doctor {
-            tag,
-            stale_hours,
-            fix,
-        } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
+        Commands::Doctor { command } => match command {
+             DoctorCommands::Workflow {
+                 tag,
+                 stale_hours,
+                 fix,
+             } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
+             DoctorCommands::ScanExt => commands::doctor::scan_ext(cli.project),
+         },
         Commands::CheckDeps {
             tag,
             all_tags,
@@ -1129,6 +1152,7 @@ async fn main() -> Result<()> {
             round_size,
             all_tags,
             harness,
+            swarm_mode,
             dry_run,
             session,
             no_research,
@@ -1143,6 +1167,7 @@ async fn main() -> Result<()> {
             round_size,
             all_tags,
             &harness,
+            swarm_mode,
             dry_run,
             session,
             no_research,
@@ -1195,5 +1220,6 @@ async fn main() -> Result<()> {
         Commands::Serve { harness, model } => {
             commands::serve::run(cli.project, &harness, model.as_deref()).await
         }
+        // Commands::Repl => commands::repl::run(), // temporarily disabled
     }
 }
