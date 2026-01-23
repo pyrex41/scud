@@ -221,6 +221,12 @@ pub mod commands;
 /// ```
 pub mod config;
 
+/// Dynamic extension loading and execution.
+///
+/// Provides infrastructure for loading and running extensions that can
+/// extend SCUD functionality with custom tools and commands.
+pub mod extensions;
+
 /// Task graph serialization formats.
 ///
 /// Provides parsers and serializers for the SCG (SCUD Graph) format,
@@ -261,6 +267,42 @@ pub mod formats;
 /// - `openrouter` - OpenRouter API
 /// - `codex` - OpenAI Codex CLI
 pub mod llm;
+
+/// JSON RPC IPC server for subagent communication.
+///
+/// Provides a JSON RPC 2.0 protocol for inter-process communication between
+/// SCUD and external orchestrators. The server reads requests from stdin
+/// and emits events/responses to stdout.
+///
+/// ## Protocol
+///
+/// Requests (stdin):
+/// ```json
+/// {"jsonrpc": "2.0", "method": "spawn", "params": {"task_id": "1", "prompt": "..."}, "id": 1}
+/// {"jsonrpc": "2.0", "method": "ping", "id": 2}
+/// {"jsonrpc": "2.0", "method": "shutdown", "id": 3}
+/// ```
+///
+/// Responses/Events (stdout):
+/// ```json
+/// {"jsonrpc": "2.0", "result": {"status": "ok"}, "id": 1}
+/// {"jsonrpc": "2.0", "method": "agent.started", "params": {"task_id": "1"}}
+/// {"jsonrpc": "2.0", "method": "agent.completed", "params": {"task_id": "1", "success": true}}
+/// ```
+///
+/// ## Usage
+///
+/// ```no_run
+/// use scud::rpc::{RpcServer, RpcServerConfig};
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     let config = RpcServerConfig::default();
+///     let mut server = RpcServer::new(config);
+///     server.run().await
+/// }
+/// ```
+pub mod rpc;
 
 /// Core data models for tasks and phases.
 ///

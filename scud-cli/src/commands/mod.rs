@@ -44,3 +44,6 @@ pub mod ralph;
 
 // Test and fix loop
 pub mod test;
+
+// JSON RPC IPC server for subagents
+pub mod serve;

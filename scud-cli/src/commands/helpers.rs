@@ -20,6 +20,70 @@ pub fn is_interactive() -> bool {
     atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stdout)
 }
 
+/// Find the next available task across phases
+///
+/// Returns the task and its tag if found
+pub fn find_next_task(
+    storage: &Storage,
+    tag: Option<&str>,
+    all_tags: bool,
+) -> Option<(Task, String)> {
+    use crate::models::task::TaskStatus;
+
+    let tasks = storage.load_tasks().ok()?;
+    let all_tasks_flat = flatten_all_tasks(&tasks);
+
+    if all_tags {
+        // Search across ALL phases
+        for (phase_tag, phase) in &tasks {
+            for task in &phase.tasks {
+                if task.status == TaskStatus::Pending
+                    && !task.is_expanded()
+                    && task.has_dependencies_met_refs(&all_tasks_flat)
+                {
+                    // If subtask, check parent is expanded
+                    if let Some(ref parent_id) = task.parent_id {
+                        let parent_expanded = phase
+                            .get_task(parent_id)
+                            .map(|p| p.is_expanded())
+                            .unwrap_or(false);
+                        if !parent_expanded {
+                            continue;
+                        }
+                    }
+                    return Some((task.clone(), phase_tag.clone()));
+                }
+            }
+        }
+        None
+    } else {
+        // Single phase
+        let phase_tag = tag
+            .map(String::from)
+            .or_else(|| storage.get_active_group().ok().flatten())?;
+        let phase = tasks.get(&phase_tag)?;
+
+        for task in &phase.tasks {
+            if task.status == TaskStatus::Pending
+                && !task.is_expanded()
+                && task.has_dependencies_met_refs(&all_tasks_flat)
+            {
+                if let Some(ref parent_id) = task.parent_id {
+                    let parent_expanded = phase
+                        .get_task(parent_id)
+                        .map(|p| p.is_expanded())
+                        .unwrap_or(false);
+                    if !parent_expanded {
+                        continue;
+                    }
+                }
+                return Some((task.clone(), phase_tag.clone()));
+            }
+        }
+        None
+    }
+}
+
 /// Resolve task group tag with fallback to active group and interactive selection
 ///
 /// Priority:

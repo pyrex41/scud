@@ -799,6 +799,20 @@ enum Commands {
         #[arg(long)]
         push: bool,
     },
+
+    /// Start JSON RPC server for IPC with external orchestrators
+    ///
+    /// Reads JSON RPC 2.0 requests from stdin and emits events/responses to stdout.
+    /// Use this for programmatic control of SCUD agents from external tools.
+    Serve {
+        /// AI harness: claude, opencode
+        #[arg(short = 'H', long, default_value = "claude")]
+        harness: String,
+
+        /// Default model to use with harness
+        #[arg(short = 'M', long)]
+        model: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -1178,5 +1192,8 @@ async fn main() -> Result<()> {
             dry_run,
             push,
         ),
+        Commands::Serve { harness, model } => {
+            commands::serve::run(cli.project, &harness, model.as_deref()).await
+        }
     }
 }
