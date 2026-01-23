@@ -268,6 +268,46 @@ pub mod formats;
 /// - `codex` - OpenAI Codex CLI
 pub mod llm;
 
+/// OpenCode Server integration for agent orchestration.
+///
+/// Provides HTTP client and SSE event streaming for OpenCode Server mode,
+/// enabling structured communication with agents instead of CLI subprocess spawning.
+///
+/// # Architecture
+///
+/// Instead of spawning one CLI process per agent, this module communicates with
+/// a single OpenCode server that manages multiple sessions:
+///
+/// ```text
+/// SCUD Swarm ──HTTP──► OpenCode Server
+///                 ◄─SSE── real-time events (tool calls, output, completion)
+/// ```
+///
+/// # Benefits
+///
+/// - Lower overhead (single server vs N processes)
+/// - Structured events (tool calls, text deltas, completion)
+/// - Graceful cancellation via HTTP API
+/// - Real-time visibility into agent activity
+///
+/// # Example
+///
+/// ```no_run
+/// use scud::opencode::{OpenCodeManager, global_manager};
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     let manager = global_manager();
+///     manager.ensure_running().await?;
+///
+///     let session = manager.client().create_session("Task 1").await?;
+///     manager.client().send_message(&session.id, "Do something", None).await?;
+///
+///     Ok(())
+/// }
+/// ```
+pub mod opencode;
+
 /// JSON RPC IPC server for subagent communication.
 ///
 /// Provides a JSON RPC 2.0 protocol for inter-process communication between
@@ -367,6 +407,99 @@ pub mod models;
 /// storage.update_group("my-phase", &phase).unwrap();
 /// ```
 pub mod storage;
+
+/// Sync SCUD tasks to Claude Code's Tasks format.
+///
+/// Claude Code has a built-in Tasks feature that agents can access via
+/// `TaskList`, `TaskUpdate`, `TaskCreate` tools. By syncing SCUD tasks
+/// to `~/.claude/tasks/`, agents can see the full task list and dependencies.
+///
+/// # Example
+///
+/// ```no_run
+/// use scud::sync::claude_tasks;
+/// use scud::models::phase::Phase;
+///
+/// let phase = Phase::new("auth".to_string());
+/// // ... add tasks ...
+///
+/// // Sync to Claude Tasks format
+/// let task_file = claude_tasks::sync_phase(&phase, "auth").unwrap();
+///
+/// // Get the task list ID for environment variable
+/// let list_id = claude_tasks::task_list_id("auth");
+/// // Set CLAUDE_CODE_TASK_LIST_ID={list_id} when spawning agents
+/// ```
+pub mod sync;
+
+/// Swarm execution mode - how agents are spawned during swarm execution.
+///
+/// # Modes
+///
+/// - **Tmux**: Uses tmux for agent management. Requires tmux to be installed.
+///   Provides live visibility through tmux windows, useful for debugging.
+///
+/// - **Extensions**: Uses extension-based subprocesses with no tmux dependency.
+///   Agents run as direct child processes. Better for CI/CD environments or
+///   systems without tmux.
+///
+/// - **Server**: Uses OpenCode Server mode for agent orchestration. Provides
+///   structured events (tool calls, text deltas), graceful cancellation, and
+///   lower per-agent overhead. Recommended for production use.
+///
+/// # Example
+///
+/// ```
+/// use scud::SwarmMode;
+///
+/// let mode = SwarmMode::Server;
+/// assert_eq!(mode.to_string(), "server");
+/// ```
+#[derive(Clone, Debug, Default, clap::ValueEnum)]
+pub enum SwarmMode {
+    /// Use tmux for agent management (default, requires tmux installed)
+    #[default]
+    Tmux,
+    /// Use extension-based subprocesses (no tmux dependency)
+    Extensions,
+    /// Use OpenCode Server for agent orchestration (recommended)
+    Server,
+}
+
+impl std::fmt::Display for SwarmMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SwarmMode::Tmux => write!(f, "tmux"),
+            SwarmMode::Extensions => write!(f, "extensions"),
+            SwarmMode::Server => write!(f, "server"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod swarm_mode_tests {
+    use super::*;
+
+    #[test]
+    fn test_swarm_mode_default() {
+        let mode: SwarmMode = Default::default();
+        assert!(matches!(mode, SwarmMode::Tmux));
+    }
+
+    #[test]
+    fn test_swarm_mode_display() {
+        assert_eq!(SwarmMode::Tmux.to_string(), "tmux");
+        assert_eq!(SwarmMode::Extensions.to_string(), "extensions");
+        assert_eq!(SwarmMode::Server.to_string(), "server");
+    }
+
+    #[test]
+    fn test_swarm_mode_clone() {
+        let mode = SwarmMode::Extensions;
+        let cloned = mode.clone();
+        assert!(matches!(cloned, SwarmMode::Extensions));
+    }
+}
 
 /// Returns a greeting message.
 ///

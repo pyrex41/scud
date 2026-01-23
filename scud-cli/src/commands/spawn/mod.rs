@@ -21,6 +21,7 @@ use std::time::Duration;
 use crate::commands::helpers::{flatten_all_tasks, resolve_group_tag};
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
+use crate::sync::claude_tasks;
 
 use self::monitor::SpawnSession;
 use self::terminal::Harness;
@@ -132,6 +133,53 @@ pub fn run(
         }
     }
 
+    // Sync tasks to Claude Code's Tasks format
+    // This enables agents to see tasks via TaskList tool
+    let task_list_id = claude_tasks::task_list_id(&phase_tag);
+    if !all_tags {
+        // Single tag mode - sync the specific phase
+        if let Some(phase) = all_phases.get(&phase_tag) {
+            match claude_tasks::sync_phase(phase, &phase_tag) {
+                Ok(sync_path) => {
+                    let path_str: String = sync_path.display().to_string();
+                    println!(
+                        "  {} Synced tasks to: {}",
+                        "✓".green(),
+                        path_str.dimmed()
+                    );
+                }
+                Err(e) => {
+                    let err_str: String = e.to_string();
+                    println!(
+                        "  {} Task sync failed: {}",
+                        "!".yellow(),
+                        err_str.dimmed()
+                    );
+                }
+            }
+        }
+    } else {
+        // All tags mode - sync all phases
+        match claude_tasks::sync_phases(&all_phases) {
+            Ok(paths) => {
+                let count: usize = paths.len();
+                println!(
+                    "  {} Synced {} phases to Claude Tasks format",
+                    "✓".green(),
+                    count
+                );
+            }
+            Err(e) => {
+                let err_str: String = e.to_string();
+                println!(
+                    "  {} Task sync failed: {}",
+                    "!".yellow(),
+                    err_str.dimmed()
+                );
+            }
+        }
+    }
+
     // Create spawn session metadata
     let mut spawn_session = SpawnSession::new(
         &session_name,
@@ -165,13 +213,14 @@ pub fn run(
             );
         }
 
-        match terminal::spawn_terminal_with_harness_and_model(
+        match terminal::spawn_terminal_with_task_list(
             &info.task.id,
             &config.prompt,
             &working_dir,
             &session_name,
             config.harness,
             config.model.as_deref(),
+            &task_list_id,
         ) {
             Ok(window_index) => {
                 println!(

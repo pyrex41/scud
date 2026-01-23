@@ -831,6 +831,10 @@ enum Commands {
         model: Option<String>,
     },
 
+    /// Sync task changes from Claude Tasks back to SCUD (internal use by hooks)
+    #[command(hide = true)]
+    SyncFromClaude,
+
     // /// Start interactive REPL for task management - temporarily disabled
     // Repl,
 }
@@ -1220,6 +1224,7 @@ async fn main() -> Result<()> {
         Commands::Serve { harness, model } => {
             commands::serve::run(cli.project, &harness, model.as_deref()).await
         }
+        Commands::SyncFromClaude => commands::sync_from_claude::run(cli.project),
         // Commands::Repl => commands::repl::run(), // temporarily disabled
     }
 }

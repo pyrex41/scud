@@ -2,6 +2,7 @@
 //!
 //! Installs and manages hooks that automatically:
 //! - Mark tasks as done when Claude Code finishes (Stop hook)
+//! - Sync TaskUpdate/TaskCreate tool calls back to SCUD (PostToolUse hook)
 //! - Track which task an agent is working on via environment variables
 
 use anyhow::{Context, Result};
@@ -84,11 +85,27 @@ pub fn install_hooks(project_root: &Path) -> Result<()> {
         }
     ]);
 
+    // PostToolUse hook - sync TaskUpdate/TaskCreate back to SCUD
+    let post_tool_hook = json!([
+        {
+            "matcher": "TaskUpdate|TaskCreate",
+            "hooks": [
+                {
+                    "type": "command",
+                    // Sync Claude task changes back to SCUD
+                    "command": "bash -c 'scud sync-from-claude 2>/dev/null || true'",
+                    "timeout": 10
+                }
+            ]
+        }
+    ]);
+
     // Merge with existing hooks (preserve other hooks)
     let hooks = settings.get("hooks").cloned().unwrap_or_else(|| json!({}));
 
     let mut hooks_obj = hooks.as_object().cloned().unwrap_or_default();
     hooks_obj.insert("Stop".to_string(), stop_hook);
+    hooks_obj.insert("PostToolUse".to_string(), post_tool_hook);
 
     settings["hooks"] = json!(hooks_obj);
 
@@ -110,7 +127,7 @@ pub fn uninstall_hooks(project_root: &Path) -> Result<()> {
     let content = fs::read_to_string(&settings_path)?;
     let mut settings: Value = serde_json::from_str(&content)?;
 
-    // Remove Stop hook if it's ours
+    // Remove SCUD hooks if they're ours
     if let Some(hooks) = settings.get_mut("hooks") {
         if let Some(hooks_obj) = hooks.as_object_mut() {
             // Check if Stop hook contains our scud command before removing
@@ -136,6 +153,32 @@ pub fn uninstall_hooks(project_root: &Path) -> Result<()> {
 
                 if is_ours {
                     hooks_obj.remove("Stop");
+                }
+            }
+
+            // Check if PostToolUse hook contains our scud sync command before removing
+            if let Some(post_tool) = hooks_obj.get("PostToolUse") {
+                let is_ours = post_tool
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter().any(|h| {
+                            h.get("hooks")
+                                .and_then(|cmds| cmds.as_array())
+                                .map(|cmds| {
+                                    cmds.iter().any(|cmd| {
+                                        cmd.get("command")
+                                            .and_then(|c| c.as_str())
+                                            .map(|s| s.contains("scud sync-from-claude"))
+                                            .unwrap_or(false)
+                                    })
+                                })
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
+
+                if is_ours {
+                    hooks_obj.remove("PostToolUse");
                 }
             }
         }
@@ -201,5 +244,36 @@ mod tests {
     fn test_agent_env_setup() {
         let env = agent_env_setup("auth:5");
         assert_eq!(env, "export SCUD_TASK_ID=\"auth:5\"");
+    }
+
+    #[test]
+    fn test_install_hooks_includes_post_tool_use() {
+        let tmp = TempDir::new().unwrap();
+
+        install_hooks(tmp.path()).unwrap();
+
+        let settings_path = tmp.path().join(".claude").join("settings.local.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+
+        // Should have PostToolUse hook for TaskUpdate/TaskCreate
+        assert!(content.contains("PostToolUse"));
+        assert!(content.contains("TaskUpdate|TaskCreate"));
+        assert!(content.contains("sync-from-claude"));
+    }
+
+    #[test]
+    fn test_uninstall_removes_post_tool_use_hook() {
+        let tmp = TempDir::new().unwrap();
+
+        install_hooks(tmp.path()).unwrap();
+
+        let settings_path = tmp.path().join(".claude").join("settings.local.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        assert!(content.contains("PostToolUse"));
+
+        uninstall_hooks(tmp.path()).unwrap();
+
+        let content = fs::read_to_string(&settings_path).unwrap();
+        assert!(!content.contains("PostToolUse"));
     }
 }

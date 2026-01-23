@@ -229,6 +229,34 @@ pub fn spawn_terminal_with_harness_and_model(
         binary_path,
         harness,
         model,
+        None, // No task list ID (legacy mode)
+    )
+}
+
+/// Spawn a new tmux window with Claude Code task list integration
+/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
+///
+/// This variant sets `CLAUDE_CODE_TASK_LIST_ID` so agents can see SCUD tasks
+/// via the native `TaskList` tool.
+pub fn spawn_terminal_with_task_list(
+    task_id: &str,
+    prompt: &str,
+    working_dir: &Path,
+    session_name: &str,
+    harness: Harness,
+    model: Option<&str>,
+    task_list_id: &str,
+) -> Result<String> {
+    let binary_path = find_harness_binary(harness)?;
+    spawn_tmux(
+        task_id,
+        prompt,
+        working_dir,
+        session_name,
+        binary_path,
+        harness,
+        model,
+        Some(task_list_id),
     )
 }
 
@@ -242,6 +270,7 @@ fn spawn_tmux(
     binary_path: &str,
     harness: Harness,
     model: Option<&str>,
+    task_list_id: Option<&str>,
 ) -> Result<String> {
     let window_name = format!("task-{}", task_id);
 
@@ -301,6 +330,11 @@ fn spawn_tmux(
     // Source shell profile to ensure PATH includes node, etc.
     let harness_cmd = harness.command(binary_path, &prompt_file, model);
 
+    // Build the task list ID export line if provided
+    let task_list_export = task_list_id
+        .map(|id| format!("export CLAUDE_CODE_TASK_LIST_ID='{}'\n", id))
+        .unwrap_or_default();
+
     // Write a bash script to handle shell-agnostic execution
     // This ensures it works even if the user's shell is fish, zsh, etc.
     let spawn_script = format!(
@@ -312,10 +346,11 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:
 [ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh"
 
 export SCUD_TASK_ID='{task_id}'
-{harness_cmd}
+{task_list_export}{harness_cmd}
 rm -f '{prompt_file}'
 "#,
         task_id = task_id,
+        task_list_export = task_list_export,
         harness_cmd = harness_cmd,
         prompt_file = prompt_file.display()
     );
