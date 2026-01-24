@@ -283,11 +283,13 @@ impl EventReader {
         // Sort by timestamp
         events.sort_by_key(|e| e.timestamp);
 
-        // Deduplicate (same timestamp + task_id + event kind)
+        // Deduplicate (same timestamp + task_id + event content)
+        // We compare the full serialized event to ensure different tool calls
+        // or other events with different content are not incorrectly merged
         events.dedup_by(|a, b| {
             a.timestamp == b.timestamp
                 && a.task_id == b.task_id
-                && std::mem::discriminant(&a.event) == std::mem::discriminant(&b.event)
+                && serde_json::to_string(&a.event).ok() == serde_json::to_string(&b.event).ok()
         });
 
         Ok(events)
@@ -651,5 +653,81 @@ mod tests {
         assert_eq!(task1.success, Some(true));
         assert_eq!(task1.duration_ms, Some(5000));
         assert!(task1.tools_used.contains(&"Read".to_string()));
+    }
+
+    #[test]
+    fn test_deduplication_preserves_different_tool_calls() {
+        use chrono::TimeZone;
+
+        // Create two tool call events with the same timestamp and task_id
+        // but different tool names - these should NOT be deduplicated
+        let fixed_time = Utc.with_ymd_and_hms(2025, 1, 15, 12, 0, 0).unwrap();
+
+        let event1 = AgentEvent {
+            timestamp: fixed_time,
+            session_id: "s1".to_string(),
+            task_id: "task:1".to_string(),
+            event: EventKind::ToolCall {
+                tool: "Read".to_string(),
+                input_summary: Some("file1.rs".to_string()),
+            },
+        };
+
+        let event2 = AgentEvent {
+            timestamp: fixed_time,
+            session_id: "s1".to_string(),
+            task_id: "task:1".to_string(),
+            event: EventKind::ToolCall {
+                tool: "Write".to_string(),
+                input_summary: Some("file2.rs".to_string()),
+            },
+        };
+
+        let mut events = vec![event1, event2];
+
+        // Sort and dedup using the same logic as load_all_for_session
+        events.sort_by_key(|e| e.timestamp);
+        events.dedup_by(|a, b| {
+            a.timestamp == b.timestamp
+                && a.task_id == b.task_id
+                && serde_json::to_string(&a.event).ok() == serde_json::to_string(&b.event).ok()
+        });
+
+        // Both events should remain (different tool names)
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn test_deduplication_removes_true_duplicates() {
+        use chrono::TimeZone;
+
+        // Create two identical events - these SHOULD be deduplicated
+        let fixed_time = Utc.with_ymd_and_hms(2025, 1, 15, 12, 0, 0).unwrap();
+
+        let event1 = AgentEvent {
+            timestamp: fixed_time,
+            session_id: "s1".to_string(),
+            task_id: "task:1".to_string(),
+            event: EventKind::Spawned,
+        };
+
+        let event2 = AgentEvent {
+            timestamp: fixed_time,
+            session_id: "s1".to_string(),
+            task_id: "task:1".to_string(),
+            event: EventKind::Spawned,
+        };
+
+        let mut events = vec![event1, event2];
+
+        events.sort_by_key(|e| e.timestamp);
+        events.dedup_by(|a, b| {
+            a.timestamp == b.timestamp
+                && a.task_id == b.task_id
+                && serde_json::to_string(&a.event).ok() == serde_json::to_string(&b.event).ok()
+        });
+
+        // Only one event should remain (true duplicate)
+        assert_eq!(events.len(), 1);
     }
 }

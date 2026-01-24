@@ -36,6 +36,8 @@ webbrowser = "1.0"  # Cross-platform browser opening
 uuid = { version = "1", features = ["v4"] }  # UUID generation for task IDs
 dotenvy = "0.15"  # .env file loading
 regex = "1"       # Pattern matching for error parsing
+walkdir = "2"     # Directory traversal for extensions
+eventsource-client = "0.13"  # Server-sent events for opencode
 
 # TUI dependencies
 ratatui = "0.29"      # Terminal UI framework

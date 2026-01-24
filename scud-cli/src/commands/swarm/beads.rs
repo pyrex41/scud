@@ -24,9 +24,6 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use colored::Colorize;
 
-// AgentDef is used for task prompt resolution
-#[allow(unused_imports)]
-use crate::agents::AgentDef;
 use crate::commands::spawn::agent;
 use crate::commands::spawn::terminal::{self, Harness};
 use crate::models::phase::Phase;
@@ -42,8 +39,6 @@ pub struct BeadsConfig {
     pub max_concurrent: usize,
     /// Poll interval when no tasks are ready but some are in-progress
     pub poll_interval: Duration,
-    /// Whether to run validation after each task completes
-    pub validate_each: bool,
 }
 
 impl Default for BeadsConfig {
@@ -51,7 +46,6 @@ impl Default for BeadsConfig {
         Self {
             max_concurrent: 5,
             poll_interval: Duration::from_secs(3),
-            validate_each: false,
         }
     }
 }
@@ -438,6 +432,9 @@ pub fn run_beads_loop(
         // Log completion events and track what unblocked what
         for (task_id, success) in newly_completed {
             if let Some(spawn_time) = spawned_times.remove(&task_id) {
+                // Clean up spawned_tasks to prevent unbounded growth
+                spawned_tasks.remove(&task_id);
+
                 let duration_ms = spawn_time.elapsed().as_millis() as u64;
                 if let Err(e) = event_writer.log_completed(&task_id, success, duration_ms) {
                     eprintln!("Warning: Failed to log completion: {}", e);
@@ -498,12 +495,20 @@ pub fn run_beads_loop(
 mod tests {
     use super::*;
     use crate::models::task::Priority;
+    use tempfile::TempDir;
 
     fn create_test_task(id: &str, status: TaskStatus, deps: Vec<&str>) -> Task {
         let mut task = Task::new(id.to_string(), format!("Task {}", id), "Description".to_string());
         task.status = status;
         task.dependencies = deps.into_iter().map(String::from).collect();
         task
+    }
+
+    fn setup_storage_with_phase(phase: &Phase, tag: &str) -> (TempDir, Storage) {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::new(Some(temp_dir.path().to_path_buf()));
+        storage.update_group(tag, phase).unwrap();
+        (temp_dir, storage)
     }
 
     #[test]
@@ -618,5 +623,57 @@ mod tests {
         phases.insert("test".to_string(), phase);
 
         assert_eq!(count_remaining(&phases, "test", false), 2); // InProgress + Pending
+    }
+
+    #[test]
+    fn test_claim_task_pending() {
+        let mut phase = Phase::new("test".to_string());
+        phase.tasks.push(create_test_task("1", TaskStatus::Pending, vec![]));
+
+        let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
+
+        // Should successfully claim the pending task
+        let claimed = claim_task(&storage, "1", "test").unwrap();
+        assert!(claimed);
+
+        // Verify the task is now in-progress
+        let reloaded = storage.load_group("test").unwrap();
+        assert_eq!(reloaded.get_task("1").unwrap().status, TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn test_claim_task_already_in_progress() {
+        let mut phase = Phase::new("test".to_string());
+        phase.tasks.push(create_test_task("1", TaskStatus::InProgress, vec![]));
+
+        let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
+
+        // Should fail to claim a task that's already in-progress
+        let claimed = claim_task(&storage, "1", "test").unwrap();
+        assert!(!claimed);
+    }
+
+    #[test]
+    fn test_claim_task_nonexistent() {
+        let mut phase = Phase::new("test".to_string());
+        phase.tasks.push(create_test_task("1", TaskStatus::Pending, vec![]));
+
+        let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
+
+        // Should fail to claim a task that doesn't exist
+        let claimed = claim_task(&storage, "nonexistent", "test").unwrap();
+        assert!(!claimed);
+    }
+
+    #[test]
+    fn test_claim_task_already_done() {
+        let mut phase = Phase::new("test".to_string());
+        phase.tasks.push(create_test_task("1", TaskStatus::Done, vec![]));
+
+        let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
+
+        // Should fail to claim a task that's already done
+        let claimed = claim_task(&storage, "1", "test").unwrap();
+        assert!(!claimed);
     }
 }

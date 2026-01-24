@@ -317,7 +317,6 @@ pub fn run(
         let beads_config = beads::BeadsConfig {
             max_concurrent: round_size, // Reuse round_size as max concurrent
             poll_interval: Duration::from_secs(3),
-            validate_each: !no_validate,
         };
 
         // Check tmux availability for beads mode (uses tmux by default)
