@@ -1,0 +1,14 @@
+[workspace]
+members = ["scud-cli", "scud-core", "descartes-gui", "scud-eval"]
+resolver = "2"
+
+[workspace.package]
+version = "1.45.0"
+edition = "2021"
+license = "MIT"
+authors = ["SCUD Team"]
+
+[workspace.dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+iced = { version = "0.14", features = ["tokio", "advanced"] }
