@@ -445,6 +445,20 @@ fn print_recovery_instructions() {
     );
 }
 
+/// Scan for available extensions (stub implementation)
+pub fn scan_ext(_project_root: Option<PathBuf>) -> Result<()> {
+    println!("{}", "Extension scanning".blue().bold());
+    println!("{}", "-".repeat(40).blue());
+    println!();
+    println!("{}", "No extensions found.".dimmed());
+    println!();
+    println!("Extensions directory would be: .scud/extensions/");
+    println!();
+    println!("{}", "Extension support is not yet fully implemented.".yellow());
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

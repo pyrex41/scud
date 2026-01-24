@@ -480,6 +480,33 @@ enum Commands {
         all_tags: bool,
     },
 
+    /// Find tasks ready to execute (beads-style continuous worker support)
+    ///
+    /// Returns pending tasks with dependencies met, sorted by priority then complexity.
+    /// Unlike next-batch, filters out already in-progress tasks by default.
+    /// Designed for continuous worker loops (GUPP pattern).
+    Ready {
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// Maximum number of tasks to return (default: 10)
+        #[arg(short, long, default_value = "10")]
+        limit: usize,
+
+        /// Search across all phases
+        #[arg(long)]
+        all_tags: bool,
+
+        /// Output as JSON (for orchestrator integration)
+        #[arg(long)]
+        json: bool,
+
+        /// Include already in-progress tasks in output
+        #[arg(long)]
+        include_in_progress: bool,
+    },
+
     /// Convert task storage format between JSON and SCG
     Convert {
         /// Source format (json, scg)
@@ -1055,6 +1082,13 @@ async fn main() -> Result<()> {
             limit,
             all_tags,
         } => commands::next_batch::run(cli.project, tag.as_deref(), limit, all_tags),
+        Commands::Ready {
+            tag,
+            limit,
+            all_tags,
+            json,
+            include_in_progress,
+        } => commands::ready::run(cli.project, tag.as_deref(), all_tags, limit, json, include_in_progress),
         Commands::Convert { from, to, backup } => {
             commands::convert::run(cli.project, &from, &to, backup)
         }

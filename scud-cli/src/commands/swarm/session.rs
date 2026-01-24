@@ -13,6 +13,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::backpressure::ValidationResult;
+use crate::models::task::Task;
+use crate::commands::spawn::terminal::Harness;
 
 /// Get the current git commit SHA
 pub fn get_current_commit() -> Option<String> {
@@ -397,6 +399,54 @@ pub fn list_sessions(project_root: Option<&PathBuf>) -> Result<Vec<String>> {
     }
 
     Ok(sessions)
+}
+
+// ============================================================================
+// Extensions mode types (stub implementation for compilation)
+// ============================================================================
+
+/// Agent representation for async wave execution
+#[derive(Debug, Clone)]
+pub struct WaveAgent {
+    pub task: Task,
+    pub tag: String,
+}
+
+impl WaveAgent {
+    pub fn new(task: Task, tag: &str) -> Self {
+        Self {
+            task,
+            tag: tag.to_string(),
+        }
+    }
+}
+
+/// Result of executing a single agent
+#[derive(Debug)]
+pub struct AgentResult {
+    pub task_id: String,
+    pub success: bool,
+    pub exit_code: Option<i32>,
+    pub duration_ms: u64,
+}
+
+/// Result of executing a wave
+#[derive(Debug)]
+pub struct WaveExecutionResult {
+    pub agent_results: Vec<AgentResult>,
+    pub round_state: RoundState,
+}
+
+/// Execute a wave asynchronously using subprocesses
+/// This is a stub implementation - extensions mode is not fully implemented
+pub async fn execute_wave_async(
+    _agents: &[WaveAgent],
+    _working_dir: &std::path::Path,
+    _round_idx: usize,
+    _harness: Harness,
+) -> Result<WaveExecutionResult> {
+    // Stub implementation - returns an error indicating extensions mode is not ready
+    anyhow::bail!("Extensions mode is not yet fully implemented. Use tmux mode (--swarm-mode tmux) instead.")
 }
 
 #[cfg(test)]
