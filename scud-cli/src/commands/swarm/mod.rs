@@ -10,9 +10,10 @@
 //! 4. Repeat for next wave
 //!
 //! Usage:
-//!   scud swarm --tag <tag>                 # Full mode with research + validation
-//!   scud swarm --tag <tag> --no-research   # Skip research, use tasks as-is
-//!   scud swarm --tag <tag> --no-validate   # Skip backpressure validation
+//!   scud swarm --tag <tag>                           # Full mode with tmux (default)
+//!   scud swarm --tag <tag> --swarm-mode extensions   # Use extension subprocesses (no tmux)
+//!   scud swarm --tag <tag> --no-research             # Skip research, use tasks as-is
+//!   scud swarm --tag <tag> --no-validate             # Skip backpressure validation
 
 pub mod session;
 
@@ -44,6 +45,9 @@ use crate::agents::AgentDef;
 use crate::attribution::{attribute_failure, AttributionConfidence};
 use crate::backpressure::{BackpressureConfig, ValidationResult};
 
+/// Swarm execution mode
+pub use crate::SwarmMode;
+
 /// Main entry point for the swarm command
 #[allow(clippy::too_many_arguments)]
 pub fn run(
@@ -52,6 +56,7 @@ pub fn run(
     round_size: usize,
     all_tags: bool,
     harness_arg: &str,
+    swarm_mode: SwarmMode,
     dry_run: bool,
     session_name: Option<String>,
     no_research: bool,
@@ -73,8 +78,10 @@ pub fn run(
         anyhow::bail!("SCUD not initialized. Run: scud init");
     }
 
-    // Check tmux is available
-    terminal::check_tmux_available()?;
+    // Check tmux is available (only in tmux mode)
+    if matches!(swarm_mode, SwarmMode::Tmux) {
+        terminal::check_tmux_available()?;
+    }
 
     // Determine phase tag
     let phase_tag = if all_tags {
@@ -133,7 +140,15 @@ pub fn run(
             "enabled".green()
         }
     );
-    println!("{:<20} {}", "Terminal:".dimmed(), "tmux".cyan());
+    println!(
+        "{:<20} {}",
+        "Mode:".dimmed(),
+        match swarm_mode {
+            SwarmMode::Tmux => "tmux".cyan(),
+            SwarmMode::Extensions => "extensions".green(),
+            SwarmMode::Server => "server (opencode)".magenta(),
+        }
+    );
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().cyan());
     println!(
         "{:<20} {}",
@@ -184,96 +199,104 @@ pub fn run(
     }
 
     // Initialize swarm session
+    let terminal_mode = match swarm_mode {
+        SwarmMode::Tmux => "tmux",
+        SwarmMode::Extensions => "extensions",
+        SwarmMode::Server => "server",
+    };
     let mut swarm_session = SwarmSession::new(
         &session_name,
         &phase_tag,
-        "tmux",
+        terminal_mode,
         &working_dir.to_string_lossy(),
         round_size,
     );
 
     // Detect orphan in-progress tasks (tasks with no running tmux window)
+    // Only applicable in tmux mode
     let all_phases = storage.load_tasks()?;
-    let orphans = find_orphan_tasks(&all_phases, &phase_tag, all_tags, &session_name);
+    if matches!(swarm_mode, SwarmMode::Tmux) {
+        let orphans = find_orphan_tasks(&all_phases, &phase_tag, all_tags, &session_name);
 
-    if !orphans.is_empty() {
-        println!();
-        println!(
-            "{}",
-            "Detected orphan in-progress tasks (no tmux window):".yellow()
-        );
-        for (task_id, tag) in &orphans {
+        if !orphans.is_empty() {
+            println!();
             println!(
-                "  {} {} (tag: {})",
-                "*".yellow(),
-                task_id.cyan(),
-                tag.dimmed()
+                "{}",
+                "Detected orphan in-progress tasks (no tmux window):".yellow()
             );
-        }
-        println!();
+            for (task_id, tag) in &orphans {
+                println!(
+                    "  {} {} (tag: {})",
+                    "*".yellow(),
+                    task_id.cyan(),
+                    tag.dimmed()
+                );
+            }
+            println!();
 
-        // Prompt user for action
-        let choices = vec![
-            "Reset to pending and re-run",
-            "Kill existing windows (if any) and restart",
-            "Skip and continue (leave as in-progress)",
-            "Abort",
-        ];
+            // Prompt user for action
+            let choices = vec![
+                "Reset to pending and re-run",
+                "Kill existing windows (if any) and restart",
+                "Skip and continue (leave as in-progress)",
+                "Abort",
+            ];
 
-        let selection = dialoguer::Select::new()
-            .with_prompt("How should orphan tasks be handled?")
-            .items(&choices)
-            .default(0)
-            .interact()?;
+            let selection = dialoguer::Select::new()
+                .with_prompt("How should orphan tasks be handled?")
+                .items(&choices)
+                .default(0)
+                .interact()?;
 
-        match selection {
-            0 => {
-                // Reset to pending
-                for (task_id, tag) in &orphans {
-                    if let Ok(mut phase) = storage.load_group(tag) {
-                        if let Some(task) = phase.get_task_mut(task_id) {
-                            task.set_status(TaskStatus::Pending);
-                            storage.update_group(tag, &phase)?;
-                            println!("  {} {} -> pending", "v".green(), task_id);
+            match selection {
+                0 => {
+                    // Reset to pending
+                    for (task_id, tag) in &orphans {
+                        if let Ok(mut phase) = storage.load_group(tag) {
+                            if let Some(task) = phase.get_task_mut(task_id) {
+                                task.set_status(TaskStatus::Pending);
+                                storage.update_group(tag, &phase)?;
+                                println!("  {} {} -> pending", "v".green(), task_id);
+                            }
                         }
                     }
                 }
-            }
-            1 => {
-                // Kill and restart - first try to kill any matching windows
-                for (task_id, _) in &orphans {
-                    let window_name = format!("task-{}", task_id);
-                    let _ = terminal::kill_tmux_window(&session_name, &window_name);
-                }
-                // Reset to pending so they'll be picked up
-                for (task_id, tag) in &orphans {
-                    if let Ok(mut phase) = storage.load_group(tag) {
-                        if let Some(task) = phase.get_task_mut(task_id) {
-                            task.set_status(TaskStatus::Pending);
-                            storage.update_group(tag, &phase)?;
-                            println!("  {} {} -> pending (will re-spawn)", "v".green(), task_id);
+                1 => {
+                    // Kill and restart - first try to kill any matching windows
+                    for (task_id, _) in &orphans {
+                        let window_name = format!("task-{}", task_id);
+                        let _ = terminal::kill_tmux_window(&session_name, &window_name);
+                    }
+                    // Reset to pending so they'll be picked up
+                    for (task_id, tag) in &orphans {
+                        if let Ok(mut phase) = storage.load_group(tag) {
+                            if let Some(task) = phase.get_task_mut(task_id) {
+                                task.set_status(TaskStatus::Pending);
+                                storage.update_group(tag, &phase)?;
+                                println!("  {} {} -> pending (will re-spawn)", "v".green(), task_id);
+                            }
                         }
                     }
                 }
-            }
-            2 => {
-                // Skip - do nothing, leave as in-progress
-                println!("{}", "Leaving orphan tasks as in-progress.".dimmed());
-            }
-            3 => {
-                // Abort
-                anyhow::bail!("Aborted by user");
-            }
+                2 => {
+                    // Skip - do nothing, leave as in-progress
+                    println!("{}", "Leaving orphan tasks as in-progress.".dimmed());
+                }
+                3 => {
+                    // Abort
+                    anyhow::bail!("Aborted by user");
+                }
             _ => {}
+            }
+            println!();
         }
-        println!();
     }
 
     // Main loop: execute waves until all tasks done
     let mut wave_number = 1;
     loop {
-        // Load fresh task state
-        let _all_phases = storage.load_tasks()?;
+        // Load fresh task state (must reload each iteration to see completed tasks)
+        let all_phases = storage.load_tasks()?;
 
         // Compute waves from current state
         let waves = compute_waves_from_tasks(&all_phases, &phase_tag, all_tags)?;
@@ -337,33 +360,58 @@ pub fn run(
                 round_tasks.len()
             );
 
-            // Spawn agents for this round
+            // Spawn agents for this round based on swarm mode
             // Note: Agents self-orient using scud CLI commands (scud list, scud show, etc.)
-            let round_state = execute_round(
-                &storage,
-                round_tasks,
-                &working_dir,
-                &session_name,
-                round_idx,
-                harness,
-            )?;
+            let round_state = match swarm_mode {
+                SwarmMode::Tmux => {
+                    let state = execute_round(
+                        &storage,
+                        round_tasks,
+                        &working_dir,
+                        &session_name,
+                        round_idx,
+                        harness,
+                    )?;
+
+                    // Create/update spawn proxy for monitor visibility (tmux mode only)
+                    let _proxy_path = create_and_update_spawn_proxy(
+                        &storage,
+                        project_root.as_ref(),
+                        &session_name,
+                        &phase_tag,
+                        &working_dir,
+                        &swarm_session,
+                        Some(&state),
+                    )?;
+
+                    // Wait for round completion (tmux mode - poll for status changes)
+                    println!("    Waiting for round completion...");
+                    wait_for_round_completion(&storage, round_tasks)?;
+
+                    state
+                }
+                SwarmMode::Extensions => {
+                    // Extensions mode: synchronous execution with async subprocess runner
+                    execute_round_extensions(
+                        &storage,
+                        round_tasks,
+                        &working_dir,
+                        round_idx,
+                        harness,
+                    )?
+                }
+                SwarmMode::Server => {
+                    // Server mode: use OpenCode Server for agent orchestration
+                    execute_round_server(
+                        &storage,
+                        round_tasks,
+                        &working_dir,
+                        round_idx,
+                    )?
+                }
+            };
 
             wave_state.rounds.push(round_state.clone());
-
-            // Create/update spawn proxy immediately for monitor real-time visibility
-            let _proxy_path = create_and_update_spawn_proxy(
-                &storage,
-                project_root.as_ref(),
-                &session_name,
-                &phase_tag,
-                &working_dir,
-                &swarm_session,
-                Some(&round_state),
-            )?;
-
-            // Wait for round completion
-            println!("    Waiting for round completion...");
-            wait_for_round_completion(&storage, round_tasks)?;
             println!("    {} Round {} complete", "✓".green(), round_idx + 1);
         }
 
@@ -870,6 +918,230 @@ fn execute_round(
     }
 
     Ok(round_state)
+}
+
+/// Execute a round using extension-based subprocesses (no tmux)
+fn execute_round_extensions(
+    storage: &Storage,
+    tasks: &[TaskInfo],
+    working_dir: &std::path::Path,
+    round_idx: usize,
+    default_harness: Harness,
+) -> Result<RoundState> {
+    // Convert TaskInfo to WaveAgent format
+    let wave_agents: Vec<session::WaveAgent> = tasks
+        .iter()
+        .map(|info| session::WaveAgent::new(info.task.clone(), &info.tag))
+        .collect();
+
+    // Mark tasks as in-progress before spawning
+    for info in tasks {
+        if let Ok(mut phase) = storage.load_group(&info.tag) {
+            if let Some(task) = phase.get_task_mut(&info.task.id) {
+                task.set_status(TaskStatus::InProgress);
+                let _ = storage.update_group(&info.tag, &phase);
+            }
+        }
+    }
+
+    // Run async execution using tokio runtime
+    let handle = tokio::runtime::Handle::current();
+    let result = handle.block_on(async {
+        session::execute_wave_async(&wave_agents, working_dir, round_idx, default_harness).await
+    })?;
+
+    // Print results
+    for agent_result in &result.agent_results {
+        if agent_result.success {
+            println!(
+                "    {} Completed: {} ({}ms)",
+                "✓".green(),
+                agent_result.task_id.cyan(),
+                agent_result.duration_ms
+            );
+        } else {
+            println!(
+                "    {} Failed: {} (exit code: {:?})",
+                "✗".red(),
+                agent_result.task_id.red(),
+                agent_result.exit_code
+            );
+        }
+    }
+
+    // Update task statuses based on results
+    for agent_result in &result.agent_results {
+        // Find the task's tag
+        if let Some(info) = tasks.iter().find(|t| t.task.id == agent_result.task_id) {
+            if let Ok(mut phase) = storage.load_group(&info.tag) {
+                if let Some(task) = phase.get_task_mut(&agent_result.task_id) {
+                    // The agent itself should update the status via scud set-status
+                    // But if it failed to start, mark it as failed
+                    if !agent_result.success && agent_result.exit_code.is_none() {
+                        task.set_status(TaskStatus::Failed);
+                        let _ = storage.update_group(&info.tag, &phase);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(result.round_state)
+}
+
+/// Execute a round using OpenCode Server mode
+fn execute_round_server(
+    storage: &Storage,
+    tasks: &[TaskInfo],
+    working_dir: &std::path::Path,
+    round_idx: usize,
+) -> Result<RoundState> {
+    use crate::opencode::AgentOrchestrator;
+    use tokio::sync::mpsc;
+
+    // Mark tasks as in-progress before spawning
+    for info in tasks {
+        if let Ok(mut phase) = storage.load_group(&info.tag) {
+            if let Some(task) = phase.get_task_mut(&info.task.id) {
+                task.set_status(TaskStatus::InProgress);
+                let _ = storage.update_group(&info.tag, &phase);
+            }
+        }
+    }
+
+    // Run async execution using tokio runtime
+    let handle = tokio::runtime::Handle::current();
+    let result = handle.block_on(async {
+        // Create event channel
+        let (event_tx, _event_rx) = mpsc::channel(1000);
+
+        // Create orchestrator
+        let mut orchestrator = AgentOrchestrator::new(event_tx.clone()).await?;
+
+        // Spawn all agents
+        for info in tasks {
+            let prompt = generate_server_prompt(info.task, &info.tag, working_dir);
+
+            // Use xAI/Grok as default for server mode
+            let model = Some(("xai", "grok-3"));
+
+            match orchestrator.spawn_agent(info.task, &info.tag, &prompt, model).await {
+                Ok(_) => {
+                    println!(
+                        "    {} Spawned: {} | {} [server/grok-3]",
+                        "✓".green(),
+                        info.task.id.cyan(),
+                        info.task.title.dimmed(),
+                    );
+                }
+                Err(e) => {
+                    println!(
+                        "    {} Failed to spawn {}: {}",
+                        "✗".red(),
+                        info.task.id,
+                        e
+                    );
+                }
+            }
+        }
+
+        // Drop our sender so we can detect when orchestrator is done
+        drop(event_tx);
+
+        // Collect results
+        let results = orchestrator.wait_all().await;
+
+        // Cleanup
+        orchestrator.cleanup().await;
+
+        Ok::<_, anyhow::Error>(results)
+    })?;
+
+    // Build round state from results
+    let mut round_state = RoundState::new(round_idx);
+
+    for agent_result in &result {
+        if agent_result.success {
+            println!(
+                "    {} Completed: {} ({}ms)",
+                "✓".green(),
+                agent_result.task_id.cyan(),
+                agent_result.duration_ms
+            );
+            round_state.task_ids.push(agent_result.task_id.clone());
+        } else {
+            println!(
+                "    {} Failed: {} (exit code: {:?})",
+                "✗".red(),
+                agent_result.task_id.red(),
+                agent_result.exit_code
+            );
+            round_state.failures.push(agent_result.task_id.clone());
+        }
+    }
+
+    // Add tags for successful tasks
+    for task_id in &round_state.task_ids {
+        if let Some(info) = tasks.iter().find(|t| t.task.id == *task_id) {
+            round_state.tags.push(info.tag.clone());
+        }
+    }
+
+    // Update task statuses based on results
+    for agent_result in &result {
+        if let Some(info) = tasks.iter().find(|t| t.task.id == agent_result.task_id) {
+            if let Ok(mut phase) = storage.load_group(&info.tag) {
+                if let Some(task) = phase.get_task_mut(&agent_result.task_id) {
+                    // If failed without exit code, mark as failed
+                    if !agent_result.success && agent_result.exit_code.is_none() {
+                        task.set_status(TaskStatus::Failed);
+                        let _ = storage.update_group(&info.tag, &phase);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(round_state)
+}
+
+/// Generate prompt for server mode (similar to extensions but optimized for OpenCode)
+fn generate_server_prompt(task: &Task, tag: &str, working_dir: &std::path::Path) -> String {
+    let details = task
+        .details
+        .as_ref()
+        .map(|d| format!("\n\n## Details\n\n{}", d))
+        .unwrap_or_default();
+
+    let test_strategy = task
+        .test_strategy
+        .as_ref()
+        .map(|t| format!("\n\n## Test Strategy\n\n{}", t))
+        .unwrap_or_default();
+
+    format!(
+        r#"You are working on task [{id}] in phase "{tag}".
+
+## Task: {title}
+
+{description}{details}{test_strategy}
+
+## Instructions
+
+1. Implement the task requirements
+2. Test your changes
+3. When complete, run: `scud set-status {id} done --tag {tag}`
+
+Working directory: {working_dir}
+"#,
+        id = task.id,
+        tag = tag,
+        title = task.title,
+        description = task.description,
+        details = details,
+        test_strategy = test_strategy,
+        working_dir = working_dir.display(),
+    )
 }
 
 fn wait_for_round_completion(storage: &Storage, tasks: &[TaskInfo]) -> Result<()> {
