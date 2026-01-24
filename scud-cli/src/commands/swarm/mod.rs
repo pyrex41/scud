@@ -1,5 +1,8 @@
-//! Swarm mode - Wave-based parallel execution with backpressure
+//! Swarm mode - Parallel execution with multiple strategies
 //!
+//! Executes tasks using parallel agents with two main modes:
+//!
+//! ## Wave Mode (default)
 //! Executes tasks in dependency-order waves using parallel agents.
 //! After each wave, runs backpressure validation (build, lint, test).
 //!
@@ -9,13 +12,27 @@
 //! 3. Validate phase: Runs backpressure tests (compile, lint, test), smart model fixes issues
 //! 4. Repeat for next wave
 //!
+//! ## Beads Mode (`--swarm-mode beads`)
+//! Continuous ready-task polling inspired by Beads/Gas Town patterns.
+//! Tasks execute immediately when dependencies are met, no batch waiting.
+//!
+//! Flow:
+//! 1. Query for ready tasks (all dependencies Done)
+//! 2. Claim task (mark in-progress)
+//! 3. Spawn agent
+//! 4. Immediately loop back to step 1 (no waiting for batch)
+//!
 //! Usage:
-//!   scud swarm --tag <tag>                           # Full mode with tmux (default)
-//!   scud swarm --tag <tag> --swarm-mode extensions   # Use extension subprocesses (no tmux)
+//!   scud swarm --tag <tag>                           # Wave mode with tmux (default)
+//!   scud swarm --tag <tag> --swarm-mode beads        # Beads continuous execution
+//!   scud swarm --tag <tag> --swarm-mode extensions   # Wave mode with async subprocesses
 //!   scud swarm --tag <tag> --no-research             # Skip research, use tasks as-is
 //!   scud swarm --tag <tag> --no-validate             # Skip backpressure validation
 
+pub mod beads;
+pub mod events;
 pub mod session;
+pub mod transcript;
 
 /// Re-export backpressure module for backward compatibility.
 ///
@@ -144,9 +161,10 @@ pub fn run(
         "{:<20} {}",
         "Mode:".dimmed(),
         match swarm_mode {
-            SwarmMode::Tmux => "tmux".cyan(),
-            SwarmMode::Extensions => "extensions".green(),
+            SwarmMode::Tmux => "tmux (waves)".cyan(),
+            SwarmMode::Extensions => "extensions (waves)".green(),
             SwarmMode::Server => "server (opencode)".magenta(),
+            SwarmMode::Beads => "beads (continuous)".yellow(),
         }
     );
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().cyan());
@@ -202,6 +220,7 @@ pub fn run(
     let terminal_mode = match swarm_mode {
         SwarmMode::Tmux => "tmux",
         SwarmMode::Extensions => "extensions",
+        SwarmMode::Beads => "beads",
         SwarmMode::Server => "server",
     };
     let mut swarm_session = SwarmSession::new(
@@ -292,6 +311,56 @@ pub fn run(
         }
     }
 
+    // === BEADS MODE: Continuous execution ===
+    // If beads mode is selected, run the continuous polling loop instead of waves
+    if matches!(swarm_mode, SwarmMode::Beads) {
+        let beads_config = beads::BeadsConfig {
+            max_concurrent: round_size, // Reuse round_size as max concurrent
+            poll_interval: Duration::from_secs(3),
+        };
+
+        // Check tmux availability for beads mode (uses tmux by default)
+        terminal::check_tmux_available()?;
+
+        let result = beads::run_beads_loop(
+            &storage,
+            &phase_tag,
+            all_tags,
+            &working_dir,
+            &session_name,
+            harness,
+            &beads_config,
+            &mut swarm_session,
+        )?;
+
+        // Save session state
+        session::save_session(project_root.as_ref(), &swarm_session)?;
+
+        // Final summary
+        println!();
+        println!("{}", "Beads Session Summary".blue().bold());
+        println!("{}", "═".repeat(40).blue());
+        println!(
+            "  Tasks completed: {}",
+            result.tasks_completed.to_string().green()
+        );
+        println!(
+            "  Tasks failed:    {}",
+            if result.tasks_failed > 0 {
+                result.tasks_failed.to_string().red()
+            } else {
+                "0".to_string().green()
+            }
+        );
+        println!(
+            "  Duration:        {}",
+            format!("{:.1}s", result.total_duration.as_secs_f64()).cyan()
+        );
+
+        return Ok(());
+    }
+
+    // === WAVE MODE: Batch execution ===
     // Main loop: execute waves until all tasks done
     let mut wave_number = 1;
     loop {
@@ -408,6 +477,11 @@ pub fn run(
                         &working_dir,
                         round_idx,
                     )?
+                }
+                SwarmMode::Beads => {
+                    // Beads mode is handled earlier with early return
+                    // This branch should never be reached
+                    unreachable!("Beads mode should exit before wave loop")
                 }
             };
 

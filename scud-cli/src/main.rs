@@ -747,6 +747,36 @@ enum Commands {
         max_repair_attempts: usize,
     },
 
+    /// View swarm session retrospective (event timeline and analysis)
+    Retro {
+        /// Session ID to view (shows latest if not specified)
+        #[arg(short, long)]
+        session: Option<String>,
+
+        /// Export as JSON instead of formatted output
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// View Claude Code conversation transcripts (full LLM input/output logs)
+    Transcript {
+        /// Session ID to view (shows latest if not specified)
+        #[arg(short, long)]
+        session: Option<String>,
+
+        /// Show full transcript (all messages and tool calls)
+        #[arg(short, long)]
+        full: bool,
+
+        /// List available transcripts
+        #[arg(short, long)]
+        list: bool,
+
+        /// Export as JSON instead of formatted output
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Run tests and spawn repair agents until they pass
     Test {
         /// Test command to run (uses backpressure config if not provided)
@@ -1181,6 +1211,53 @@ async fn main() -> Result<()> {
             no_repair,
             max_repair_attempts,
         ),
+        Commands::Retro { session, json } => {
+            let project_root = cli
+                .project
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+            if json {
+                let session_id = session.as_deref().unwrap_or("latest");
+                match commands::swarm::events::export_retro_json(&project_root, session_id) {
+                    Ok(json_str) => println!("{}", json_str),
+                    Err(e) => anyhow::bail!("Failed to export retro: {}", e),
+                }
+            } else {
+                commands::swarm::events::print_retro(&project_root, session.as_deref())?;
+            }
+            Ok(())
+        }
+        Commands::Transcript {
+            session,
+            full,
+            list,
+            json,
+        } => {
+            let project_root = cli
+                .project
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+            if list {
+                commands::swarm::transcript::list_transcripts(&project_root)?;
+            } else if json {
+                match commands::swarm::transcript::export_transcript_json(
+                    &project_root,
+                    session.as_deref(),
+                ) {
+                    Ok(json_str) => println!("{}", json_str),
+                    Err(e) => anyhow::bail!("Failed to export transcript: {}", e),
+                }
+            } else {
+                commands::swarm::transcript::view_transcript(
+                    &project_root,
+                    session.as_deref(),
+                    full,
+                )?;
+            }
+            Ok(())
+        }
         Commands::Test {
             command,
             max_attempts,

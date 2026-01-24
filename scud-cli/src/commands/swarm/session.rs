@@ -182,6 +182,18 @@ impl WaveState {
         self.completed_at = Some(chrono::Utc::now().to_rfc3339());
     }
 
+    /// Create a WaveState from an execution result
+    pub fn from_execution_result(wave_number: usize, result: WaveExecutionResult) -> Self {
+        let mut state = Self::new(wave_number);
+        state.rounds.push(result.round_state);
+        state
+    }
+
+    /// Apply an execution result to this wave
+    pub fn apply_execution_result(&mut self, result: WaveExecutionResult) {
+        self.rounds.push(result.round_state);
+    }
+
     /// Get all task IDs from all rounds
     pub fn all_task_ids(&self) -> Vec<String> {
         self.rounds
@@ -397,6 +409,124 @@ pub fn list_sessions(project_root: Option<&PathBuf>) -> Result<Vec<String>> {
     }
 
     Ok(sessions)
+}
+
+// ============================================================================
+// Wave Agent and Async Execution (for extensions mode)
+// ============================================================================
+
+use crate::commands::spawn::terminal::Harness;
+use crate::extensions::runner::AgentResult;
+use crate::models::task::Task;
+use std::path::Path;
+
+/// Agent wrapper for wave execution
+#[derive(Debug, Clone)]
+pub struct WaveAgent {
+    /// The task being executed
+    pub task: Task,
+    /// Tag of the phase containing the task
+    pub tag: String,
+}
+
+impl WaveAgent {
+    /// Create a new wave agent
+    pub fn new(task: Task, tag: &str) -> Self {
+        Self {
+            task,
+            tag: tag.to_string(),
+        }
+    }
+
+    /// Get the task ID
+    pub fn task_id(&self) -> &str {
+        &self.task.id
+    }
+
+    /// Create wave agents from task-tag pairs
+    pub fn from_task_pairs(pairs: Vec<(Task, String)>) -> Vec<Self> {
+        pairs
+            .into_iter()
+            .map(|(task, tag)| Self::new(task, &tag))
+            .collect()
+    }
+}
+
+/// Result of wave execution
+#[derive(Debug, Clone)]
+pub struct WaveExecutionResult {
+    /// Round state with task IDs and tags
+    pub round_state: RoundState,
+    /// Individual agent results
+    pub agent_results: Vec<AgentResult>,
+}
+
+impl WaveExecutionResult {
+    /// Check if all agents succeeded
+    pub fn all_succeeded(&self) -> bool {
+        self.agent_results.iter().all(|r| r.success)
+    }
+
+    /// Get successful task IDs
+    pub fn successful_task_ids(&self) -> Vec<&str> {
+        self.agent_results
+            .iter()
+            .filter(|r| r.success)
+            .map(|r| r.task_id.as_str())
+            .collect()
+    }
+
+    /// Get failed task IDs
+    pub fn failed_task_ids(&self) -> Vec<&str> {
+        self.agent_results
+            .iter()
+            .filter(|r| !r.success)
+            .map(|r| r.task_id.as_str())
+            .collect()
+    }
+
+    /// Get total duration (max of all durations)
+    pub fn total_duration_ms(&self) -> u64 {
+        self.agent_results
+            .iter()
+            .map(|r| r.duration_ms)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+/// Execute a wave of agents asynchronously
+///
+/// This is a stub implementation that returns failure for all agents.
+/// The full implementation would use the extension runner to spawn subprocesses.
+pub async fn execute_wave_async(
+    agents: &[WaveAgent],
+    _working_dir: &Path,
+    round_idx: usize,
+    _harness: Harness,
+) -> Result<WaveExecutionResult> {
+    let mut round_state = RoundState::new(round_idx);
+    let mut agent_results = Vec::new();
+
+    for agent in agents {
+        round_state.task_ids.push(agent.task.id.clone());
+        round_state.tags.push(agent.tag.clone());
+
+        // Stub: All agents fail because extension runner is not implemented
+        agent_results.push(AgentResult {
+            task_id: agent.task.id.clone(),
+            success: false,
+            exit_code: None,
+            output: "Extension runner not implemented".to_string(),
+            duration_ms: 0,
+        });
+        round_state.failures.push(agent.task.id.clone());
+    }
+
+    Ok(WaveExecutionResult {
+        round_state,
+        agent_results,
+    })
 }
 
 #[cfg(test)]

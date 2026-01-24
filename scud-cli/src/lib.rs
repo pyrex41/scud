@@ -464,6 +464,9 @@ pub enum SwarmMode {
     Extensions,
     /// Use OpenCode Server for agent orchestration (recommended)
     Server,
+    /// Beads-style continuous execution (no wave batching)
+    /// Tasks execute immediately when dependencies are met
+    Beads,
 }
 
 impl std::fmt::Display for SwarmMode {
@@ -472,6 +475,7 @@ impl std::fmt::Display for SwarmMode {
             SwarmMode::Tmux => write!(f, "tmux"),
             SwarmMode::Extensions => write!(f, "extensions"),
             SwarmMode::Server => write!(f, "server"),
+            SwarmMode::Beads => write!(f, "beads"),
         }
     }
 }
@@ -491,6 +495,7 @@ mod swarm_mode_tests {
         assert_eq!(SwarmMode::Tmux.to_string(), "tmux");
         assert_eq!(SwarmMode::Extensions.to_string(), "extensions");
         assert_eq!(SwarmMode::Server.to_string(), "server");
+        assert_eq!(SwarmMode::Beads.to_string(), "beads");
     }
 
     #[test]
