@@ -32,6 +32,7 @@
 pub mod beads;
 pub mod events;
 pub mod session;
+pub mod transcript;
 
 /// Re-export backpressure module for backward compatibility.
 ///
