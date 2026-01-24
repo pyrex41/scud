@@ -30,6 +30,7 @@
 //!   scud swarm --tag <tag> --no-validate             # Skip backpressure validation
 
 pub mod beads;
+pub mod events;
 pub mod session;
 
 /// Re-export backpressure module for backward compatibility.

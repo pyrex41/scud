@@ -33,6 +33,7 @@ use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
+use super::events::EventWriter;
 use super::session::{RoundState, SwarmSession};
 
 /// Configuration for beads execution
@@ -265,7 +266,12 @@ pub fn run_beads_loop(
     let mut tasks_completed = 0;
     let mut tasks_failed = 0;
     let mut spawned_tasks: HashSet<String> = HashSet::new();
+    let mut spawned_times: HashMap<String, Instant> = HashMap::new();
     let mut round_state = RoundState::new(0); // Single continuous "round"
+
+    // Initialize event writer for retrospective logging
+    let event_writer = EventWriter::new(working_dir, session_name)
+        .map_err(|e| anyhow::anyhow!("Failed to initialize event writer: {}", e))?;
 
     println!();
     println!("{}", "Beads Execution Mode".cyan().bold());
@@ -273,6 +279,11 @@ pub fn run_beads_loop(
     println!(
         "  {} Continuous ready-task polling",
         "Mode:".dimmed()
+    );
+    println!(
+        "  {} {}",
+        "Event log:".dimmed(),
+        event_writer.session_file().display().to_string().dimmed()
     );
     println!(
         "  {} {}",
@@ -355,6 +366,12 @@ pub fn run_beads_loop(
 
             // Mark as spawned locally
             spawned_tasks.insert(ready_task.task.id.clone());
+            spawned_times.insert(ready_task.task.id.clone(), Instant::now());
+
+            // Log spawn event
+            if let Err(e) = event_writer.log_spawned(&ready_task.task.id) {
+                eprintln!("Warning: Failed to log spawn event: {}", e);
+            }
 
             // Spawn agent
             match spawn_agent_tmux(&ready_task, working_dir, session_name, default_harness) {
@@ -379,6 +396,11 @@ pub fn run_beads_loop(
                     round_state.failures.push(ready_task.task.id.clone());
                     tasks_failed += 1;
 
+                    // Log failure event
+                    if let Err(log_err) = event_writer.log_completed(&ready_task.task.id, false, 0) {
+                        eprintln!("Warning: Failed to log completion event: {}", log_err);
+                    }
+
                     // Reset task status on spawn failure
                     if let Ok(mut phase) = storage.load_group(&ready_task.tag) {
                         if let Some(task) = phase.get_task_mut(&ready_task.task.id) {
@@ -386,6 +408,64 @@ pub fn run_beads_loop(
                             let _ = storage.update_group(&ready_task.tag, &phase);
                         }
                     }
+                }
+            }
+        }
+
+        // Detect newly completed tasks and log them
+        let mut newly_completed: Vec<(String, bool)> = Vec::new();
+        for task_id in &spawned_tasks {
+            // Skip if we've already counted this task
+            if !spawned_times.contains_key(task_id) {
+                continue;
+            }
+            for phase in all_phases.values() {
+                if let Some(task) = phase.get_task(task_id) {
+                    match task.status {
+                        TaskStatus::Done => {
+                            newly_completed.push((task_id.clone(), true));
+                        }
+                        TaskStatus::Failed => {
+                            newly_completed.push((task_id.clone(), false));
+                        }
+                        _ => {}
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Log completion events and track what unblocked what
+        for (task_id, success) in newly_completed {
+            if let Some(spawn_time) = spawned_times.remove(&task_id) {
+                let duration_ms = spawn_time.elapsed().as_millis() as u64;
+                if let Err(e) = event_writer.log_completed(&task_id, success, duration_ms) {
+                    eprintln!("Warning: Failed to log completion: {}", e);
+                }
+                if success {
+                    tasks_completed += 1;
+                    println!(
+                        "  {} Completed: {} ({}ms)",
+                        "✓".green(),
+                        task_id.cyan(),
+                        duration_ms
+                    );
+
+                    // Check what tasks were unblocked by this completion
+                    // by looking at all pending tasks that depend on this one
+                    for phase in all_phases.values() {
+                        for potential_unblocked in &phase.tasks {
+                            if potential_unblocked.status == TaskStatus::Pending
+                                && potential_unblocked.dependencies.contains(&task_id)
+                            {
+                                if let Err(e) = event_writer.log_unblocked(&potential_unblocked.id, &task_id) {
+                                    eprintln!("Warning: Failed to log unblock: {}", e);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    tasks_failed += 1;
                 }
             }
         }
@@ -403,19 +483,6 @@ pub fn run_beads_loop(
     let mut wave_state = super::session::WaveState::new(1);
     wave_state.rounds.push(round_state);
     session.waves.push(wave_state);
-
-    // Count completed tasks (Done status that we spawned)
-    let final_phases = storage.load_tasks()?;
-    for task_id in &spawned_tasks {
-        for phase in final_phases.values() {
-            if let Some(task) = phase.get_task(task_id) {
-                if task.status == TaskStatus::Done {
-                    tasks_completed += 1;
-                }
-                break;
-            }
-        }
-    }
 
     Ok(BeadsResult {
         tasks_completed,
