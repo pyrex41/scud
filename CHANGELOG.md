@@ -5,6 +5,50 @@ All notable changes to SCUD will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.0] - 2026-01-24
+
+### Added
+
+- **Beads execution mode** (`scud swarm --swarm-mode beads`) - New continuous polling execution strategy inspired by the [Beads project](https://github.com/steveyegge/beads). Unlike wave-based execution which batches tasks and waits for completion, beads mode continuously polls for ready tasks and spawns agents immediately when dependencies are met. This enables more fluid execution where downstream tasks start as soon as their dependencies complete.
+
+- **Event logging system** - Comprehensive structured event logging for retrospective analysis. Events are written to JSONL files in `.scud/swarm/events/` and can be aggregated into timelines:
+  - `scud swarm retro [session-id]` - View retrospective timeline for a swarm session
+  - Tracks spawns, completions, tool calls, file operations, and dependency unblocking
+  - Per-task and per-session event files for detailed analysis
+
+- **Claude transcript parsing** - New `scud swarm transcript` command to view and analyze Claude Code transcripts from swarm sessions. Extracts tool calls, file operations, and conversation flow from agent output.
+
+- **Extension system** (experimental) - New extension loader and runner infrastructure for custom agent types:
+  - Extension manifests in `.scud/agents/*.toml`
+  - Automatic discovery and validation
+  - `scud doctor --ext` to scan and validate extensions
+
+- **OpenCode integration** (experimental) - Server-sent events integration with OpenCode for remote agent orchestration:
+  - Event streaming from OpenCode sessions
+  - Session management and orchestration
+  - Alternative to local tmux-based execution
+
+- **Enhanced TUI components** - New modular TUI components for spawn monitor:
+  - Agent selector with status indicators
+  - Model selector dropdown
+  - Streaming view for live output
+  - Improved wave visualization
+
+- **Swarm session persistence** - Extended session state tracking with wave and round history, commit tracking, and event correlation.
+
+### Changed
+
+- **Swarm command undeprecated** - The `scud swarm` command has been restored with two execution modes:
+  - `--swarm-mode wave` (default) - Traditional wave-based execution with backpressure validation
+  - `--swarm-mode beads` - New continuous polling execution for fluid task flow
+
+- **Doctor command enhanced** - Added `--ext` flag for extension scanning and validation.
+
+### Fixed
+
+- Event deduplication now compares full event content instead of just event type discriminant
+- Spawned task tracking properly cleans up completed tasks to prevent memory growth
+
 ## [1.33.0] - 2026-01-13
 
 ### Deprecated

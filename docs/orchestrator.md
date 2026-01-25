@@ -2,7 +2,78 @@
 
 ## Overview
 
-SCUD uses DAG-driven execution: tasks become ready when their dependencies complete. The `scud spawn` command launches parallel Claude Code agents to work on ready tasks automatically.
+SCUD uses DAG-driven execution: tasks become ready when their dependencies complete. SCUD provides two approaches for parallel agent orchestration:
+
+- **`scud spawn`** - Launch individual agents with TUI monitoring
+- **`scud swarm`** - Automated wave or beads execution with event logging
+
+---
+
+## Swarm Execution (Recommended)
+
+The `scud swarm` command provides automated parallel execution with two modes:
+
+### Wave Mode (Default)
+
+Batches ready tasks into waves, runs them in parallel, validates results, then proceeds to next wave.
+
+```bash
+# Run swarm with wave-based execution
+scud swarm --tag myproject
+
+# Customize wave size
+scud swarm --tag myproject --round-size 5
+
+# Skip validation between waves
+scud swarm --tag myproject --no-validate
+```
+
+### Beads Mode
+
+Continuous polling for ready tasks. Spawns agents immediately when dependencies complete—no waiting for batch boundaries. Inspired by the [Beads project](https://github.com/steveyegge/beads).
+
+```bash
+# Run swarm with continuous polling
+scud swarm --tag myproject --swarm-mode beads
+
+# Limit concurrent agents
+scud swarm --tag myproject --swarm-mode beads --round-size 3
+```
+
+**When to use which:**
+- **Wave mode**: When you need validation between batches, structured checkpoints, or CI integration
+- **Beads mode**: When you have many small tasks and want fluid execution without artificial boundaries
+
+### Swarm Options
+
+| Option | Description |
+|--------|-------------|
+| `--tag <tag>` | Run tasks from specific tag |
+| `--all-tags` | Run tasks from all tags |
+| `--swarm-mode <mode>` | `wave` (default) or `beads` |
+| `--round-size <n>` | Max concurrent agents (default: 5) |
+| `--no-validate` | Skip backpressure validation |
+| `--harness <type>` | Terminal: `tmux`, `claude-code` |
+
+### Retrospective Analysis
+
+Swarm sessions generate detailed event logs for post-mortem analysis:
+
+```bash
+# List available sessions
+scud swarm retro
+
+# View session timeline
+scud swarm retro <session-id>
+
+# Events are stored in .scud/swarm/events/
+```
+
+Event logs track:
+- Task spawns and completions
+- Tool calls and file operations
+- Dependency unblocking chains
+- Duration metrics per task
 
 ---
 

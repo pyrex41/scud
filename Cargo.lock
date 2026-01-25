@@ -1799,7 +1799,7 @@ dependencies = [
 
 [[package]]
 name = "scud-cli"
-version = "1.45.1"
+version = "1.46.0"
 dependencies = [
  "anyhow",
  "atty",
@@ -1834,7 +1834,7 @@ dependencies = [
 
 [[package]]
 name = "scud-core"
-version = "1.45.1"
+version = "1.46.0"
 dependencies = [
  "anyhow",
  "chrono",

@@ -43,6 +43,16 @@ Default model: `grok-code-fast-1`. Configure with `scud config set-provider <pro
 
 Project guidance in `.scud/guidance/*.md` is automatically included in prompts.
 
+### Swarm Commands (Parallel Execution)
+```bash
+scud swarm --tag <tag>             # Run parallel agents on tasks
+scud swarm --swarm-mode beads      # Continuous polling mode
+scud swarm --swarm-mode wave       # Wave-based batching (default)
+scud swarm --round-size 5          # Max concurrent agents
+scud swarm --all-tags              # Run across all tags
+scud swarm retro [session]         # View session retrospective
+```
+
 ### Orchestrator Commands
 ```bash
 scud assign <id> <name>            # Assign task to a developer
@@ -50,6 +60,7 @@ scud who-is [--tag <tag>]          # See who's working on what
 scud next-batch [--limit 5]        # Get multiple ready tasks
 scud doctor [--tag <tag>]          # Diagnose stuck states
 scud doctor --fix                  # Auto-fix stale locks
+scud doctor --ext                  # Scan extensions
 ```
 
 ### Utilities
@@ -73,6 +84,32 @@ pending → in-progress → done
 ```
 
 **Valid statuses:** `pending`, `in-progress`, `done`, `review`, `blocked`, `deferred`, `cancelled`
+
+---
+
+## Swarm Execution Modes
+
+| Mode | Description | Best For |
+|------|-------------|----------|
+| **wave** | Batch tasks into waves, validate between waves | Structured projects, CI integration |
+| **beads** | Continuous polling, spawn immediately when ready | Fluid execution, many small tasks |
+
+```bash
+# Wave mode (default) - batch and validate
+scud swarm --tag myproject --swarm-mode wave
+
+# Beads mode - continuous polling
+scud swarm --tag myproject --swarm-mode beads --round-size 5
+```
+
+### Retrospective Analysis
+```bash
+# List swarm sessions
+scud swarm retro
+
+# View session timeline
+scud swarm retro <session-id>
+```
 
 ---
 

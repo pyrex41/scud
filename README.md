@@ -97,9 +97,20 @@ Task 2 ──┘      │
 Group related tasks together (e.g., `auth-system`, `payment-flow`). Each tag has its own task graph.
 
 ### Parallel Execution
-Use orchestrator patterns to spawn multiple Claude Code agents in parallel, each working on a ready task. See [docs/orchestrator.md](docs/orchestrator.md).
 
-> **Note**: For production AI agent orchestration, we recommend [Descartes](https://github.com/pyrex41/descartes), which provides the Ralph Wiggum loop pattern for wave-based execution with backpressure validation.
+SCUD supports two execution strategies for parallel agent orchestration:
+
+**Wave Mode** (default): Batches ready tasks into waves, spawns agents, waits for completion, then validates before next wave.
+```bash
+scud swarm --tag my-feature --swarm-mode wave
+```
+
+**Beads Mode**: Continuous polling for ready tasks. Spawns agents immediately when dependencies complete—no waiting for batch boundaries.
+```bash
+scud swarm --tag my-feature --swarm-mode beads
+```
+
+Both modes support tmux-based terminal spawning with live monitoring. See [docs/orchestrator.md](docs/orchestrator.md) for details.
 
 ---
 
@@ -183,12 +194,22 @@ Default model: `grok-code-fast-1`. Configure with `scud config set-provider <pro
 
 Project guidance files in `.scud/guidance/*.md` are automatically included in AI prompts.
 
+### Swarm Commands (Parallel Execution)
+```bash
+scud swarm --tag <tag>             # Run parallel agents on ready tasks
+scud swarm --swarm-mode beads      # Continuous polling mode (fluid execution)
+scud swarm --swarm-mode wave       # Wave-based batching (default)
+scud swarm --round-size 5          # Max concurrent agents per round
+scud swarm retro [session-id]      # View retrospective timeline
+```
+
 ### Orchestrator Commands
 ```bash
 scud assign <id> <name>            # Assign task to a developer
 scud who-is [--tag <tag>]          # See who's working on what
 scud next-batch [--limit 5]        # Get multiple ready tasks
 scud doctor [--tag <tag>]          # Diagnose stuck task states
+scud doctor --ext                  # Scan and validate extensions
 ```
 
 ### Utilities
@@ -296,6 +317,12 @@ Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`
 │   └── *.md                  # Markdown files auto-loaded
 ├── archive/                  # Archived phases (from scud clean)
 │   └── <tag>_<timestamp>.scg # Timestamped archive files
+├── swarm/                    # Swarm execution data
+│   ├── sessions/             # Session state and history
+│   └── events/               # Event logs (JSONL format)
+│       └── <session>.jsonl   # Per-session event timeline
+├── agents/                   # Extension manifests (experimental)
+│   └── *.toml                # Custom agent definitions
 └── logs/                     # Task log entries
 ```
 
