@@ -1,0 +1,140 @@
+# SCUD Extension Manifest Template
+# ================================
+#
+# This file defines the schema for SCUD extensions. Extensions can provide
+# custom tools, event handlers, and configuration to enhance SCUD functionality.
+#
+# File location: <extension-dir>/extension.toml
+
+# =============================================================================
+# Extension Metadata (required)
+# =============================================================================
+[extension]
+# Unique identifier for the extension (required)
+# Convention: <author>.<extension-name> or just <extension-name>
+id = "example-extension"
+
+# Human-readable name (required)
+name = "Example Extension"
+
+# Semantic version string (required)
+version = "1.0.0"
+
+# Brief description of what the extension does (required)
+description = "An example extension demonstrating the manifest schema"
+
+# Author or organization name (optional)
+author = "Your Name"
+
+# Main entry point file, relative to extension directory (optional)
+# For script-based extensions
+main = "main.py"
+
+# SPDX license identifier (optional)
+license = "MIT"
+
+# Project homepage URL (optional)
+homepage = "https://github.com/example/extension"
+
+# Source repository URL (optional)
+repository = "https://github.com/example/extension"
+
+# =============================================================================
+# Tools Section (optional)
+# =============================================================================
+# Tools are commands that can be invoked by agents or users.
+# Each tool definition includes name, description, parameters, and execution method.
+
+[[tools]]
+name = "greet"
+description = "Greet a user by name"
+
+# Command to execute (alternative to script)
+command = "echo 'Hello, ${name}!'"
+
+# Tool parameters define the input schema
+[[tools.parameters]]
+name = "name"
+type = "string"                    # Types: string, number, boolean, array, object
+description = "Name of the person to greet"
+required = true
+
+[[tools]]
+name = "analyze_file"
+description = "Analyze a file and return insights"
+
+# Script file to run, relative to extension directory
+script = "scripts/analyze.py"
+
+[[tools.parameters]]
+name = "path"
+type = "string"
+description = "Path to the file to analyze"
+required = true
+
+[[tools.parameters]]
+name = "verbose"
+type = "boolean"
+description = "Enable verbose output"
+required = false
+default = false
+
+# =============================================================================
+# Events Section (optional)
+# =============================================================================
+# Event handlers respond to lifecycle events in SCUD.
+#
+# Available events:
+#   - session.init      : When a new session starts
+#   - session.end       : When a session ends
+#   - task.start        : When a task begins execution
+#   - task.complete     : When a task completes successfully
+#   - task.fail         : When a task fails
+#   - task.blocked      : When a task becomes blocked
+#   - agent.spawn       : When an agent is spawned
+#   - agent.complete    : When an agent completes its work
+#   - commit.pre        : Before a git commit (can abort)
+#   - commit.post       : After a git commit succeeds
+#
+# Handler types:
+#   - command  : Execute a shell command
+#   - script   : Run a script file
+#   - webhook  : POST to a URL
+
+[[events]]
+event = "task.start"
+type = "command"
+command = "echo 'Starting task: ${SCUD_TASK_ID}'"
+
+[[events]]
+event = "task.complete"
+type = "script"
+script = "scripts/on_complete.sh"
+
+[[events]]
+event = "session.end"
+type = "webhook"
+url = "https://example.com/hooks/session-end"
+
+# =============================================================================
+# Configuration Section (optional)
+# =============================================================================
+# Custom configuration values for the extension.
+# These can be accessed by tools and event handlers.
+
+[config]
+# Any JSON-compatible values
+api_endpoint = "https://api.example.com"
+max_retries = 3
+features = ["feature1", "feature2"]
+settings = { debug = true, timeout = 30 }
+
+# =============================================================================
+# Dependencies Section (optional)
+# =============================================================================
+# Other extensions this extension depends on.
+# Format: dependency_id = "version_requirement"
+
+[dependencies]
+# Example: require the core utilities extension
+# "scud.core-utils" = ">=1.0.0"

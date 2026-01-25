@@ -182,18 +182,6 @@ impl WaveState {
         self.completed_at = Some(chrono::Utc::now().to_rfc3339());
     }
 
-    /// Create a WaveState from an execution result
-    pub fn from_execution_result(wave_number: usize, result: WaveExecutionResult) -> Self {
-        let mut state = Self::new(wave_number);
-        state.rounds.push(result.round_state);
-        state
-    }
-
-    /// Apply an execution result to this wave
-    pub fn apply_execution_result(&mut self, result: WaveExecutionResult) {
-        self.rounds.push(result.round_state);
-    }
-
     /// Get all task IDs from all rounds
     pub fn all_task_ids(&self) -> Vec<String> {
         self.rounds
@@ -412,121 +400,345 @@ pub fn list_sessions(project_root: Option<&PathBuf>) -> Result<Vec<String>> {
 }
 
 // ============================================================================
-// Wave Agent and Async Execution (for extensions mode)
+// Extension-based Agent Spawning
 // ============================================================================
 
-use crate::commands::spawn::terminal::Harness;
-use crate::extensions::runner::AgentResult;
-use crate::models::task::Task;
 use std::path::Path;
+use tokio::sync::mpsc;
 
-/// Agent wrapper for wave execution
+use crate::commands::spawn::agent::generate_prompt;
+use crate::commands::spawn::terminal::Harness;
+use crate::extensions::runner::{load_agent_config, AgentEvent, AgentRunner, SpawnConfig};
+use crate::models::task::Task;
+
+/// Agent info for wave execution
 #[derive(Debug, Clone)]
 pub struct WaveAgent {
-    /// The task being executed
+    /// Task being executed
     pub task: Task,
-    /// Tag of the phase containing the task
+    /// Tag/phase the task belongs to
     pub tag: String,
 }
 
 impl WaveAgent {
-    /// Create a new wave agent
-    pub fn new(task: Task, tag: &str) -> Self {
+    /// Create a WaveAgent from a task and tag
+    pub fn new(task: Task, tag: impl Into<String>) -> Self {
         Self {
             task,
-            tag: tag.to_string(),
+            tag: tag.into(),
         }
+    }
+
+    /// Create WaveAgents from a collection of (task, tag) pairs
+    ///
+    /// This is the primary conversion point from graph computation output
+    /// to extension-based spawning input.
+    pub fn from_task_pairs<I>(pairs: I) -> Vec<Self>
+    where
+        I: IntoIterator<Item = (Task, String)>,
+    {
+        pairs.into_iter().map(|(task, tag)| Self::new(task, tag)).collect()
     }
 
     /// Get the task ID
     pub fn task_id(&self) -> &str {
         &self.task.id
     }
-
-    /// Create wave agents from task-tag pairs
-    pub fn from_task_pairs(pairs: Vec<(Task, String)>) -> Vec<Self> {
-        pairs
-            .into_iter()
-            .map(|(task, tag)| Self::new(task, &tag))
-            .collect()
-    }
 }
 
-/// Result of wave execution
+/// Result from wave execution
 #[derive(Debug, Clone)]
 pub struct WaveExecutionResult {
-    /// Round state with task IDs and tags
+    /// Round state with execution info
     pub round_state: RoundState,
-    /// Individual agent results
-    pub agent_results: Vec<AgentResult>,
+    /// Results from each agent
+    pub agent_results: Vec<crate::extensions::runner::AgentResult>,
 }
 
 impl WaveExecutionResult {
-    /// Check if all agents succeeded
+    /// Check if all agents completed successfully
     pub fn all_succeeded(&self) -> bool {
         self.agent_results.iter().all(|r| r.success)
     }
 
-    /// Get successful task IDs
-    pub fn successful_task_ids(&self) -> Vec<&str> {
+    /// Get task IDs that completed successfully
+    pub fn successful_task_ids(&self) -> Vec<String> {
         self.agent_results
             .iter()
             .filter(|r| r.success)
-            .map(|r| r.task_id.as_str())
+            .map(|r| r.task_id.clone())
             .collect()
     }
 
-    /// Get failed task IDs
-    pub fn failed_task_ids(&self) -> Vec<&str> {
+    /// Get task IDs that failed
+    pub fn failed_task_ids(&self) -> Vec<String> {
         self.agent_results
             .iter()
             .filter(|r| !r.success)
-            .map(|r| r.task_id.as_str())
+            .map(|r| r.task_id.clone())
             .collect()
     }
 
-    /// Get total duration (max of all durations)
+    /// Get total execution duration in milliseconds
     pub fn total_duration_ms(&self) -> u64 {
-        self.agent_results
-            .iter()
-            .map(|r| r.duration_ms)
-            .max()
-            .unwrap_or(0)
+        self.agent_results.iter().map(|r| r.duration_ms).max().unwrap_or(0)
     }
 }
 
-/// Execute a wave of agents asynchronously
+impl WaveState {
+    /// Update this wave state from an execution result
+    ///
+    /// This integrates the extension-based execution results into
+    /// the existing wave tracking structure.
+    pub fn apply_execution_result(&mut self, result: WaveExecutionResult) {
+        self.rounds.push(result.round_state);
+    }
+
+    /// Create a WaveState and immediately apply an execution result
+    pub fn from_execution_result(wave_number: usize, result: WaveExecutionResult) -> Self {
+        let mut state = Self::new(wave_number);
+        state.apply_execution_result(result);
+        state
+    }
+}
+
+/// Execute a wave of agents using extension-based spawning (no tmux)
 ///
-/// This is a stub implementation that returns failure for all agents.
-/// The full implementation would use the extension runner to spawn subprocesses.
+/// This function spawns agents as direct subprocesses and waits for them
+/// to complete, collecting their results.
+///
+/// # Arguments
+/// * `agents` - The agents to execute in this wave
+/// * `working_dir` - Working directory for agents
+/// * `round_number` - Round number for state tracking
+/// * `default_harness` - Default harness if agent doesn't specify one
+/// * `event_callback` - Optional callback for agent events
+///
+/// # Returns
+/// WaveExecutionResult with round state and agent results
 pub async fn execute_wave_async(
     agents: &[WaveAgent],
-    _working_dir: &Path,
-    round_idx: usize,
-    _harness: Harness,
+    working_dir: &Path,
+    round_number: usize,
+    default_harness: Harness,
 ) -> Result<WaveExecutionResult> {
-    let mut round_state = RoundState::new(round_idx);
-    let mut agent_results = Vec::new();
+    let mut round_state = RoundState::new(round_number);
+    let mut runner = AgentRunner::new(agents.len() * 10);
 
+    // Spawn all agents
     for agent in agents {
-        round_state.task_ids.push(agent.task.id.clone());
-        round_state.tags.push(agent.tag.clone());
+        // Resolve agent config (harness, model) from agent_type
+        let (harness, model) = load_agent_config(
+            agent.task.agent_type.as_deref(),
+            default_harness,
+            None,
+            working_dir,
+        );
 
-        // Stub: All agents fail because extension runner is not implemented
-        agent_results.push(AgentResult {
+        // Generate prompt for the agent
+        let prompt = generate_prompt(&agent.task, &agent.tag);
+
+        let config = SpawnConfig {
             task_id: agent.task.id.clone(),
-            success: false,
-            exit_code: None,
-            output: "Extension runner not implemented".to_string(),
-            duration_ms: 0,
-        });
-        round_state.failures.push(agent.task.id.clone());
+            prompt,
+            working_dir: working_dir.to_path_buf(),
+            harness,
+            model,
+        };
+
+        match runner.spawn(config).await {
+            Ok(()) => {
+                round_state.task_ids.push(agent.task.id.clone());
+                round_state.tags.push(agent.tag.clone());
+            }
+            Err(e) => {
+                round_state.failures.push(agent.task.id.clone());
+                eprintln!("Failed to spawn agent for {}: {}", agent.task.id, e);
+            }
+        }
     }
+
+    // Wait for all agents to complete
+    let agent_results = runner.wait_all().await;
+
+    round_state.mark_complete();
 
     Ok(WaveExecutionResult {
         round_state,
         agent_results,
     })
+}
+
+/// Execute a wave of agents with event streaming
+///
+/// Similar to execute_wave_async but allows receiving events during execution.
+///
+/// # Arguments
+/// * `agents` - The agents to execute in this wave
+/// * `working_dir` - Working directory for agents
+/// * `round_number` - Round number for state tracking
+/// * `default_harness` - Default harness if agent doesn't specify one
+/// * `event_tx` - Channel to send events to
+///
+/// # Returns
+/// WaveExecutionResult with round state and agent results
+pub async fn execute_wave_with_events(
+    agents: &[WaveAgent],
+    working_dir: &Path,
+    round_number: usize,
+    default_harness: Harness,
+    event_tx: mpsc::Sender<AgentEvent>,
+) -> Result<WaveExecutionResult> {
+    use crate::extensions::runner::spawn_agent;
+
+    let mut round_state = RoundState::new(round_number);
+    let mut handles = Vec::new();
+
+    // Spawn all agents
+    for agent in agents {
+        // Resolve agent config (harness, model) from agent_type
+        let (harness, model) = load_agent_config(
+            agent.task.agent_type.as_deref(),
+            default_harness,
+            None,
+            working_dir,
+        );
+
+        // Generate prompt for the agent
+        let prompt = generate_prompt(&agent.task, &agent.tag);
+
+        let config = SpawnConfig {
+            task_id: agent.task.id.clone(),
+            prompt,
+            working_dir: working_dir.to_path_buf(),
+            harness,
+            model,
+        };
+
+        match spawn_agent(config, event_tx.clone()).await {
+            Ok(handle) => {
+                handles.push(handle);
+                round_state.task_ids.push(agent.task.id.clone());
+                round_state.tags.push(agent.tag.clone());
+            }
+            Err(e) => {
+                round_state.failures.push(agent.task.id.clone());
+                let _ = event_tx
+                    .send(AgentEvent::SpawnFailed {
+                        task_id: agent.task.id.clone(),
+                        error: e.to_string(),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    // Wait for all agents to complete
+    let mut agent_results = Vec::new();
+    for handle in handles {
+        if let Ok(result) = handle.await {
+            agent_results.push(result);
+        }
+    }
+
+    round_state.mark_complete();
+
+    Ok(WaveExecutionResult {
+        round_state,
+        agent_results,
+    })
+}
+
+/// Execute a complete wave with state tracking
+///
+/// This is the high-level interface for executing a wave of agents using
+/// extension-based spawning. It handles:
+/// - Converting task info to WaveAgent format
+/// - Spawning and managing agents
+/// - Updating wave state with results
+///
+/// # Arguments
+/// * `wave_number` - The wave number for state tracking
+/// * `task_pairs` - Iterator of (Task, tag) pairs from graph computation
+/// * `working_dir` - Working directory for agents
+/// * `default_harness` - Default harness if agent doesn't specify one
+///
+/// # Returns
+/// A tuple of (WaveState, Vec<AgentResult>) with the tracked state and raw results
+pub async fn execute_wave_with_tracking<I>(
+    wave_number: usize,
+    task_pairs: I,
+    working_dir: &Path,
+    default_harness: Harness,
+) -> Result<(WaveState, Vec<crate::extensions::runner::AgentResult>)>
+where
+    I: IntoIterator<Item = (Task, String)>,
+{
+    let agents = WaveAgent::from_task_pairs(task_pairs);
+    let result = execute_wave_async(&agents, working_dir, 0, default_harness).await?;
+
+    let wave_state = WaveState::from_execution_result(wave_number, result.clone());
+
+    Ok((wave_state, result.agent_results))
+}
+
+/// Execute multiple rounds within a wave with state tracking
+///
+/// This function handles chunking agents into rounds based on round_size
+/// and executes them sequentially, tracking state for each round.
+///
+/// # Arguments
+/// * `wave_number` - The wave number for state tracking
+/// * `task_pairs` - Iterator of (Task, tag) pairs from graph computation
+/// * `working_dir` - Working directory for agents
+/// * `round_size` - Maximum number of agents per round
+/// * `default_harness` - Default harness if agent doesn't specify one
+///
+/// # Returns
+/// WaveState with all rounds tracked
+pub async fn execute_wave_in_rounds<I>(
+    wave_number: usize,
+    task_pairs: I,
+    working_dir: &Path,
+    round_size: usize,
+    default_harness: Harness,
+) -> Result<WaveState>
+where
+    I: IntoIterator<Item = (Task, String)>,
+{
+    let agents: Vec<WaveAgent> = WaveAgent::from_task_pairs(task_pairs);
+    let mut wave_state = WaveState::new(wave_number);
+
+    for (round_idx, chunk) in agents.chunks(round_size).enumerate() {
+        let result = execute_wave_async(chunk, working_dir, round_idx, default_harness).await?;
+        wave_state.apply_execution_result(result);
+    }
+
+    wave_state.mark_complete();
+    Ok(wave_state)
+}
+
+/// Spawn a single agent using extension-based spawning (async, no tmux)
+///
+/// This is a convenience function for spawning a single agent.
+pub async fn spawn_subagent(
+    task: &Task,
+    tag: &str,
+    working_dir: &Path,
+    default_harness: Harness,
+) -> Result<crate::extensions::runner::AgentResult> {
+    let agents = vec![WaveAgent {
+        task: task.clone(),
+        tag: tag.to_string(),
+    }];
+
+    let result = execute_wave_async(&agents, working_dir, 0, default_harness).await?;
+
+    result
+        .agent_results
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("No result from agent"))
 }
 
 #[cfg(test)]
@@ -661,5 +873,127 @@ mod tests {
             "Expected SHA to contain only hex characters, got: {}",
             sha
         );
+    }
+
+    #[test]
+    fn test_wave_agent_new() {
+        let task = Task::new(
+            "task:1".to_string(),
+            "Test task".to_string(),
+            "Description".to_string(),
+        );
+        let agent = WaveAgent::new(task.clone(), "test-tag");
+
+        assert_eq!(agent.task_id(), "task:1");
+        assert_eq!(agent.tag, "test-tag");
+    }
+
+    #[test]
+    fn test_wave_agent_from_task_pairs() {
+        let task1 = Task::new(
+            "task:1".to_string(),
+            "Task 1".to_string(),
+            "Description".to_string(),
+        );
+        let task2 = Task::new(
+            "task:2".to_string(),
+            "Task 2".to_string(),
+            "Description".to_string(),
+        );
+
+        let pairs = vec![
+            (task1, "tag-a".to_string()),
+            (task2, "tag-b".to_string()),
+        ];
+
+        let agents = WaveAgent::from_task_pairs(pairs);
+
+        assert_eq!(agents.len(), 2);
+        assert_eq!(agents[0].task_id(), "task:1");
+        assert_eq!(agents[0].tag, "tag-a");
+        assert_eq!(agents[1].task_id(), "task:2");
+        assert_eq!(agents[1].tag, "tag-b");
+    }
+
+    #[test]
+    fn test_wave_execution_result_helpers() {
+        use crate::extensions::runner::AgentResult;
+
+        let result = WaveExecutionResult {
+            round_state: RoundState::new(0),
+            agent_results: vec![
+                AgentResult {
+                    task_id: "task:1".to_string(),
+                    success: true,
+                    exit_code: Some(0),
+                    output: String::new(),
+                    duration_ms: 1000,
+                },
+                AgentResult {
+                    task_id: "task:2".to_string(),
+                    success: false,
+                    exit_code: Some(1),
+                    output: String::new(),
+                    duration_ms: 2000,
+                },
+            ],
+        };
+
+        assert!(!result.all_succeeded());
+        assert_eq!(result.successful_task_ids(), vec!["task:1"]);
+        assert_eq!(result.failed_task_ids(), vec!["task:2"]);
+        assert_eq!(result.total_duration_ms(), 2000);
+    }
+
+    #[test]
+    fn test_wave_state_from_execution_result() {
+        use crate::extensions::runner::AgentResult;
+
+        let mut round_state = RoundState::new(0);
+        round_state.task_ids = vec!["task:1".to_string()];
+
+        let result = WaveExecutionResult {
+            round_state,
+            agent_results: vec![AgentResult {
+                task_id: "task:1".to_string(),
+                success: true,
+                exit_code: Some(0),
+                output: String::new(),
+                duration_ms: 1000,
+            }],
+        };
+
+        let wave_state = WaveState::from_execution_result(1, result);
+
+        assert_eq!(wave_state.wave_number, 1);
+        assert_eq!(wave_state.rounds.len(), 1);
+        assert_eq!(wave_state.rounds[0].task_ids, vec!["task:1"]);
+    }
+
+    #[test]
+    fn test_wave_state_apply_execution_result() {
+        use crate::extensions::runner::AgentResult;
+
+        let mut wave_state = WaveState::new(1);
+        assert!(wave_state.rounds.is_empty());
+
+        let mut round_state = RoundState::new(0);
+        round_state.task_ids = vec!["task:1".to_string()];
+
+        let result = WaveExecutionResult {
+            round_state,
+            agent_results: vec![AgentResult {
+                task_id: "task:1".to_string(),
+                success: true,
+                exit_code: Some(0),
+                output: String::new(),
+                duration_ms: 1000,
+            }],
+        };
+
+        wave_state.apply_execution_result(result);
+
+        assert_eq!(wave_state.rounds.len(), 1);
+        assert_eq!(wave_state.all_task_ids(), vec!["task:1"]);
     }
 }

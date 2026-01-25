@@ -6,6 +6,40 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub llm: LLMConfig,
+    #[serde(default)]
+    pub swarm: SwarmConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwarmConfig {
+    #[serde(default = "default_swarm_harness")]
+    pub harness: String,
+    #[serde(default = "default_round_size")]
+    pub round_size: usize,
+    #[serde(default = "default_default_tag")]
+    pub default_tag: Option<String>,
+}
+
+fn default_swarm_harness() -> String {
+    "claude".to_string()
+}
+
+fn default_round_size() -> usize {
+    5
+}
+
+fn default_default_tag() -> Option<String> {
+    None
+}
+
+impl Default for SwarmConfig {
+    fn default() -> Self {
+        SwarmConfig {
+            harness: default_swarm_harness(),
+            round_size: default_round_size(),
+            default_tag: default_default_tag(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +110,7 @@ impl Default for Config {
                 fast_model: default_fast_model(),
                 max_tokens: default_max_tokens(),
             },
+            swarm: SwarmConfig::default(),
         }
     }
 }
@@ -305,6 +340,7 @@ mod tests {
                 fast_model: "haiku".to_string(),
                 max_tokens: 8192,
             },
+            swarm: SwarmConfig::default(),
         };
 
         config.save(&config_path).unwrap();

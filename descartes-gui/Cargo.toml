@@ -1,0 +1,49 @@
+[package]
+name = "descartes-gui"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop GUI for Descartes AI orchestration"
+license = "MIT"
+repository = "https://github.com/pyrex41/descartes"
+homepage = "https://github.com/pyrex41/descartes"
+documentation = "https://docs.rs/descartes-gui"
+readme = "README.md"
+keywords = ["ai", "agents", "orchestration", "gui", "iced"]
+categories = ["gui", "development-tools"]
+include = ["src/**/*", "Cargo.toml", "README.md"]
+
+[[bin]]
+name = "descartes-gui"
+path = "src/main.rs"
+
+[dependencies]
+# GUI
+iced = { version = "0.14", features = ["tokio", "advanced"] }
+
+# SCUD CLI - for config loading
+scud-cli = { path = "../scud-cli" }
+
+# SCUD core - for direct library calls
+scud-core = { path = "../scud-core" }
+
+# Async
+tokio = { workspace = true, features = ["full", "sync"] }
+async-stream = "0.3"
+
+# Serialization (for SCUD bridge JSON parsing)
+serde.workspace = true
+serde_json = "1"
+
+# Utilities
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+
+# System (for signal handling)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+iced_test = "0.14"
+
+# Note: The rfd patch for iced_test is in the workspace root Cargo.toml

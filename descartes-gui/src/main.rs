@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, Mutex as TokioMutex};
 // Use scud-core directly for task management
 use scud_core::Storage;
 
+mod components;
 mod scud_bridge;
 mod state;
 mod theme;

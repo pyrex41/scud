@@ -88,6 +88,15 @@ pub fn run(
     stale_hours: f64,
     fix: bool,
 ) -> Result<()> {
+    run_workflow_diagnostics(project_root, tag, stale_hours, fix)
+}
+
+fn run_workflow_diagnostics(
+    project_root: Option<PathBuf>,
+    tag: Option<&str>,
+    stale_hours: f64,
+    fix: bool,
+) -> Result<()> {
     println!(
         "{}",
         "[EXPERIMENTAL] SCUD Doctor - Workflow Diagnostics"
@@ -408,37 +417,6 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
     }
 }
 
-/// Scan and validate extension installations
-pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
-    println!(
-        "{}",
-        "SCUD Doctor - Extension Scanner".blue().bold()
-    );
-    println!("{}", "=".repeat(50).blue());
-    println!();
-
-    let _storage = Storage::new(project_root);
-
-    // Check for extensions (stub - extensions not yet implemented)
-    println!(
-        "{} Extension runner: {}",
-        "•".dimmed(),
-        "not available (stub)".yellow()
-    );
-
-    println!();
-    println!(
-        "{}",
-        "Extension support is planned but not yet implemented.".dimmed()
-    );
-    println!(
-        "{}",
-        "Use --swarm-mode tmux for agent execution.".dimmed()
-    );
-
-    Ok(())
-}
-
 fn print_recovery_instructions() {
     println!();
     println!("{}", "=".repeat(60).red());
@@ -474,6 +452,405 @@ fn print_recovery_instructions() {
         "{}",
         "with full codebase access to inspect and repair the files.".yellow()
     );
+}
+
+pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
+    use crate::commands::spawn::terminal::{find_harness_binary, Harness};
+    use crate::extensions::loader::ExtensionManifest;
+    use std::os::unix::fs::PermissionsExt;
+
+    println!(
+        "{}",
+        "[EXPERIMENTAL] SCUD Doctor - Extension Scanner"
+            .blue()
+            .bold()
+    );
+    println!("{}", "=".repeat(60).blue());
+    println!();
+
+    let project_root = project_root.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let agents_dir = project_root.join(".scud").join("agents");
+
+    println!("Scanning extensions in: {}", agents_dir.display());
+    println!();
+
+    let mut issues = Vec::new();
+    let mut scanned_count = 0;
+
+    // Check if agents directory exists
+    if !agents_dir.exists() {
+        println!(
+            "{}",
+            "No extensions directory found (.scud/agents/)".yellow()
+        );
+        println!("Extensions are automatically created when agents are configured.");
+        return Ok(());
+    }
+
+    // Find all TOML files in the agents directory
+    let entries = match std::fs::read_dir(&agents_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            issues.push(DiagnosticIssue {
+                severity: Severity::Critical,
+                epic_tag: "extensions".to_string(),
+                task_id: None,
+                message: format!("Cannot read extensions directory: {}", e),
+                suggestion: r#"Check permissions on .scud/agents/ directory"#.to_string(),
+            });
+            return print_scan_results(&issues, scanned_count);
+        }
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                issues.push(DiagnosticIssue {
+                    severity: Severity::Error,
+                    epic_tag: "extensions".to_string(),
+                    task_id: None,
+                    message: format!("Error reading directory entry: {}", e),
+                    suggestion: r#"Check directory permissions"#.to_string(),
+                });
+                continue;
+            }
+        };
+
+        let path = entry.path();
+        if !path.extension().map_or(false, |ext| ext == "toml") {
+            continue;
+        }
+
+        scanned_count += 1;
+        let filename = path.file_stem().unwrap_or_default().to_string_lossy();
+
+        println!("Checking extension: {}", filename.cyan());
+
+        // 1. Check manifest validity
+        let manifest = match ExtensionManifest::from_file(&path) {
+            Ok(m) => m,
+            Err(e) => {
+                issues.push(DiagnosticIssue {
+                    severity: Severity::Critical,
+                    epic_tag: "extensions".to_string(),
+                    task_id: Some(filename.to_string()),
+                    message: format!("Invalid manifest: {}", e),
+                    suggestion: format!("Fix TOML syntax in {}", path.display()),
+                });
+                continue;
+            }
+        };
+
+        // 2. Check file permissions
+        match std::fs::metadata(&path) {
+            Ok(metadata) => {
+                let permissions = metadata.permissions();
+                let mode = permissions.mode();
+
+                // Check if readable by owner
+                if mode & 0o400 == 0 {
+                    issues.push(DiagnosticIssue {
+                        severity: Severity::Error,
+                        epic_tag: "extensions".to_string(),
+                        task_id: Some(filename.to_string()),
+                        message: format!("Extension file not readable: {}", path.display()),
+                        suggestion: r#"Run: chmod +r <file>.toml"#.to_string(),
+                    });
+                }
+            }
+            Err(e) => {
+                issues.push(DiagnosticIssue {
+                    severity: Severity::Error,
+                    epic_tag: "extensions".to_string(),
+                    task_id: Some(filename.to_string()),
+                    message: format!("Cannot access extension file: {}", e),
+                    suggestion: r#"Check file permissions"#.to_string(),
+                });
+            }
+        }
+
+        // 3. Check required binaries (harnesses)
+        if let Some(config) = manifest.config.get("harness") {
+            if let Some(harness_str) = config.as_str() {
+                // Try to parse the harness
+                match Harness::parse(harness_str) {
+                    Ok(harness) => {
+                        // Try to find the harness binary
+                        match find_harness_binary(harness) {
+                            Ok(_) => {
+                                // Binary found, good
+                            }
+                            Err(_) => {
+                                issues.push(DiagnosticIssue {
+                                    severity: Severity::Critical,
+                                    epic_tag: "extensions".to_string(),
+                                    task_id: Some(filename.to_string()),
+                                    message: format!(
+                                        r#"Required harness '{}' not found in PATH"#,
+                                        harness_str
+                                    ),
+                                    suggestion: format!(r#"Install {} or check PATH"#, harness_str),
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        issues.push(DiagnosticIssue {
+                            severity: Severity::Error,
+                            epic_tag: "extensions".to_string(),
+                            task_id: Some(filename.to_string()),
+                            message: format!(r#"Invalid harness name '{}': {}"#, harness_str, e),
+                            suggestion: r#"Use 'claude' or 'opencode'"#.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // 4. Check for required dependencies
+        for (dep_name, dep_version) in &manifest.dependencies {
+            // For now, just warn about dependencies (we don't have a registry to check against)
+            issues.push(DiagnosticIssue {
+                severity: Severity::Warning,
+                epic_tag: "extensions".to_string(),
+                task_id: Some(filename.to_string()),
+                message: format!(
+                    r#"Extension has dependency '{}@{}' - validation not implemented"#,
+                    dep_name, dep_version
+                ),
+                suggestion: r#"Ensure dependent extensions are installed"#.to_string(),
+            });
+        }
+
+        // 5. Check for script files if they exist
+        if let Some(script_path) = &manifest.extension.main {
+            let script_full_path = agents_dir.join(script_path);
+            if script_full_path.exists() {
+                match std::fs::metadata(&script_full_path) {
+                    Ok(metadata) => {
+                        let permissions = metadata.permissions();
+                        let mode = permissions.mode();
+
+                        // Check if executable by owner
+                        if mode & 0o100 == 0 {
+                            issues.push(DiagnosticIssue {
+                                severity: Severity::Warning,
+                                epic_tag: "extensions".to_string(),
+                                task_id: Some(filename.to_string()),
+                                message: format!(
+                                    "Script file not executable: {}",
+                                    script_full_path.display()
+                                ),
+                                suggestion: r#"Run: chmod +x <script_file>.py"#.to_string(),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        issues.push(DiagnosticIssue {
+                            severity: Severity::Error,
+                            epic_tag: "extensions".to_string(),
+                            task_id: Some(filename.to_string()),
+                            message: format!("Cannot access script file: {}", e),
+                            suggestion: r#"Check script file permissions"#.to_string(),
+                        });
+                    }
+                }
+            } else {
+                issues.push(DiagnosticIssue {
+                    severity: Severity::Warning,
+                    epic_tag: "extensions".to_string(),
+                    task_id: Some(filename.to_string()),
+                    message: format!(
+                        "Referenced script file does not exist: {}",
+                        script_full_path.display()
+                    ),
+                    suggestion: r#"Create the script file or update manifest"#.to_string(),
+                });
+            }
+        }
+
+        // Check tool scripts
+        for tool in &manifest.tools {
+            if let Some(script_path) = &tool.script {
+                let script_full_path = agents_dir.join(script_path);
+                if script_full_path.exists() {
+                    match std::fs::metadata(&script_full_path) {
+                        Ok(metadata) => {
+                            let permissions = metadata.permissions();
+                            let mode = permissions.mode();
+
+                            if mode & 0o100 == 0 {
+                                issues.push(DiagnosticIssue {
+                                    severity: Severity::Warning,
+                                    epic_tag: "extensions".to_string(),
+                                    task_id: Some(format!("{}/{}", filename, tool.name)),
+                                    message: format!(
+                                        "Tool script not executable: {}",
+                                        script_full_path.display()
+                                    ),
+                                    suggestion: r#"Run: chmod +x <script_file>.py"#.to_string(),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            issues.push(DiagnosticIssue {
+                                severity: Severity::Error,
+                                epic_tag: "extensions".to_string(),
+                                task_id: Some(format!("{}/{}", filename, tool.name)),
+                                message: format!("Cannot access tool script: {}", e),
+                                suggestion: r#"Check script file permissions"#.to_string(),
+                            });
+                        }
+                    }
+                } else {
+                    issues.push(DiagnosticIssue {
+                        severity: Severity::Error,
+                        epic_tag: "extensions".to_string(),
+                        task_id: Some(format!("{}/{}", filename, tool.name)),
+                        message: format!(
+                            "Tool script does not exist: {}",
+                            script_full_path.display()
+                        ),
+                        suggestion: r#"Create the script file or update manifest"#.to_string(),
+                    });
+                }
+            }
+        }
+
+        // Check event handler scripts
+        for event in &manifest.events {
+            if let Some(script_path) = &event.script {
+                let script_full_path = agents_dir.join(script_path);
+                if script_full_path.exists() {
+                    match std::fs::metadata(&script_full_path) {
+                        Ok(metadata) => {
+                            let permissions = metadata.permissions();
+                            let mode = permissions.mode();
+
+                            if mode & 0o100 == 0 {
+                                issues.push(DiagnosticIssue {
+                                    severity: Severity::Warning,
+                                    epic_tag: "extensions".to_string(),
+                                    task_id: Some(format!("{}/{}", filename, event.event)),
+                                    message: format!(
+                                        "Event handler script not executable: {}",
+                                        script_full_path.display()
+                                    ),
+                                    suggestion: r#"Run: chmod +x <script_file>.py"#.to_string(),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            issues.push(DiagnosticIssue {
+                                severity: Severity::Error,
+                                epic_tag: "extensions".to_string(),
+                                task_id: Some(format!("{}/{}", filename, event.event)),
+                                message: format!("Cannot access event handler script: {}", e),
+                                suggestion: r#"Check script file permissions"#.to_string(),
+                            });
+                        }
+                    }
+                } else {
+                    issues.push(DiagnosticIssue {
+                        severity: Severity::Error,
+                        epic_tag: "extensions".to_string(),
+                        task_id: Some(format!("{}/{}", filename, event.event)),
+                        message: format!(
+                            "Event handler script does not exist: {}",
+                            script_full_path.display()
+                        ),
+                        suggestion: r#"Create the script file or update manifest"#.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    print_scan_results(&issues, scanned_count)
+}
+
+fn print_scan_results(issues: &[DiagnosticIssue], scanned_count: usize) -> Result<()> {
+    println!("Scanned {} extension(s)", scanned_count);
+    println!();
+
+    if issues.is_empty() {
+        println!(
+            "{}",
+            "\u{2713} All extensions are valid and properly configured!"
+                .green()
+                .bold()
+        );
+        return Ok(());
+    }
+
+    let critical_count = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Critical)
+        .count();
+    let error_count = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .count();
+    let warning_count = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Warning)
+        .count();
+
+    // Print issues by severity
+    for severity in &[Severity::Critical, Severity::Error, Severity::Warning] {
+        let severity_issues: Vec<_> = issues.iter().filter(|i| i.severity == *severity).collect();
+
+        if severity_issues.is_empty() {
+            continue;
+        }
+
+        let title = match severity {
+            Severity::Critical => "CRITICAL ISSUES".red().bold(),
+            Severity::Error => "ERRORS".red().bold(),
+            Severity::Warning => "WARNINGS".yellow().bold(),
+        };
+
+        println!("{}", title);
+        println!("{}", "-".repeat(40));
+
+        for issue in severity_issues {
+            let icon = match severity {
+                Severity::Critical => "\u{2717}".red(),
+                Severity::Error => "\u{2717}".red(),
+                Severity::Warning => "\u{26A0}".yellow(),
+            };
+
+            println!("  {} {}", icon, issue.message);
+
+            if let Some(ref task_id) = issue.task_id {
+                println!("    Extension: {}", task_id.cyan());
+            }
+
+            println!("    {}", format!("\u{2192} {}", issue.suggestion).dimmed());
+            println!();
+        }
+    }
+
+    // Summary
+    println!("{}", "Summary".blue().bold());
+    println!("{}", "-".repeat(40).blue());
+    println!(
+        "  Critical: {}  Errors: {}  Warnings: {}",
+        critical_count.to_string().red(),
+        error_count.to_string().red(),
+        warning_count.to_string().yellow()
+    );
+
+    if critical_count > 0 {
+        println!();
+        println!(
+            "{}",
+            "Critical issues prevent extensions from functioning. Fix them first.".red()
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

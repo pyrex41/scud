@@ -347,6 +347,7 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             fast_model,
             max_tokens: 16000,
         },
+        swarm: crate::config::SwarmConfig::default(),
     };
 
     storage.initialize_with_config(&config)?;

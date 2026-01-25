@@ -73,6 +73,34 @@ pub struct Wave {
     pub tasks: Vec<WaveTask>,
 }
 
+/// Progress tracking for swarm execution
+///
+/// Provides a consolidated view of swarm progress including:
+/// - Current/total waves
+/// - Task completion counts
+/// - Validation status
+#[derive(Debug, Clone, Default)]
+pub struct SwarmProgress {
+    /// Current wave number being executed (1-indexed, 0 if not started)
+    pub current_wave: usize,
+    /// Total number of waves in the execution plan
+    pub total_waves: usize,
+    /// Number of tasks completed successfully (status = Done)
+    pub tasks_completed: usize,
+    /// Total number of tasks in the swarm
+    pub tasks_total: usize,
+    /// Number of tasks currently in progress
+    pub tasks_in_progress: usize,
+    /// Number of tasks that failed or are blocked
+    pub tasks_failed: usize,
+    /// Number of waves that have passed validation
+    pub waves_validated: usize,
+    /// Number of waves that failed validation
+    pub waves_failed_validation: usize,
+    /// Total repair attempts across all waves
+    pub total_repairs: usize,
+}
+
 /// Application state
 pub struct App {
     /// Project root directory
@@ -137,11 +165,17 @@ pub struct App {
     pub swarm_mode: bool,
     /// Swarm session data (when swarm_mode is true)
     pub swarm_session_data: Option<swarm_session::SwarmSession>,
+    /// Swarm progress tracking (computed from swarm_session_data and phases)
+    pub swarm_progress: Option<SwarmProgress>,
 }
 
 impl App {
     /// Create new app state
-    pub fn new(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) -> Result<Self> {
+    pub fn new(
+        project_root: Option<PathBuf>,
+        session_name: &str,
+        swarm_mode: bool,
+    ) -> Result<Self> {
         // Load storage to get active tag and phases
         let storage = Storage::new(project_root.clone());
         let active_tag = storage.get_active_group().ok().flatten();
@@ -179,6 +213,7 @@ impl App {
             // Swarm mode
             swarm_mode,
             swarm_session_data: None,
+            swarm_progress: None,
         };
         app.refresh()?;
         app.refresh_waves();
@@ -194,9 +229,12 @@ impl App {
                 Ok(session) => {
                     self.swarm_session_data = Some(session);
                     self.error = None;
+                    // Update swarm progress after loading session
+                    self.swarm_progress = self.compute_swarm_progress();
                 }
                 Err(e) => {
                     self.error = Some(format!("Failed to load swarm session: {}", e));
+                    self.swarm_progress = None;
                 }
             }
         } else {
@@ -692,6 +730,8 @@ impl App {
         // In swarm mode, use actual wave data from swarm session
         if self.swarm_mode {
             self.waves = self.compute_swarm_waves();
+            // Update swarm progress after computing waves (now that phases are fresh)
+            self.swarm_progress = self.compute_swarm_progress();
             return;
         }
 
@@ -721,6 +761,84 @@ impl App {
 
         // Build waves using topological sort
         self.waves = self.compute_waves(phase, &running_task_ids);
+    }
+
+    /// Compute swarm progress from session data and phases
+    ///
+    /// This aggregates progress information from the swarm session and task phases
+    /// into a consolidated SwarmProgress struct for easy access by the UI.
+    fn compute_swarm_progress(&self) -> Option<SwarmProgress> {
+        let swarm = self.swarm_session_data.as_ref()?;
+        let phase = self.phases.get(&swarm.tag);
+
+        let total_waves = self.waves.len();
+
+        // Find current wave (first incomplete wave, or last wave if all complete)
+        let current_wave = swarm
+            .waves
+            .iter()
+            .find(|w| w.completed_at.is_none())
+            .map(|w| w.wave_number)
+            .unwrap_or_else(|| swarm.waves.last().map(|w| w.wave_number).unwrap_or(0));
+
+        // Count tasks by status from phase data
+        let (tasks_completed, tasks_in_progress, tasks_failed, tasks_total) =
+            if let Some(phase) = phase {
+                // Get all task IDs from swarm waves
+                let swarm_task_ids: HashSet<String> = swarm
+                    .waves
+                    .iter()
+                    .flat_map(|w| w.all_task_ids())
+                    .collect();
+
+                let mut completed = 0;
+                let mut in_progress = 0;
+                let mut failed = 0;
+                let total = swarm_task_ids.len();
+
+                for task_id in &swarm_task_ids {
+                    if let Some(task) = phase.get_task(task_id) {
+                        match task.status {
+                            TaskStatus::Done => completed += 1,
+                            TaskStatus::InProgress => in_progress += 1,
+                            TaskStatus::Blocked => failed += 1,
+                            _ => {}
+                        }
+                    }
+                }
+
+                (completed, in_progress, failed, total)
+            } else {
+                // Fall back to counting from swarm session
+                let total = swarm.total_tasks();
+                let failed = swarm.total_failures();
+                (0, 0, failed, total)
+            };
+
+        // Count validation results
+        let (waves_validated, waves_failed_validation) = swarm.waves.iter().fold(
+            (0, 0),
+            |(validated, failed), wave| match &wave.validation {
+                Some(v) if v.all_passed => (validated + 1, failed),
+                Some(_) => (validated, failed + 1),
+                None => (validated, failed),
+            },
+        );
+
+        // Count total repairs
+        let total_repairs: usize = swarm.waves.iter().map(|w| w.repairs.len()).sum();
+
+        Some(SwarmProgress {
+            current_wave,
+            total_waves,
+            tasks_completed,
+            tasks_total,
+            tasks_in_progress,
+            tasks_failed,
+            waves_validated,
+            waves_failed_validation,
+            total_repairs,
+        })
     }
 
     /// Compute waves from swarm session data (shows actual execution waves)
@@ -1235,10 +1353,7 @@ impl App {
             .or_else(|| self.active_tag.clone())?;
 
         // Build swarm command
-        let session_base = self
-            .session_name
-            .replace("swarm-", "")
-            .replace("scud-", "");
+        let session_base = self.session_name.replace("swarm-", "").replace("scud-", "");
         let cmd = format!("scud swarm --tag {} --session {}", tag, session_base);
 
         Some((cmd, tag))
@@ -1271,11 +1386,7 @@ impl App {
                     return Ok(());
                 }
                 // Show confirmation
-                self.error = Some(format!(
-                    "✓ {} → {}",
-                    task_id,
-                    new_status.as_str()
-                ));
+                self.error = Some(format!("✓ {} → {}", task_id, new_status.as_str()));
             } else {
                 self.error = Some(format!("Task {} not found", task_id));
             }

@@ -2,43 +2,32 @@
 //!
 //! Three-panel design:
 //! - Top: Waves/Tasks panel showing tasks by execution wave
-//! - Middle: Agents panel showing running agents
-//! - Bottom: Live terminal output from selected agent
+//! - Middle: Agents panel showing running agents with status filtering
+//! - Bottom: Live terminal output from selected agent with scrolling
+//!
+//! Integrates ported components from components/ for enhanced functionality:
+//! - StreamingView: Rich terminal output with scrolling and line types
+//! - AgentSelector: Agent list with filtering and selection
+//! - Theme system: JSON-based themes for consistent styling
 //!
 //! Minimalist Zen aesthetic with calm colors and clean typography.
 
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{
-        Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState,
-    },
+    widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph},
     Frame,
 };
 
-use crate::commands::spawn::monitor::AgentStatus;
-
-use super::app::{App, FocusedPanel, ViewMode, WaveTaskState};
-
-// ─────────────────────────────────────────────────────────────
-// Color Palette: Zen minimalist
-// ─────────────────────────────────────────────────────────────
-
-const BG_PRIMARY: Color = Color::Rgb(15, 23, 42); // Deep slate
-const BG_SECONDARY: Color = Color::Rgb(30, 41, 59); // Elevated surface
-const BG_TERMINAL: Color = Color::Rgb(22, 22, 22); // Terminal black
-const TEXT_PRIMARY: Color = Color::Rgb(226, 232, 240); // Soft white
-const TEXT_MUTED: Color = Color::Rgb(100, 116, 139); // Subdued
-const TEXT_TERMINAL: Color = Color::Rgb(200, 200, 200); // Terminal text
-const BORDER_DEFAULT: Color = Color::Rgb(51, 65, 85); // Subtle border
-const BORDER_ACTIVE: Color = Color::Rgb(96, 165, 250); // Active border
-const ACCENT: Color = Color::Rgb(96, 165, 250); // Calm blue
-const STATUS_STARTING: Color = Color::Rgb(148, 163, 184); // Gray
-const STATUS_RUNNING: Color = Color::Rgb(34, 197, 94); // Green
-const STATUS_COMPLETED: Color = Color::Rgb(96, 165, 250); // Blue
-const STATUS_FAILED: Color = Color::Rgb(248, 113, 113); // Soft red
+use super::app::{App, FocusedPanel, ViewMode};
+use super::components::{
+    AgentDisplayStatus, AgentInfo, AgentSelector, AgentSelectorState, StreamingView,
+    StreamingViewState,
+};
+use super::header::{render_fullscreen_header, render_header};
+use super::theme::*;
+use super::waves::render_waves_panel;
 
 /// Main render function
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -76,7 +65,7 @@ fn render_split_view(frame: &mut Frame, area: Rect, app: &mut App) {
     render_footer(frame, footer_area, app);
 }
 
-fn render_fullscreen_view(frame: &mut Frame, area: Rect, app: &App) {
+fn render_fullscreen_view(frame: &mut Frame, area: Rect, app: &mut App) {
     // Fullscreen: small header + terminal + small footer
     let [header_area, terminal_area, footer_area] = Layout::vertical([
         Constraint::Length(2),
@@ -86,11 +75,12 @@ fn render_fullscreen_view(frame: &mut Frame, area: Rect, app: &App) {
     .areas(area);
 
     render_fullscreen_header(frame, header_area, app);
-    render_terminal_output(frame, terminal_area, app, true);
+    // Use integrated StreamingView component for fullscreen terminal output
+    render_output_panel(frame, terminal_area, app, true);
     render_fullscreen_footer(frame, footer_area);
 }
 
-fn render_input_view(frame: &mut Frame, area: Rect, app: &App) {
+fn render_input_view(frame: &mut Frame, area: Rect, app: &mut App) {
     // Input view: header + terminal + input bar + footer
     let [header_area, terminal_area, input_area, footer_area] = Layout::vertical([
         Constraint::Length(2),
@@ -101,7 +91,8 @@ fn render_input_view(frame: &mut Frame, area: Rect, app: &App) {
     .areas(area);
 
     render_fullscreen_header(frame, header_area, app);
-    render_terminal_output(frame, terminal_area, app, true);
+    // Use integrated StreamingView component for terminal output in input mode
+    render_output_panel(frame, terminal_area, app, true);
     render_input_bar(frame, input_area, app);
     render_input_footer(frame, footer_area);
 }
@@ -139,102 +130,89 @@ fn render_input_footer(frame: &mut Frame, area: Rect) {
     frame.render_widget(footer, area);
 }
 
-fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    let (starting, running, completed, failed) = app.status_counts();
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrated Component Renderers
+//
+// These functions use the ported components from components/ for enhanced
+// functionality including StatefulWidget patterns, filtering, and rich styling.
+// ─────────────────────────────────────────────────────────────────────────────
 
-    // Swarm mode indicator
-    let swarm_indicator = if app.swarm_mode {
-        vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                "SWARM ",
-                Style::default().fg(Color::Rgb(168, 85, 247)).bold(), // Purple for swarm
-            ),
-        ]
+/// Render the output panel using the StreamingViewStrings component
+///
+/// Uses the ported StreamingView component for enhanced terminal output rendering
+/// with proper scrollbar support and line styling.
+fn render_output_panel(frame: &mut Frame, area: Rect, app: &mut App, fullscreen: bool) {
+    let is_focused = app.focused_panel == FocusedPanel::Output || fullscreen;
+
+    // Create title based on context
+    let title = if fullscreen {
+        " Terminal (Esc to exit) ".to_string()
+    } else if let Some(agent) = app.selected_agent() {
+        format!(" Output: {} ", agent.task_id)
     } else {
-        vec![]
+        " Live Output ".to_string()
     };
 
-    // Ralph mode indicator
-    let ralph_indicator = if app.ralph_mode {
-        vec![
-            Span::styled("  🔄 ", Style::default()),
-            Span::styled(
-                "RALPH ",
-                Style::default().fg(Color::Rgb(255, 165, 0)).bold(),
-            ),
-        ]
-    } else {
-        vec![]
-    };
+    // Create streaming view state from app state
+    let mut view_state = StreamingViewState::new();
+    view_state.scroll_offset = app.scroll_offset;
+    view_state.auto_scroll = app.auto_scroll;
+    view_state.set_total_lines(app.live_output.len());
 
-    // Status line with legend labels
-    let mut spans = vec![
-        Span::styled(" ", Style::default()),
-        Span::styled(&app.session_name, Style::default().fg(ACCENT).bold()),
-    ];
-    spans.extend(swarm_indicator);
-    spans.extend(ralph_indicator);
-    spans.extend(vec![
-        Span::styled("    ", Style::default()),
-        // Gray = Starting/Waiting
-        Span::styled("◉ ", Style::default().fg(STATUS_STARTING)),
-        Span::styled("Starting ", Style::default().fg(TEXT_MUTED).dim()),
-        Span::styled(
-            format!("{}  ", starting),
-            Style::default().fg(STATUS_STARTING),
-        ),
-        // Green = Running
-        Span::styled("◉ ", Style::default().fg(STATUS_RUNNING)),
-        Span::styled("Running ", Style::default().fg(TEXT_MUTED).dim()),
-        Span::styled(
-            format!("{}  ", running),
-            Style::default().fg(STATUS_RUNNING),
-        ),
-        // Blue = Completed
-        Span::styled("◉ ", Style::default().fg(STATUS_COMPLETED)),
-        Span::styled("Done ", Style::default().fg(TEXT_MUTED).dim()),
-        Span::styled(
-            format!("{}  ", completed),
-            Style::default().fg(STATUS_COMPLETED),
-        ),
-        // Red = Failed
-        Span::styled("◉ ", Style::default().fg(STATUS_FAILED)),
-        Span::styled("Failed ", Style::default().fg(TEXT_MUTED).dim()),
-        Span::styled(format!("{}", failed), Style::default().fg(STATUS_FAILED)),
-    ]);
-    let status_line = Line::from(spans);
+    // Create and render the streaming view widget
+    let streaming_view = StreamingView::from_strings(&app.live_output)
+        .focused(is_focused)
+        .title(title)
+        .show_scrollbar(true)
+        .fullscreen(fullscreen);
 
-    let header = Paragraph::new(status_line).block(
-        Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(BORDER_DEFAULT))
-            .style(Style::default().bg(BG_SECONDARY))
-            .padding(Padding::horizontal(1)),
-    );
+    frame.render_stateful_widget(streaming_view, area, &mut view_state);
 
-    frame.render_widget(header, area);
+    // Sync state back to app (for scroll position updates)
+    app.scroll_offset = view_state.scroll_offset;
+    app.auto_scroll = view_state.auto_scroll;
 }
 
-fn render_fullscreen_header(frame: &mut Frame, area: Rect, app: &App) {
-    let agent_name = app
-        .selected_agent()
-        .map(|a| format!("{}: {}", a.task_id, a.task_title))
-        .unwrap_or_else(|| "No agent".to_string());
+/// Render the agents panel using the AgentSelector component
+///
+/// Uses the ported AgentSelector component for enhanced agent display
+/// with filtering support and rich status indicators.
+fn render_agents_panel_v2(frame: &mut Frame, area: Rect, app: &mut App) {
+    use crate::commands::spawn::monitor::AgentStatus;
 
-    let title = Line::from(vec![
-        Span::styled(" ", Style::default()),
-        Span::styled(&agent_name, Style::default().fg(ACCENT).bold()),
-    ]);
+    let is_focused = app.focused_panel == FocusedPanel::Agents;
 
-    let header = Paragraph::new(title).block(
-        Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(BORDER_ACTIVE))
-            .style(Style::default().bg(BG_SECONDARY)),
-    );
+    // Convert app agents to AgentInfo format for the component
+    let agents: Vec<AgentInfo> = app
+        .agents()
+        .iter()
+        .map(|agent| {
+            let status = match agent.status {
+                AgentStatus::Starting => AgentDisplayStatus::Starting,
+                AgentStatus::Running => AgentDisplayStatus::Running,
+                AgentStatus::Completed => AgentDisplayStatus::Completed,
+                AgentStatus::Failed => AgentDisplayStatus::Failed,
+            };
+            AgentInfo::new(&agent.task_id, &agent.task_id, status)
+                .with_task_title(&agent.task_title)
+        })
+        .collect();
 
-    frame.render_widget(header, area);
+    // Create selector state from app state
+    let mut selector_state = AgentSelectorState::new(app.selected);
+    selector_state.offset = app.agents_scroll_offset;
+
+    // Calculate visible height for scroll adjustment
+    let inner_height = area.height.saturating_sub(3) as usize;
+    selector_state.adjust_scroll(inner_height);
+
+    // Render using the AgentSelector component
+    let selector = AgentSelector::new(&agents).focused(is_focused).compact(false);
+
+    frame.render_stateful_widget(selector, area, &mut selector_state);
+
+    // Sync state back to app
+    app.agents_scroll_offset = selector_state.offset;
 }
 
 fn render_three_panel_content(frame: &mut Frame, area: Rect, app: &mut App) {
@@ -271,416 +249,15 @@ fn render_three_panel_content(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let [waves_area, agents_area, output_area] = Layout::vertical(constraints).areas(area);
 
+    // Render each panel using the integrated components
+    // Waves panel - uses existing render_waves_panel (no equivalent ported component)
     render_waves_panel(frame, waves_area, app);
-    render_agents_panel(frame, agents_area, app);
-    render_terminal_output(frame, output_area, app, false);
-}
 
-fn render_waves_panel(frame: &mut Frame, area: Rect, app: &App) {
-    let is_focused = app.focused_panel == FocusedPanel::Waves;
-    let border_color = if is_focused {
-        BORDER_ACTIVE
-    } else {
-        BORDER_DEFAULT
-    };
-    let title_color = if is_focused { ACCENT } else { TEXT_MUTED };
+    // Agents panel - uses integrated AgentSelector component for enhanced display
+    render_agents_panel_v2(frame, agents_area, app);
 
-    let ready_count = app.ready_task_count();
-    let selected_count = app.selected_task_count();
-    let title = if app.swarm_mode {
-        // Swarm mode: show SWARM indicator and wave count
-        let wave_count = app.waves.len();
-        format!(" SWARM Waves ({} waves) ", wave_count)
-    } else if selected_count > 0 {
-        format!(
-            " Waves & Tasks ({} selected / {} ready) ",
-            selected_count, ready_count
-        )
-    } else {
-        format!(" Waves & Tasks ({} ready) ", ready_count)
-    };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
-        .title(Line::from(title).fg(title_color))
-        .style(Style::default().bg(BG_SECONDARY))
-        .padding(Padding::new(1, 1, 0, 0));
-
-    if app.waves.is_empty() {
-        let empty_msg = Paragraph::new("No actionable tasks")
-            .style(Style::default().fg(TEXT_MUTED))
-            .block(block);
-        frame.render_widget(empty_msg, area);
-        return;
-    }
-
-    // Build list items from waves
-    let mut all_items: Vec<ListItem> = Vec::new();
-    let mut task_index = 0;
-
-    for wave in &app.waves {
-        // Wave header - different format for swarm vs spawn mode
-        let wave_header = if app.swarm_mode {
-            // In swarm mode, show validation status from actual wave data
-            let validation_info = if let Some(ref swarm) = app.swarm_session_data {
-                if let Some(wave_state) = swarm.waves.iter().find(|w| w.wave_number == wave.number) {
-                    match &wave_state.validation {
-                        Some(v) if v.all_passed => ("✓", STATUS_COMPLETED, "VALIDATED"),
-                        Some(_) => ("✗", Color::Rgb(239, 68, 68), "FAILED"),
-                        None if wave_state.completed_at.is_some() => ("◌", TEXT_MUTED, "NO VALIDATION"),
-                        None => ("●", STATUS_RUNNING, "IN PROGRESS"),
-                    }
-                } else {
-                    ("◌", TEXT_MUTED, "PENDING")
-                }
-            } else {
-                ("◌", TEXT_MUTED, "PENDING")
-            };
-
-            let round_count = if let Some(ref swarm) = app.swarm_session_data {
-                swarm.waves
-                    .iter()
-                    .find(|w| w.wave_number == wave.number)
-                    .map(|w| w.rounds.len())
-                    .unwrap_or(0)
-            } else {
-                0
-            };
-
-            let repair_count = if let Some(ref swarm) = app.swarm_session_data {
-                swarm.waves
-                    .iter()
-                    .find(|w| w.wave_number == wave.number)
-                    .map(|w| w.repairs.len())
-                    .unwrap_or(0)
-            } else {
-                0
-            };
-
-            let repair_info = if repair_count > 0 {
-                format!(" [{} repairs]", repair_count)
-            } else {
-                String::new()
-            };
-
-            Line::from(vec![
-                Span::styled(
-                    format!("Wave {} ", wave.number),
-                    Style::default().fg(ACCENT).bold(),
-                ),
-                Span::styled(
-                    format!("{} ", validation_info.0),
-                    Style::default().fg(validation_info.1),
-                ),
-                Span::styled(
-                    format!("{} ", validation_info.2),
-                    Style::default().fg(validation_info.1),
-                ),
-                Span::styled(
-                    format!("({} tasks, {} rounds{})", wave.tasks.len(), round_count, repair_info),
-                    Style::default().fg(TEXT_MUTED),
-                ),
-            ])
-        } else {
-            // Spawn mode: original format
-            let ready_in_wave = wave
-                .tasks
-                .iter()
-                .filter(|t| t.state == WaveTaskState::Ready)
-                .count();
-            Line::from(vec![
-                Span::styled(
-                    format!("Wave {} ", wave.number),
-                    Style::default().fg(ACCENT).bold(),
-                ),
-                Span::styled(
-                    format!("({} tasks, {} ready)", wave.tasks.len(), ready_in_wave),
-                    Style::default().fg(TEXT_MUTED),
-                ),
-            ])
-        };
-        all_items.push(ListItem::new(wave_header));
-
-        // Tasks in wave
-        for task in &wave.tasks {
-            let is_selected_in_list = task_index == app.wave_task_index && is_focused;
-            let is_selected_for_spawn = app.selected_tasks.contains(&task.id);
-
-            let state_icon = match task.state {
-                WaveTaskState::Ready => ("○", STATUS_COMPLETED), // Blue circle = ready
-                WaveTaskState::Running => ("●", STATUS_RUNNING), // Green filled = running
-                WaveTaskState::Done => ("✓", STATUS_COMPLETED),  // Blue check = done
-                WaveTaskState::Blocked => ("◌", TEXT_MUTED),     // Hollow = blocked
-                WaveTaskState::InProgress => ("◐", STATUS_RUNNING), // Half = in progress
-            };
-
-            let checkbox = if is_selected_for_spawn {
-                "[x]"
-            } else if task.state == WaveTaskState::Ready {
-                "[ ]"
-            } else {
-                "   "
-            };
-
-            // Truncate title
-            let max_len = 40;
-            let title_display = if task.title.len() > max_len {
-                format!("{}…", &task.title[..max_len - 1])
-            } else {
-                task.title.clone()
-            };
-
-            let complexity = if task.complexity > 0 {
-                format!(" [{}]", task.complexity)
-            } else {
-                String::new()
-            };
-
-            let line = Line::from(vec![
-                Span::styled(
-                    if is_selected_in_list { "▸ " } else { "  " },
-                    Style::default().fg(ACCENT),
-                ),
-                Span::styled(
-                    format!("{} ", checkbox),
-                    Style::default().fg(if is_selected_for_spawn {
-                        ACCENT
-                    } else {
-                        TEXT_MUTED
-                    }),
-                ),
-                Span::styled(
-                    format!("{} ", state_icon.0),
-                    Style::default().fg(state_icon.1),
-                ),
-                Span::styled(format!("{} ", task.id), Style::default().fg(TEXT_MUTED)),
-                Span::styled(
-                    title_display,
-                    Style::default()
-                        .fg(if is_selected_in_list {
-                            ACCENT
-                        } else {
-                            TEXT_PRIMARY
-                        })
-                        .add_modifier(if is_selected_in_list {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
-                Span::styled(complexity, Style::default().fg(TEXT_MUTED)),
-            ]);
-
-            all_items.push(ListItem::new(line));
-            task_index += 1;
-        }
-    }
-
-    // Apply scroll offset - skip first N items
-    let visible_items: Vec<ListItem> = all_items.into_iter().skip(app.wave_scroll_offset).collect();
-
-    let list = List::new(visible_items).block(block);
-    frame.render_widget(list, area);
-}
-
-fn render_agents_panel(frame: &mut Frame, area: Rect, app: &mut App) {
-    let is_focused = app.focused_panel == FocusedPanel::Agents;
-    let border_color = if is_focused {
-        BORDER_ACTIVE
-    } else {
-        BORDER_DEFAULT
-    };
-    let title_color = if is_focused { ACCENT } else { TEXT_MUTED };
-
-    // Get counts first before borrowing agents slice
-    let total = app.agents().len();
-    let running = app
-        .agents()
-        .iter()
-        .filter(|a| a.status == AgentStatus::Running)
-        .count();
-    let selected = app.selected;
-
-    // Calculate visible height for scroll
-    let inner_height = area.height.saturating_sub(3) as usize; // borders + padding
-
-    // Auto-adjust scroll to keep selected visible
-    if selected < app.agents_scroll_offset {
-        app.agents_scroll_offset = selected;
-    } else if total > 0 && inner_height > 0 && selected >= app.agents_scroll_offset + inner_height {
-        app.agents_scroll_offset = selected.saturating_sub(inner_height - 1);
-    }
-
-    let scroll_offset = app.agents_scroll_offset;
-
-    // Show scroll indicator if there are more agents than visible
-    let title = if total > inner_height && inner_height > 0 {
-        let visible_end = (scroll_offset + inner_height).min(total);
-        format!(
-            " Agents ({} running / {} total) [{}-{}] ",
-            running,
-            total,
-            scroll_offset + 1,
-            visible_end
-        )
-    } else {
-        format!(" Agents ({} running / {} total) ", running, total)
-    };
-
-    // Now borrow agents for rendering
-    let agents = app.agents();
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
-        .title(Line::from(title).fg(title_color))
-        .style(Style::default().bg(BG_SECONDARY))
-        .padding(Padding::new(1, 1, 0, 0));
-
-    if agents.is_empty() {
-        let empty_msg = Paragraph::new("No agents spawned yet")
-            .style(Style::default().fg(TEXT_MUTED))
-            .block(block);
-        frame.render_widget(empty_msg, area);
-        return;
-    }
-
-    let items: Vec<ListItem> = agents
-        .iter()
-        .enumerate()
-        .skip(scroll_offset)
-        .take(inner_height.max(1))
-        .map(|(i, agent)| {
-            let is_selected = i == selected && is_focused;
-
-            let status_icon = match agent.status {
-                AgentStatus::Starting => ("◐", STATUS_STARTING),
-                AgentStatus::Running => ("●", STATUS_RUNNING),
-                AgentStatus::Completed => ("✓", STATUS_COMPLETED),
-                AgentStatus::Failed => ("✗", STATUS_FAILED),
-            };
-
-            // Truncate title
-            let max_len = 35;
-            let title = if agent.task_title.len() > max_len {
-                format!("{}…", &agent.task_title[..max_len - 1])
-            } else {
-                agent.task_title.clone()
-            };
-
-            let line = Line::from(vec![
-                Span::styled(
-                    if is_selected { "▸ " } else { "  " },
-                    Style::default().fg(ACCENT),
-                ),
-                Span::styled(
-                    format!("{} ", status_icon.0),
-                    Style::default().fg(status_icon.1),
-                ),
-                Span::styled(
-                    format!("{}: ", agent.task_id),
-                    Style::default().fg(TEXT_MUTED),
-                ),
-                Span::styled(
-                    title,
-                    Style::default()
-                        .fg(if is_selected { ACCENT } else { TEXT_PRIMARY })
-                        .add_modifier(if is_selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
-            ]);
-
-            ListItem::new(line)
-        })
-        .collect();
-
-    let list = List::new(items).block(block);
-    frame.render_widget(list, area);
-}
-
-fn render_terminal_output(frame: &mut Frame, area: Rect, app: &App, fullscreen: bool) {
-    let is_focused = app.focused_panel == FocusedPanel::Output || fullscreen;
-
-    let title = if fullscreen {
-        " Terminal (Esc to exit) ".to_string()
-    } else if let Some(agent) = app.selected_agent() {
-        format!(" Output: {} ", agent.task_id)
-    } else {
-        " Live Output ".to_string()
-    };
-
-    let border_color = if is_focused {
-        BORDER_ACTIVE
-    } else {
-        BORDER_DEFAULT
-    };
-    let title_color = if is_focused { ACCENT } else { TEXT_MUTED };
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
-        .title(Line::from(title).fg(title_color))
-        .style(Style::default().bg(BG_TERMINAL))
-        .padding(Padding::new(1, 0, 0, 0)); // Left padding only, scrollbar uses right side
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    // Render output lines
-    let visible_height = inner.height as usize;
-    let output = &app.live_output;
-
-    // Calculate visible window based on scroll offset
-    // scroll_offset=0 means bottom (most recent), higher = scrolled up
-    let total_lines = output.len();
-    let end_idx = total_lines.saturating_sub(app.scroll_offset);
-    let start_idx = end_idx.saturating_sub(visible_height);
-
-    // Reserve 2 chars on right: 1 for scrollbar, 1 for spacing
-    let text_width = inner.width.saturating_sub(2);
-    let text_area = Rect::new(inner.x, inner.y, text_width, inner.height);
-
-    let visible_lines: Vec<Line> = output
-        .iter()
-        .skip(start_idx)
-        .take(visible_height)
-        .map(|line| {
-            Line::from(Span::styled(
-                line.as_str(),
-                Style::default().fg(TEXT_TERMINAL),
-            ))
-        })
-        .collect();
-
-    let paragraph = Paragraph::new(visible_lines);
-    frame.render_widget(paragraph, text_area);
-
-    // Scrollbar on the right side of inner area (before the border)
-    if total_lines > visible_height {
-        let scrollbar_area = Rect::new(
-            inner.x + inner.width.saturating_sub(1),
-            inner.y,
-            1,
-            inner.height,
-        );
-
-        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(None)
-            .end_symbol(None)
-            .track_symbol(Some(" "))
-            .thumb_symbol("▐");
-
-        let mut scrollbar_state = ScrollbarState::new(total_lines).position(start_idx);
-
-        frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
-    }
+    // Output panel - uses integrated StreamingView component for rich output
+    render_output_panel(frame, output_area, app, false);
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
@@ -704,8 +281,8 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     // Show error if present
     if let Some(ref error) = app.error {
         line = Line::from(vec![
-            Span::styled(" ⚠ ", Style::default().fg(STATUS_FAILED)),
-            Span::styled(error.as_str(), Style::default().fg(STATUS_FAILED)),
+            Span::styled(" ⚠ ", Style::default().fg(ERROR)),
+            Span::styled(error.as_str(), Style::default().fg(ERROR)),
         ]);
     }
 
@@ -819,7 +396,11 @@ fn render_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(ACCENT))
-        .title(Line::from(" Keybindings ").fg(ACCENT).bold())
+        .title(
+            Line::from(" Keybindings ")
+                .fg(ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )
         .title_alignment(Alignment::Center)
         .style(Style::default().bg(BG_SECONDARY));
 

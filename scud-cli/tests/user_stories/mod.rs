@@ -7,9 +7,11 @@
 //! - `multi_agent` - US-15 to US-17: Multi-agent spawn features
 //! - `data_mgmt` - US-18 to US-20: Data management operations
 //! - `integration` - US-21 to US-22: Integration features
+//! - `extension_runner` - ExtensionRunner integration tests
 
 pub mod ai_powered;
 pub mod data_mgmt;
+pub mod extension_runner;
 pub mod individual_dev;
 pub mod integration;
 pub mod multi_agent;

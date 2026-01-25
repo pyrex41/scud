@@ -7,8 +7,14 @@
 //!
 //! Tab switches focus between panels. Space toggles task selection for spawning.
 
+pub mod agents;
 pub mod app;
+pub mod components;
+pub mod header;
+pub mod output;
+pub mod theme;
 pub mod ui;
+pub mod waves;
 
 use anyhow::Result;
 use crossterm::{
@@ -291,27 +297,24 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<AppE
                     // d: Mark task as Done (in Agents panel)
                     (_, KeyCode::Char('d')) => {
                         if app.focused_panel == FocusedPanel::Agents {
-                            let _ = app.set_selected_task_status(
-                                crate::models::task::TaskStatus::Done,
-                            );
+                            let _ =
+                                app.set_selected_task_status(crate::models::task::TaskStatus::Done);
                         }
                     }
 
                     // p: Mark task as Pending (in Agents panel)
                     (_, KeyCode::Char('p')) => {
                         if app.focused_panel == FocusedPanel::Agents {
-                            let _ = app.set_selected_task_status(
-                                crate::models::task::TaskStatus::Pending,
-                            );
+                            let _ = app
+                                .set_selected_task_status(crate::models::task::TaskStatus::Pending);
                         }
                     }
 
                     // b: Mark task as Blocked (in Agents panel)
                     (_, KeyCode::Char('b')) => {
                         if app.focused_panel == FocusedPanel::Agents {
-                            let _ = app.set_selected_task_status(
-                                crate::models::task::TaskStatus::Blocked,
-                            );
+                            let _ = app
+                                .set_selected_task_status(crate::models::task::TaskStatus::Blocked);
                         }
                     }
 
