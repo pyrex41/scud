@@ -110,7 +110,22 @@ scud swarm --tag my-feature --swarm-mode wave
 scud swarm --tag my-feature --swarm-mode beads
 ```
 
-Both modes support tmux-based terminal spawning with live monitoring. See [docs/orchestrator.md](docs/orchestrator.md) for details.
+Both modes support tmux-based terminal spawning with live monitoring, SQLite event logging, and automatic salvo worktree provisioning. See [docs/orchestrator.md](docs/orchestrator.md) for details.
+
+### Salvo Worktrees
+
+When swarming a tag, SCUD automatically provisions an isolated git worktree so parallel swarms on different tags don't conflict:
+
+```bash
+scud swarm --tag backend     # Auto-creates ../myproject.salvo.backend/
+scud swarm --tag frontend    # Auto-creates ../myproject.salvo.frontend/
+# Both run in parallel without conflicts
+
+scud salvo list              # See all active worktrees
+scud salvo remove backend    # Clean up when done
+```
+
+Each worktree gets a filtered task file with full detail for its tag and collapsed stubs for others. Results auto-sync back to main on completion. See [docs/orchestrator.md](docs/orchestrator.md) for details.
 
 ---
 
@@ -133,10 +148,13 @@ Both modes support tmux-based terminal spawning with live monitoring. See [docs/
 - **Real-time stats** - progress tracking
 
 ### Orchestrator Support
-- **Parallel agents** - spawn multiple Claude instances
+- **Parallel agents** - spawn multiple Claude instances via tmux
+- **Salvo worktrees** - automatic git worktree isolation per tag
+- **SQLite event storage** - queryable event logs, transcript search, session history
+- **Transcript capture** - real-time import of Claude Code conversation logs
+- **Live monitoring** - heartbeat tracking, orphan detection, stale timeouts
 - **Task locking** - `scud claim/release` prevents conflicts
 - **Session monitoring** - `scud whois` tracks active work
-- **Descartes integration** - For full AI agent orchestration, see [Descartes](https://github.com/pyrex41/descartes)
 
 ---
 
@@ -146,8 +164,8 @@ Both modes support tmux-based terminal spawning with live monitoring. See [docs/
 - [Quick Reference](docs/reference/QUICK_REFERENCE.md) - Command cheat sheet
 - [SCG Format Spec](docs/reference/SCG_FORMAT_SPEC.md) - Task file format
 
-**Patterns:**
-- [Orchestrator Pattern](docs/orchestrator.md) - Parallel execution guide
+**Swarm & Orchestration:**
+- [Orchestrator Pattern](docs/orchestrator.md) - Swarm modes, salvo worktrees, transcripts, and multi-agent workflows
 - [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task locking & orchestration
 
 **Development:**
@@ -200,7 +218,25 @@ scud swarm --tag <tag>             # Run parallel agents on ready tasks
 scud swarm --swarm-mode beads      # Continuous polling mode (fluid execution)
 scud swarm --swarm-mode wave       # Wave-based batching (default)
 scud swarm --round-size 5          # Max concurrent agents per round
+scud swarm --no-worktree           # Run in-place (skip salvo worktree)
+scud swarm --stale-timeout 600     # Stale agent timeout in seconds
 scud swarm retro [session-id]      # View retrospective timeline
+```
+
+### Salvo Worktrees (Parallel Isolation)
+```bash
+scud salvo list                    # List all salvo worktrees
+scud salvo sync <tag>              # Sync worktree status back to main
+scud salvo remove <tag>            # Remove worktree and git branch
+```
+
+### Transcript Commands
+```bash
+scud transcript search <query>     # Search across transcript content
+scud transcript stats              # Show aggregate statistics
+scud transcript list               # List recent transcript sessions
+scud transcript view [--session]   # View transcript summary
+scud transcript import             # Bulk import project transcripts
 ```
 
 ### Orchestrator Commands
@@ -285,9 +321,11 @@ See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns
 - Real-time progress tracking
 
 **Orchestrator-Ready:**
-- Spawn parallel Claude agents
+- Spawn parallel Claude agents via tmux
+- Salvo worktrees isolate parallel tag execution
+- SQLite stores events, transcripts, and session history
+- Live progress with heartbeat and orphan detection
 - Task locking prevents conflicts
-- Monitor active sessions
 - Doctor command finds stale work
 
 ---
@@ -309,6 +347,7 @@ Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`
 
 ```
 .scud/
+├── scud.db                   # SQLite database (events, transcripts, sessions)
 ├── tasks/tasks.scg           # All tasks in SCG format
 ├── config.toml               # Provider/model settings
 ├── active-tag                # Currently active tag
@@ -319,11 +358,19 @@ Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`
 │   └── <tag>_<timestamp>.scg # Timestamped archive files
 ├── swarm/                    # Swarm execution data
 │   ├── sessions/             # Session state and history
-│   └── events/               # Event logs (JSONL format)
-│       └── <session>.jsonl   # Per-session event timeline
+│   └── *.lock                # Session lock files
 ├── agents/                   # Extension manifests (experimental)
 │   └── *.toml                # Custom agent definitions
 └── logs/                     # Task log entries
+
+# Salvo worktrees (created alongside project directory)
+../<project>.salvo.<tag>/     # Isolated worktree per tag
+├── .scud/
+│   ├── tasks/tasks.scg       # Filtered: full detail for tag, stubs for others
+│   ├── config.toml           # Copied from main
+│   ├── active-tag            # Set to target tag
+│   └── guidance/             # Copied from main
+└── ...                       # Full project checkout on salvo/<tag> branch
 ```
 
 ### Project Guidance

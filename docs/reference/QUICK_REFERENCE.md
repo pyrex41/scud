@@ -45,12 +45,31 @@ Project guidance in `.scud/guidance/*.md` is automatically included in prompts.
 
 ### Swarm Commands (Parallel Execution)
 ```bash
-scud swarm --tag <tag>             # Run parallel agents on tasks
+scud swarm --tag <tag>             # Run parallel agents (auto-worktree)
 scud swarm --swarm-mode beads      # Continuous polling mode
 scud swarm --swarm-mode wave       # Wave-based batching (default)
 scud swarm --round-size 5          # Max concurrent agents
+scud swarm --no-worktree           # Run in-place (skip salvo worktree)
+scud swarm --stale-timeout 600     # Stale agent timeout (seconds)
+scud swarm --dry-run               # Preview execution plan
 scud swarm --all-tags              # Run across all tags
 scud swarm retro [session]         # View session retrospective
+```
+
+### Salvo Worktrees
+```bash
+scud salvo list                    # List all salvo worktrees
+scud salvo sync <tag>              # Sync worktree status back to main
+scud salvo remove <tag>            # Remove worktree and git branch
+```
+
+### Transcript Commands
+```bash
+scud transcript search <query>     # Search transcript content
+scud transcript stats              # Aggregate statistics
+scud transcript list               # List recent sessions
+scud transcript view [--session]   # View transcript summary
+scud transcript import             # Bulk import all transcripts
 ```
 
 ### Orchestrator Commands
@@ -102,14 +121,28 @@ scud swarm --tag myproject --swarm-mode wave
 scud swarm --tag myproject --swarm-mode beads --round-size 5
 ```
 
-### Retrospective Analysis
-```bash
-# List swarm sessions
-scud swarm retro
+### Salvo Worktrees
 
-# View session timeline
-scud swarm retro <session-id>
+Swarm automatically creates isolated git worktrees per tag:
+
+```bash
+scud swarm --tag backend     # Auto-creates ../project.salvo.backend/
+scud swarm --tag frontend    # Auto-creates ../project.salvo.frontend/
+scud swarm --no-worktree     # Run in-place (skip worktree)
+scud salvo list              # See active worktrees
+scud salvo remove <tag>      # Clean up
 ```
+
+### Retrospective & Transcripts
+```bash
+scud swarm retro                       # List swarm sessions
+scud swarm retro <session-id>          # View session timeline
+scud transcript search "error"         # Search agent conversations
+scud transcript stats                  # Message/tool call counts
+scud transcript import                 # Import all transcripts
+```
+
+All events and transcripts are stored in SQLite (`.scud/scud.db`).
 
 ---
 
@@ -163,13 +196,18 @@ scud view  # Task viewer
 
 ```
 .scud/
+├── scud.db             # SQLite database (events, transcripts, sessions)
 ├── tasks/tasks.scg     # All tasks in SCG format
 ├── config.toml         # Provider/model settings
 ├── active-tag          # Currently active tag
 ├── current-task        # Active task ID
 ├── guidance/           # Project guidance for AI
 │   └── *.md            # Auto-loaded markdown files
+├── swarm/              # Session locks and state
 └── logs/               # Task log entries
+
+# Salvo worktrees (auto-created by scud swarm)
+../<project>.salvo.<tag>/   # Isolated worktree per tag
 ```
 
 ---
@@ -259,7 +297,5 @@ scud config set-provider xai --model grok-code-fast-1
 ## Resources
 
 - **SCG Format:** [SCG_FORMAT_SPEC.md](SCG_FORMAT_SPEC.md)
-- **Orchestrator Pattern:** [../orchestrator.md](../orchestrator.md)
+- **Orchestrator Pattern:** [../orchestrator.md](../orchestrator.md) - Swarm modes, salvo worktrees, transcripts, SQLite storage
 - **Parallel Features:** [../features/PARALLEL_FEATURES.md](../features/PARALLEL_FEATURES.md)
-
-**Happy building!**

@@ -5,6 +5,39 @@ All notable changes to SCUD will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.47.0] - 2026-01-26
+
+### Added
+
+- **SQLite database** - All event logging, transcript storage, and session history now stored in a queryable SQLite database (`.scud/scud.db`). Replaces JSONL event files with indexed, queryable storage using WAL mode for concurrent access during swarm execution. Schema includes 9 tables: sessions, agent_runs, events, transcript_messages, tool_calls, tool_results, validation_runs, validation_commands, and salvo_worktrees.
+
+- **Real-time transcript capture** - Claude Code conversation transcripts are automatically imported from `~/.claude/projects/` into SQLite during swarm execution. A background file watcher (using FSEvents on macOS) monitors for new transcript files and imports them in real-time. New CLI commands:
+  - `scud transcript search <query>` - Full-text search across transcript content
+  - `scud transcript stats` - Show aggregate statistics (sessions, messages, tool calls)
+  - `scud transcript list` - List recent transcript sessions with message counts
+  - `scud transcript view [--session <id>]` - View transcript summaries
+  - `scud transcript import` - Bulk import all project transcripts
+
+- **Salvo worktrees** - Automatic git worktree provisioning per-tag for parallel swarm execution. When `scud swarm --tag <tag>` is invoked, SCUD automatically creates an isolated worktree at `../<project>.salvo.<tag>/` with a filtered task file. New CLI commands:
+  - `scud salvo list` - Show all salvo worktrees with paths, branches, and sync status
+  - `scud salvo sync <tag>` - Manually sync worktree task status back to main
+  - `scud salvo remove <tag>` - Clean up worktree and associated git branch
+
+- **Swarm live progress monitoring** - Wave mode now displays live progress with heartbeat monitoring, orphan detection, and configurable stale timeout (`--stale-timeout` flag). Detects agents that stop responding and reports orphaned tasks.
+
+- **6 new event kinds** - WaveStarted, WaveCompleted, ValidationPassed, ValidationFailed, RepairStarted, RepairCompleted. All event kinds have full round-trip SQLite serialization.
+
+### Changed
+
+- **Event storage migrated to SQLite** - EventWriter and EventReader now use SQLite instead of JSONL files. Events are queryable with SQL and indexed by session, task, timestamp, and kind. Old `.scud/swarm/events/*.jsonl` files are no longer written.
+
+- **Swarm command gains new flags**:
+  - `--no-worktree` - Skip automatic worktree creation (run in-place, previous behavior)
+  - `--salvo-dir <path>` - Custom directory for salvo worktree (overrides convention path)
+  - `--stale-timeout <secs>` - Configure stale agent detection timeout
+
+- **Session locks are worktree-aware** - Lock files are now scoped to worktree context, allowing the same tag to run in different worktrees without lock conflicts.
+
 ## [1.46.0] - 2026-01-24
 
 ### Added
