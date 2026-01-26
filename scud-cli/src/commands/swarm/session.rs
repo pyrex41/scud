@@ -284,9 +284,34 @@ pub fn swarm_dir(project_root: Option<&PathBuf>) -> PathBuf {
     root.join(".scud").join("swarm")
 }
 
-/// Get the path to the session lock file for a given tag
+/// Get the path to the session lock file for a given tag.
+/// Lock names include worktree ID when running inside a git worktree,
+/// allowing parallel salvo swarms on different worktrees.
 pub fn lock_file_path(project_root: Option<&PathBuf>, tag: &str) -> PathBuf {
-    swarm_dir(project_root).join(format!("{}.lock", tag))
+    let root = project_root
+        .cloned()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let worktree_id = get_worktree_id(&root);
+    let lock_name = match worktree_id {
+        Some(wt_id) => format!("{}-{}.lock", tag, wt_id),
+        None => format!("{}.lock", tag),
+    };
+    swarm_dir(project_root).join(lock_name)
+}
+
+/// Detect if we're in a git worktree (has .git file, not .git directory).
+/// Returns the worktree directory name as an identifier.
+fn get_worktree_id(project_root: &std::path::Path) -> Option<String> {
+    let git_path = project_root.join(".git");
+    if git_path.is_file() {
+        // In a worktree, .git is a file pointing to the main repo
+        project_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+    } else {
+        None
+    }
 }
 
 /// A session lock that prevents concurrent swarm sessions on the same tag.

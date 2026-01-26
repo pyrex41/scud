@@ -61,6 +61,7 @@ use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, W
 use crate::agents::AgentDef;
 use crate::attribution::{attribute_failure, AttributionConfidence};
 use crate::backpressure::{BackpressureConfig, ValidationResult};
+use crate::transcript_watcher::TranscriptWatcher;
 
 /// Swarm execution mode
 pub use crate::SwarmMode;
@@ -82,6 +83,9 @@ pub fn run(
     review_all: bool,
     no_repair: bool,
     max_repair_attempts: usize,
+    no_worktree: bool,
+    salvo_dir: Option<PathBuf>,
+    stale_timeout_minutes: Option<u64>,
 ) -> Result<()> {
     let effective_tag = tag.unwrap_or("default");
 
@@ -123,12 +127,48 @@ pub fn run(
     let session_name = session_name.unwrap_or_else(|| format!("swarm-{}", effective_tag));
 
     // Get working directory
-    let working_dir = project_root
+    let original_working_dir = project_root
         .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
+    // Determine actual working directory (may be a salvo worktree)
+    let (working_dir, is_salvo_worktree, main_project_root) =
+        if !no_worktree && tag.is_some() && !all_tags {
+            let tag_name = tag.unwrap();
+            match crate::commands::salvo::ensure_worktree(
+                &original_working_dir,
+                tag_name,
+                salvo_dir.as_deref(),
+            ) {
+                Ok(wt_path) => (wt_path, true, Some(original_working_dir.clone())),
+                Err(e) => {
+                    eprintln!("Warning: Could not create salvo worktree: {}", e);
+                    eprintln!("Running in-place (use --no-worktree to suppress this warning)");
+                    (original_working_dir.clone(), false, None)
+                }
+            }
+        } else {
+            (original_working_dir.clone(), false, None)
+        };
+
     // Load backpressure configuration
     let bp_config = BackpressureConfig::load(project_root.as_ref())?;
+
+    // Start transcript watcher in background thread
+    if !dry_run {
+        let watcher_session = session_name.clone();
+        let watcher_root = working_dir.clone();
+        let _watcher_handle = std::thread::spawn(move || {
+            let db = std::sync::Arc::new(crate::db::Database::new(&watcher_root));
+            if db.initialize().is_err() {
+                return;
+            }
+            let watcher = TranscriptWatcher::new(&watcher_root, db);
+            if let Err(e) = watcher.watch(&watcher_session) {
+                eprintln!("Transcript watcher error: {}", e);
+            }
+        });
+    }
 
     // Display header
     println!("{}", "SCUD Swarm Mode".cyan().bold());
@@ -230,6 +270,12 @@ pub fn run(
         &working_dir.to_string_lossy(),
         round_size,
     );
+
+    // Compute stale timeout duration
+    let stale_timeout = stale_timeout_minutes.map(|m| Duration::from_secs(m * 60));
+
+    // Create EventWriter for SQLite event logging (Phase 1b)
+    let event_writer = events::EventWriter::new(&working_dir, &session_name).ok();
 
     // Detect orphan in-progress tasks (tasks with no running tmux window)
     // Only applicable in tmux mode
@@ -385,6 +431,28 @@ pub fn run(
 
             let in_progress_count = count_in_progress(&all_phases, &phase_tag, all_tags);
             if in_progress_count > 0 {
+                // Check for stale in-progress tasks whose tmux windows are gone (1d)
+                if matches!(swarm_mode, SwarmMode::Tmux) {
+                    let orphans =
+                        find_orphan_tasks(&all_phases, &phase_tag, all_tags, &session_name);
+                    for (task_id, tag) in &orphans {
+                        println!(
+                            "  {} {} has no tmux window, resetting to pending",
+                            "⚠".yellow(),
+                            task_id.cyan()
+                        );
+                        if let Ok(mut phase) = storage.load_group(tag) {
+                            if let Some(task) = phase.get_task_mut(task_id) {
+                                task.set_status(TaskStatus::Pending);
+                                let _ = storage.update_group(tag, &phase);
+                            }
+                        }
+                    }
+                    if !orphans.is_empty() {
+                        continue; // Re-check waves with reset tasks
+                    }
+                }
+
                 println!(
                     "Waiting for {} in-progress task(s) to complete...",
                     in_progress_count.to_string().cyan()
@@ -408,6 +476,12 @@ pub fn run(
 
         // Track wave state
         let mut wave_state = WaveState::new(wave_number);
+        let wave_start = std::time::Instant::now();
+
+        // Emit wave started event
+        if let Some(ref writer) = event_writer {
+            let _ = writer.log_wave_started(wave_number, wave_tasks.len());
+        }
 
         // === PHASE 1: RESEARCH (optional, first wave only) ===
         if !no_research && wave_number == 1 {
@@ -440,6 +514,7 @@ pub fn run(
                         &session_name,
                         round_idx,
                         harness,
+                        event_writer.as_ref(),
                     )?;
 
                     // Create/update spawn proxy for monitor visibility (tmux mode only)
@@ -455,7 +530,13 @@ pub fn run(
 
                     // Wait for round completion (tmux mode - poll for status changes)
                     println!("    Waiting for round completion...");
-                    wait_for_round_completion(&storage, round_tasks)?;
+                    wait_for_round_completion(
+                        &storage,
+                        round_tasks,
+                        &session_name,
+                        stale_timeout,
+                        event_writer.as_ref(),
+                    )?;
 
                     state
                 }
@@ -499,6 +580,11 @@ pub fn run(
             if validation_result.all_passed {
                 println!("    {} All checks passed", "✓".green());
 
+                // Emit validation passed event
+                if let Some(ref writer) = event_writer {
+                    let _ = writer.log_validation_passed();
+                }
+
                 // Mark all tasks as done
                 for (task_id, tag) in wave_state.task_tags() {
                     if let Ok(mut phase) = storage.load_group(&tag) {
@@ -512,6 +598,11 @@ pub fn run(
                 println!("    {} Some checks failed:", "!".yellow());
                 for failure in &validation_result.failures {
                     println!("      - {}", failure.red());
+                }
+
+                // Emit validation failed event
+                if let Some(ref writer) = event_writer {
+                    let _ = writer.log_validation_failed(&validation_result.failures);
                 }
 
                 if no_repair {
@@ -630,6 +721,14 @@ pub fn run(
             }
         }
 
+        // Emit wave completed event
+        if let Some(ref writer) = event_writer {
+            let _ = writer.log_wave_completed(
+                wave_number,
+                wave_start.elapsed().as_millis() as u64,
+            );
+        }
+
         // Save session state
         swarm_session.waves.push(wave_state);
         session::save_session(project_root.as_ref(), &swarm_session)?;
@@ -666,6 +765,18 @@ pub fn run(
     println!("  Tasks executed: {}", total_tasks.to_string().green());
 
     println!("  {} Spawn proxy updated for monitor/TUI", "✓".green());
+
+    // Auto-sync worktree results back to main
+    if is_salvo_worktree {
+        if let (Some(main_root), Some(tag_name)) = (&main_project_root, &tag) {
+            if let Err(e) =
+                crate::commands::salvo::sync_to_main(main_root, &working_dir, tag_name)
+            {
+                eprintln!("Warning: Failed to sync salvo back to main: {}", e);
+                eprintln!("Run manually: scud salvo sync {}", tag_name);
+            }
+        }
+    }
 
     Ok(())
 }
@@ -937,6 +1048,7 @@ fn execute_round(
     session_name: &str,
     round_idx: usize,
     default_harness: Harness,
+    event_writer: Option<&events::EventWriter>,
 ) -> Result<RoundState> {
     let mut round_state = RoundState::new(round_idx);
 
@@ -974,6 +1086,11 @@ fn execute_round(
                 );
                 round_state.task_ids.push(info.task.id.clone());
                 round_state.tags.push(info.tag.clone());
+
+                // Emit spawn event
+                if let Some(writer) = event_writer {
+                    let _ = writer.log_spawned(&info.task.id);
+                }
 
                 if let Ok(mut phase) = storage.load_group(&info.tag) {
                     if let Some(task) = phase.get_task_mut(&info.task.id) {
@@ -1218,34 +1335,228 @@ Working directory: {working_dir}
     )
 }
 
-fn wait_for_round_completion(storage: &Storage, tasks: &[TaskInfo]) -> Result<()> {
+fn wait_for_round_completion(
+    storage: &Storage,
+    tasks: &[TaskInfo],
+    session_name: &str,
+    stale_timeout: Option<Duration>,
+    event_writer: Option<&events::EventWriter>,
+) -> Result<()> {
+    use std::collections::HashSet;
+    use std::io::Write;
+    use std::time::Instant;
+
     let task_ids: Vec<String> = tasks.iter().map(|t| t.task.id.clone()).collect();
     let task_tags: HashMap<String, String> = tasks
         .iter()
         .map(|t| (t.task.id.clone(), t.tag.clone()))
         .collect();
 
+    let round_start = Instant::now();
+    let mut completed_tasks: HashSet<String> = HashSet::new();
+    let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let mut spin_idx: usize = 0;
+    let mut last_orphan_check = Instant::now();
+
+    // Track per-task content hashes for heartbeat (1c)
+    let mut last_content_hashes: HashMap<String, u64> = HashMap::new();
+    let mut last_activity: HashMap<String, Instant> = HashMap::new();
+    for task_id in &task_ids {
+        last_activity.insert(task_id.clone(), Instant::now());
+    }
+
     loop {
-        let mut all_done = true;
+        let mut still_running: Vec<String> = Vec::new();
 
         for task_id in &task_ids {
+            if completed_tasks.contains(task_id) {
+                continue;
+            }
+
             if let Some(tag) = task_tags.get(task_id) {
                 if let Ok(phase) = storage.load_group(tag) {
                     if let Some(task) = phase.get_task(task_id) {
                         if task.status == TaskStatus::InProgress
                             || task.status == TaskStatus::Pending
                         {
-                            all_done = false;
-                            break;
+                            still_running.push(task_id.clone());
+                        } else {
+                            // Task just completed
+                            completed_tasks.insert(task_id.clone());
+                            let elapsed = round_start.elapsed().as_secs();
+                            let status_icon = if task.status == TaskStatus::Done {
+                                "✓".green()
+                            } else {
+                                "✗".red()
+                            };
+                            // Clear the status line, then print completion
+                            print!("\r{}\r", " ".repeat(80));
+                            println!(
+                                "    {} {} completed ({}s)",
+                                status_icon,
+                                task_id.cyan(),
+                                elapsed
+                            );
+                            // Emit completion event (1b)
+                            if let Some(writer) = event_writer {
+                                let success = task.status == TaskStatus::Done;
+                                let _ = writer.log_completed(
+                                    task_id,
+                                    success,
+                                    round_start.elapsed().as_millis() as u64,
+                                );
+                            }
                         }
                     }
                 }
             }
         }
 
-        if all_done {
+        if still_running.is_empty() {
+            // Clear status line
+            print!("\r{}\r", " ".repeat(80));
+            let _ = std::io::stdout().flush();
             break;
         }
+
+        // Periodic orphan detection (1e): every 30s, check if tmux windows still exist
+        if last_orphan_check.elapsed() >= Duration::from_secs(30) {
+            last_orphan_check = Instant::now();
+            for task_id in &still_running {
+                if !tmux_window_exists_for_task(session_name, task_id) {
+                    // Agent died - tmux window gone but task still InProgress
+                    print!("\r{}\r", " ".repeat(80));
+                    println!(
+                        "    {} {} agent died (tmux window gone), marking failed",
+                        "⚠".yellow(),
+                        task_id.cyan()
+                    );
+                    // Mark as Failed
+                    if let Some(tag) = task_tags.get(task_id) {
+                        if let Ok(mut phase) = storage.load_group(tag) {
+                            if let Some(task) = phase.get_task_mut(task_id) {
+                                task.set_status(TaskStatus::Failed);
+                                let _ = storage.update_group(tag, &phase);
+                            }
+                        }
+                    }
+                    completed_tasks.insert(task_id.clone());
+                    // Emit failed event
+                    if let Some(writer) = event_writer {
+                        let event = events::AgentEvent::new(
+                            &writer.session_id(),
+                            task_id,
+                            events::EventKind::Failed {
+                                reason: "agent window disappeared".to_string(),
+                            },
+                        );
+                        let _ = writer.write(&event);
+                    }
+                }
+            }
+        }
+
+        // Stale task timeout (1d): check if any task exceeded the threshold
+        if let Some(timeout) = stale_timeout {
+            if round_start.elapsed() >= timeout {
+                for task_id in &still_running {
+                    // Cross-reference with tmux window existence
+                    if !tmux_window_exists_for_task(session_name, task_id) {
+                        print!("\r{}\r", " ".repeat(80));
+                        println!(
+                            "    {} {} stale (timeout + no tmux window), resetting to pending",
+                            "⚠".yellow(),
+                            task_id.cyan()
+                        );
+                        if let Some(tag) = task_tags.get(task_id) {
+                            if let Ok(mut phase) = storage.load_group(tag) {
+                                if let Some(task) = phase.get_task_mut(task_id) {
+                                    task.set_status(TaskStatus::Pending);
+                                    let _ = storage.update_group(tag, &phase);
+                                }
+                            }
+                        }
+                        completed_tasks.insert(task_id.clone());
+                    }
+                }
+            }
+        }
+
+        // Heartbeat check (1c): poll tmux panes for activity
+        for task_id in &still_running {
+            if completed_tasks.contains(task_id) {
+                continue;
+            }
+            let window_name = format!("task-{}", task_id);
+            let window_target = format!("{}:{}", session_name, window_name);
+            if let Ok(output) = std::process::Command::new("tmux")
+                .args(["capture-pane", "-t", &window_target, "-p", "-S", "-20"])
+                .output()
+            {
+                if output.status.success() {
+                    let content = String::from_utf8_lossy(&output.stdout);
+                    let hash = {
+                        use std::hash::{Hash, Hasher};
+                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                        content.hash(&mut hasher);
+                        hasher.finish()
+                    };
+                    let prev_hash = last_content_hashes.get(task_id).copied();
+                    if prev_hash.is_none() || prev_hash != Some(hash) {
+                        last_activity.insert(task_id.clone(), Instant::now());
+                    }
+                    last_content_hashes.insert(task_id.clone(), hash);
+                }
+            }
+        }
+
+        // Print status line (1a)
+        let elapsed = round_start.elapsed().as_secs();
+        let spinner = spinner_chars[spin_idx % spinner_chars.len()];
+        spin_idx += 1;
+
+        // Check for idle agents
+        let idle_agents: Vec<&String> = still_running
+            .iter()
+            .filter(|id| {
+                !completed_tasks.contains(*id)
+                    && last_activity
+                        .get(*id)
+                        .map(|t| t.elapsed() > Duration::from_secs(60))
+                        .unwrap_or(false)
+            })
+            .collect();
+
+        let running_count = still_running
+            .iter()
+            .filter(|id| !completed_tasks.contains(*id))
+            .count();
+
+        let status = if running_count <= 2 {
+            let names: Vec<&str> = still_running
+                .iter()
+                .filter(|id| !completed_tasks.contains(*id))
+                .map(|s| s.as_str())
+                .collect();
+            format!("{} running: {}", running_count, names.join(", "))
+        } else {
+            format!("{} running", running_count)
+        };
+
+        let idle_note = if !idle_agents.is_empty() {
+            format!(
+                " ({} idle >60s)",
+                idle_agents.len()
+            )
+        } else {
+            String::new()
+        };
+
+        print!(
+            "\r    Waiting... [{}] {} {}s{}",
+            status, spinner, elapsed, idle_note
+        );
+        let _ = std::io::stdout().flush();
 
         thread::sleep(Duration::from_secs(5));
     }

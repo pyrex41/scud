@@ -166,6 +166,15 @@ pub mod attribution;
 /// See [`backpressure::run_validation`] for the main entry point.
 pub mod backpressure;
 
+/// SQLite database for event logging, transcript storage, and session history.
+///
+/// Provides queryable storage for swarm events, agent transcripts, and session
+/// metadata. Uses WAL mode for concurrent access during swarm execution.
+pub mod db;
+
+/// Background transcript watcher for real-time import of Claude Code JSONL files.
+pub mod transcript_watcher;
+
 /// CLI command implementations.
 ///
 /// This module contains the implementation of all SCUD CLI commands including

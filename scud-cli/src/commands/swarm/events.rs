@@ -1,15 +1,15 @@
 //! Swarm event logging and aggregation
 //!
 //! Captures structured events from agent execution for retrospective analysis.
-//! Events are written to JSONL files and can be aggregated into a timeline.
+//! Events are stored in SQLite for queryable access.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+use crate::db::Database;
 
 /// Event kinds that can be logged
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +60,32 @@ pub enum EventKind {
     // Output capture
     Output {
         line: String,
+    },
+
+    // Wave lifecycle events (from orchestrator)
+    WaveStarted {
+        wave_number: usize,
+        task_count: usize,
+    },
+    WaveCompleted {
+        wave_number: usize,
+        duration_ms: u64,
+    },
+
+    // Validation events (from orchestrator)
+    ValidationPassed,
+    ValidationFailed {
+        failures: Vec<String>,
+    },
+
+    // Repair events (from orchestrator)
+    RepairStarted {
+        attempt: usize,
+        task_ids: Vec<String>,
+    },
+    RepairCompleted {
+        attempt: usize,
+        success: bool,
     },
 
     // Custom events
@@ -135,73 +161,58 @@ impl AgentEvent {
     }
 }
 
-/// Writer for appending events to a JSONL file
+/// Writer for appending events to SQLite database
 pub struct EventWriter {
     session_id: String,
-    events_dir: PathBuf,
+    db: Database,
 }
 
 impl EventWriter {
     pub fn new(project_root: &Path, session_id: &str) -> Result<Self> {
-        let events_dir = project_root.join(".scud").join("swarm").join("events");
-        fs::create_dir_all(&events_dir)?;
+        // Ensure .scud directory exists
+        let scud_dir = project_root.join(".scud");
+        std::fs::create_dir_all(&scud_dir)?;
+
+        let db = Database::new(project_root);
+        db.initialize()?;
 
         Ok(Self {
             session_id: session_id.to_string(),
-            events_dir,
+            db,
         })
     }
 
-    /// Get the path to the session event file
+    /// Get the session ID
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    /// Get the path to the database file (for display purposes)
     pub fn session_file(&self) -> PathBuf {
-        self.events_dir.join(format!("{}.jsonl", self.session_id))
+        self.db.path().to_path_buf()
     }
 
-    /// Get the path to a task-specific event file
-    pub fn task_file(&self, task_id: &str) -> PathBuf {
-        // Sanitize task_id for filename (replace : with -)
-        let safe_id = task_id.replace(':', "-");
-        self.events_dir.join(format!("{}-{}.jsonl", self.session_id, safe_id))
-    }
-
-    /// Write an event to the session log
+    /// Write an event to the database
     pub fn write(&self, event: &AgentEvent) -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(self.session_file())?;
-
-        let line = serde_json::to_string(event)?;
-        writeln!(file, "{}", line)?;
-
+        let guard = self.db.connection()?;
+        let conn = guard.as_ref().unwrap();
+        crate::db::events::insert_event(conn, event)?;
         Ok(())
     }
 
-    /// Write an event to both session and task-specific logs
+    /// Write an event (SQLite stores all events in one table, no separate task log needed)
     pub fn write_with_task_log(&self, event: &AgentEvent) -> Result<()> {
-        // Write to session log
-        self.write(event)?;
-
-        // Write to task-specific log
-        let mut task_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(self.task_file(&event.task_id))?;
-
-        let line = serde_json::to_string(event)?;
-        writeln!(task_file, "{}", line)?;
-
-        Ok(())
+        self.write(event)
     }
 
     /// Log a spawn event
     pub fn log_spawned(&self, task_id: &str) -> Result<()> {
-        self.write_with_task_log(&AgentEvent::spawned(&self.session_id, task_id))
+        self.write(&AgentEvent::spawned(&self.session_id, task_id))
     }
 
     /// Log a completion event
     pub fn log_completed(&self, task_id: &str, success: bool, duration_ms: u64) -> Result<()> {
-        self.write_with_task_log(&AgentEvent::completed(
+        self.write(&AgentEvent::completed(
             &self.session_id,
             task_id,
             success,
@@ -211,113 +222,104 @@ impl EventWriter {
 
     /// Log an unblocked event
     pub fn log_unblocked(&self, task_id: &str, by_task_id: &str) -> Result<()> {
-        self.write_with_task_log(&AgentEvent::unblocked(&self.session_id, task_id, by_task_id))
+        self.write(&AgentEvent::unblocked(&self.session_id, task_id, by_task_id))
+    }
+
+    /// Log a wave started event
+    pub fn log_wave_started(&self, wave_number: usize, task_count: usize) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            &format!("wave:{}", wave_number),
+            EventKind::WaveStarted {
+                wave_number,
+                task_count,
+            },
+        ))
+    }
+
+    /// Log a wave completed event
+    pub fn log_wave_completed(&self, wave_number: usize, duration_ms: u64) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            &format!("wave:{}", wave_number),
+            EventKind::WaveCompleted {
+                wave_number,
+                duration_ms,
+            },
+        ))
+    }
+
+    /// Log a validation passed event
+    pub fn log_validation_passed(&self) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            "validation",
+            EventKind::ValidationPassed,
+        ))
+    }
+
+    /// Log a validation failed event
+    pub fn log_validation_failed(&self, failures: &[String]) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            "validation",
+            EventKind::ValidationFailed {
+                failures: failures.to_vec(),
+            },
+        ))
+    }
+
+    /// Log a repair started event
+    pub fn log_repair_started(&self, attempt: usize, task_ids: &[String]) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            "repair",
+            EventKind::RepairStarted {
+                attempt,
+                task_ids: task_ids.to_vec(),
+            },
+        ))
+    }
+
+    /// Log a repair completed event
+    pub fn log_repair_completed(&self, attempt: usize, success: bool) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            "repair",
+            EventKind::RepairCompleted { attempt, success },
+        ))
     }
 }
 
-/// Reader for loading events from JSONL files
+/// Reader for loading events from SQLite database
 pub struct EventReader {
-    events_dir: PathBuf,
+    db: Database,
 }
 
 impl EventReader {
     pub fn new(project_root: &Path) -> Self {
         Self {
-            events_dir: project_root.join(".scud").join("swarm").join("events"),
+            db: Database::new(project_root),
         }
     }
 
     /// Load all events for a session
     pub fn load_session(&self, session_id: &str) -> Result<Vec<AgentEvent>> {
-        let file_path = self.events_dir.join(format!("{}.jsonl", session_id));
-        self.load_file(&file_path)
+        self.load_all_for_session(session_id)
     }
 
-    /// Load events from a JSONL file
-    pub fn load_file(&self, path: &Path) -> Result<Vec<AgentEvent>> {
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let mut events = Vec::new();
-
-        for line in reader.lines() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            match serde_json::from_str(&line) {
-                Ok(event) => events.push(event),
-                Err(e) => {
-                    eprintln!("Warning: Failed to parse event: {}", e);
-                }
-            }
-        }
-
-        Ok(events)
-    }
-
-    /// Load all events for a session (including task-specific files)
+    /// Load all events for a session (already sorted by timestamp in SQLite)
     pub fn load_all_for_session(&self, session_id: &str) -> Result<Vec<AgentEvent>> {
-        let mut events = Vec::new();
-
-        // Load from session file
-        events.extend(self.load_session(session_id)?);
-
-        // Load from task-specific files
-        if self.events_dir.exists() {
-            let prefix = format!("{}-", session_id);
-            for entry in fs::read_dir(&self.events_dir)? {
-                let entry = entry?;
-                let path = entry.path();
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.starts_with(&prefix) && name.ends_with(".jsonl") {
-                        events.extend(self.load_file(&path)?);
-                    }
-                }
-            }
-        }
-
-        // Sort by timestamp
-        events.sort_by_key(|e| e.timestamp);
-
-        // Deduplicate (same timestamp + task_id + event content)
-        // We compare the full serialized event to ensure different tool calls
-        // or other events with different content are not incorrectly merged
-        events.dedup_by(|a, b| {
-            a.timestamp == b.timestamp
-                && a.task_id == b.task_id
-                && serde_json::to_string(&a.event).ok() == serde_json::to_string(&b.event).ok()
-        });
-
-        Ok(events)
+        let guard = self.db.connection()?;
+        let conn = guard.as_ref().unwrap();
+        crate::db::events::get_events_for_session(conn, session_id)
     }
 
     /// List available sessions
     pub fn list_sessions(&self) -> Result<Vec<String>> {
-        let mut sessions = Vec::new();
-
-        if !self.events_dir.exists() {
-            return Ok(sessions);
-        }
-
-        for entry in fs::read_dir(&self.events_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // Only include main session files (not task-specific ones)
-                if name.ends_with(".jsonl") && !name.contains('-') {
-                    if let Some(session_id) = name.strip_suffix(".jsonl") {
-                        sessions.push(session_id.to_string());
-                    }
-                }
-            }
-        }
-
-        sessions.sort();
-        Ok(sessions)
+        let guard = self.db.connection()?;
+        let conn = guard.as_ref().unwrap();
+        crate::db::events::list_sessions(conn)
     }
 }
 

@@ -241,6 +241,10 @@ impl Storage {
         // Create guidance directory for project-specific AI context
         fs::create_dir_all(self.guidance_dir())?;
 
+        // Initialize SQLite database
+        let db = crate::db::Database::new(&self.project_root);
+        db.initialize()?;
+
         // Create CLAUDE.md with agent instructions
         self.create_agent_instructions()?;
 

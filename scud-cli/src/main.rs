@@ -745,6 +745,19 @@ enum Commands {
         /// Maximum repair attempts per task before giving up (default: 3)
         #[arg(long, default_value = "3")]
         max_repair_attempts: usize,
+
+        /// Skip automatic salvo worktree creation (run in-place)
+        #[arg(long)]
+        no_worktree: bool,
+
+        /// Custom directory for salvo worktree (default: ../<project>.salvo.<tag>/)
+        #[arg(long)]
+        salvo_dir: Option<std::path::PathBuf>,
+
+        /// Timeout in minutes for stale tasks (default: 30). Tasks running longer
+        /// than this with no tmux window will be reset to pending.
+        #[arg(long, default_value = "30")]
+        stale_timeout: u64,
     },
 
     /// View swarm session retrospective (event timeline and analysis)
@@ -758,24 +771,9 @@ enum Commands {
         json: bool,
     },
 
-    /// View Claude Code conversation transcripts (full LLM input/output logs)
-    Transcript {
-        /// Session ID to view (shows latest if not specified)
-        #[arg(short, long)]
-        session: Option<String>,
-
-        /// Show full transcript (all messages and tool calls)
-        #[arg(short, long)]
-        full: bool,
-
-        /// List available transcripts
-        #[arg(short, long)]
-        list: bool,
-
-        /// Export as JSON instead of formatted output
-        #[arg(long)]
-        json: bool,
-    },
+    /// Claude Code conversation transcripts (full LLM input/output logs)
+    #[command(subcommand)]
+    Transcript(TranscriptCommand),
 
     /// Run tests and spawn repair agents until they pass
     Test {
@@ -861,12 +859,61 @@ enum Commands {
         model: Option<String>,
     },
 
+    /// Manage salvo worktrees for parallel tag execution
+    #[command(subcommand)]
+    Salvo(SalvoCommand),
+
     /// Sync task changes from Claude Tasks back to SCUD (internal use by hooks)
     #[command(hide = true)]
     SyncFromClaude,
 
     // /// Start interactive REPL for task management - temporarily disabled
     // Repl,
+}
+
+#[derive(Subcommand, Clone)]
+enum TranscriptCommand {
+    /// View a transcript (shows latest if no session specified)
+    View {
+        /// Session ID to view
+        #[arg(short, long)]
+        session: Option<String>,
+
+        /// Show full transcript (all messages and tool calls)
+        #[arg(short, long)]
+        full: bool,
+
+        /// Export as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List available transcripts (from Claude Code project files)
+    List,
+    /// Search transcript content in the database
+    Search {
+        /// Search query
+        query: String,
+    },
+    /// Show transcript statistics from the database
+    Stats,
+    /// Import all transcripts for current project into the database
+    Import,
+}
+
+#[derive(Subcommand, Clone)]
+enum SalvoCommand {
+    /// List all salvo worktrees
+    List,
+    /// Sync a salvo worktree's task status back to main
+    Sync {
+        /// Tag name of the salvo
+        tag: String,
+    },
+    /// Remove a salvo worktree
+    Remove {
+        /// Tag name of the salvo
+        tag: String,
+    },
 }
 
 #[tokio::main]
@@ -1195,6 +1242,9 @@ async fn main() -> Result<()> {
             review_all,
             no_repair,
             max_repair_attempts,
+            no_worktree,
+            salvo_dir,
+            stale_timeout,
         } => commands::swarm::run(
             cli.project,
             tag.as_deref(),
@@ -1210,6 +1260,9 @@ async fn main() -> Result<()> {
             review_all,
             no_repair,
             max_repair_attempts,
+            no_worktree,
+            salvo_dir,
+            Some(stale_timeout),
         ),
         Commands::Retro { session, json } => {
             let project_root = cli
@@ -1228,33 +1281,71 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-        Commands::Transcript {
-            session,
-            full,
-            list,
-            json,
-        } => {
+        Commands::Transcript(cmd) => {
             let project_root = cli
                 .project
                 .clone()
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-            if list {
-                commands::swarm::transcript::list_transcripts(&project_root)?;
-            } else if json {
-                match commands::swarm::transcript::export_transcript_json(
-                    &project_root,
-                    session.as_deref(),
-                ) {
-                    Ok(json_str) => println!("{}", json_str),
-                    Err(e) => anyhow::bail!("Failed to export transcript: {}", e),
+            match cmd {
+                TranscriptCommand::View { session, full, json } => {
+                    if json {
+                        match commands::swarm::transcript::export_transcript_json(
+                            &project_root,
+                            session.as_deref(),
+                        ) {
+                            Ok(json_str) => println!("{}", json_str),
+                            Err(e) => anyhow::bail!("Failed to export transcript: {}", e),
+                        }
+                    } else {
+                        commands::swarm::transcript::view_transcript(
+                            &project_root,
+                            session.as_deref(),
+                            full,
+                        )?;
+                    }
                 }
-            } else {
-                commands::swarm::transcript::view_transcript(
-                    &project_root,
-                    session.as_deref(),
-                    full,
-                )?;
+                TranscriptCommand::List => {
+                    commands::swarm::transcript::list_transcripts(&project_root)?;
+                }
+                TranscriptCommand::Search { query } => {
+                    let db = scud::db::Database::new(&project_root);
+                    db.initialize()?;
+                    let guard = db.connection()?;
+                    let conn = guard.as_ref().unwrap();
+                    let results = scud::db::transcripts::search_transcripts(conn, &query)?;
+                    if results.is_empty() {
+                        println!("No results found for '{}'", query);
+                    } else {
+                        for r in results {
+                            println!(
+                                "{} [{}] {}: {}",
+                                r.timestamp,
+                                r.task_id.unwrap_or_default(),
+                                r.role,
+                                r.content_preview
+                            );
+                        }
+                    }
+                }
+                TranscriptCommand::Stats => {
+                    let db = scud::db::Database::new(&project_root);
+                    db.initialize()?;
+                    let guard = db.connection()?;
+                    let conn = guard.as_ref().unwrap();
+                    let stats = scud::db::transcripts::get_transcript_stats(conn)?;
+                    println!("Transcript Statistics:");
+                    println!("  Sessions: {}", stats.total_sessions);
+                    println!("  Messages: {}", stats.total_messages);
+                    println!("  Tool calls: {}", stats.total_tool_calls);
+                }
+                TranscriptCommand::Import => {
+                    let db = std::sync::Arc::new(scud::db::Database::new(&project_root));
+                    db.initialize()?;
+                    let watcher = scud::transcript_watcher::TranscriptWatcher::new(&project_root, db);
+                    let count = watcher.import_all(None, None)?;
+                    println!("Imported {} transcript sessions", count);
+                }
             }
             Ok(())
         }
@@ -1300,6 +1391,38 @@ async fn main() -> Result<()> {
         ),
         Commands::Serve { harness, model } => {
             commands::serve::run(cli.project, &harness, model.as_deref()).await
+        }
+        Commands::Salvo(cmd) => {
+            let project_root = cli
+                .project
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+            match cmd {
+                SalvoCommand::List => {
+                    commands::salvo::list_worktrees(&project_root)?;
+                }
+                SalvoCommand::Sync { tag } => {
+                    let db = scud::db::Database::new(&project_root);
+                    db.initialize()?;
+                    let guard = db.connection()?;
+                    let conn = guard.as_ref().unwrap();
+                    let path: String = conn.query_row(
+                        "SELECT worktree_path FROM salvo_worktrees WHERE tag = ?",
+                        [&tag],
+                        |row| row.get(0),
+                    )?;
+                    commands::salvo::sync_to_main(
+                        &project_root,
+                        &std::path::PathBuf::from(path),
+                        &tag,
+                    )?;
+                }
+                SalvoCommand::Remove { tag } => {
+                    commands::salvo::remove_worktree(&project_root, &tag)?;
+                }
+            }
+            Ok(())
         }
         Commands::SyncFromClaude => commands::sync_from_claude::run(cli.project),
         // Commands::Repl => commands::repl::run(), // temporarily disabled

@@ -39,6 +39,9 @@ pub mod restart;
 // Swarm mode (wave-based parallel execution with backpressure)
 pub mod swarm;
 
+// Salvo worktree management for parallel tag execution
+pub mod salvo;
+
 // Ralph mode (sequential iteration with fresh context)
 pub mod ralph;
 

@@ -30,6 +30,8 @@ colored = "2.1"
 indicatif = "0.17"
 dirs = "5.0"
 fs2 = "0.4"  # File locking for concurrent access
+rusqlite = { version = "0.32", features = ["bundled"] }  # SQLite for event/transcript storage
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }  # File watching for transcript capture
 toml = "0.8"  # TOML parsing for config files
 dialoguer = "0.11"  # Interactive CLI prompts
 atty = "0.2"  # TTY detection for interactive mode
