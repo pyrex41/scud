@@ -34,6 +34,7 @@ pub mod events;
 pub mod publisher;
 pub mod session;
 pub mod transcript;
+pub mod zmq_client;
 
 /// Re-export backpressure module for backward compatibility.
 ///
@@ -277,34 +278,27 @@ pub async fn run(
         round_size,
     );
 
-    // Publish swarm started event
-    if let Some(ref writer) = &event_writer {
-        let _ = writer.publish_event(&publisher::ZmqEvent::SwarmStarted {
-            session_id: session_name.clone(),
-            tag: phase_tag.clone(),
-            total_waves: 0, // Will be updated as waves are computed
-        });
-        let _ = writer.log_swarm_started(&phase_tag, 0);
-    }
+    // EventWriter will be created later in the function
 
     // Compute stale timeout duration
     let stale_timeout = stale_timeout_minutes.map(|m| Duration::from_secs(m * 60));
 
     // Create EventWriter for SQLite event logging (Phase 1b)
     // Include ZMQ publisher if not disabled
-    let event_writer = if !no_publish_events {
-        // Use tokio runtime to create EventWriter with ZMQ
-        let handle = tokio::runtime::Handle::current();
-        handle.block_on(async {
-            events::EventWriter::new_with_zmq(
-                &working_dir,
-                &session_name,
-                true,
-            ).await
-        }).ok()
-    } else {
-        events::EventWriter::new(&working_dir, &session_name).ok()
-    };
+    let event_writer = events::EventWriter::new_with_zmq(
+        &working_dir,
+        &session_name,
+        !no_publish_events,
+    ).ok();
+
+    // Create status tracking for control commands
+    let status_state = Arc::new(std::sync::Mutex::new(crate::commands::swarm::publisher::SwarmStatus {
+        state: "running".to_string(),
+        current_wave: 0,
+        total_waves: 0,
+        tasks_completed: 0,
+        tasks_total: 0,
+    }));
 
     // Start heartbeat background task for connection liveness detection
     let heartbeat_handle = if event_writer.is_some() {
@@ -335,37 +329,7 @@ pub async fn run(
         None
     };
 
-    // Start REP socket handler for control commands
-    let control_handle = if let Some(ref writer) = &event_writer {
-        if let Some(zmq_publisher) = writer.zmq_publisher() {
-            let stop_flag = Arc::new(AtomicBool::new(false));
-            let stop_flag_clone = Arc::clone(&stop_flag);
 
-            let handle = thread::spawn(move || {
-                while !stop_flag_clone.load(Ordering::Relaxed) {
-                    match zmq_publisher.handle_control_request() {
-                        Ok(Some(request)) => {
-                            tracing::info!("Processed control request: {}", request);
-                        }
-                        Ok(None) => {
-                            // No request, sleep briefly
-                            thread::sleep(Duration::from_millis(100));
-                        }
-                        Err(e) => {
-                            tracing::warn!("Control request error: {}", e);
-                            thread::sleep(Duration::from_millis(1000));
-                        }
-                    }
-                }
-            });
-
-            Some((handle, stop_flag))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
 
     // Detect orphan in-progress tasks (tasks with no running tmux window)
     // Only applicable in tmux mode
@@ -509,6 +473,18 @@ pub async fn run(
         // Check pause/stop flags from control commands
         if let Some(ref pause_flag) = pause_flag {
             while pause_flag.load(Ordering::SeqCst) {
+                // Handle any pending control requests while paused
+                #[cfg(feature = "zmq")]
+                if let Some(ref writer) = &event_writer {
+                    if let Some(zmq_publisher) = writer.zmq_publisher() {
+                        let _ = zmq_publisher.handle_control_request(
+                            pause_flag,
+                            stop_flag.as_ref().unwrap_or(&Arc::new(AtomicBool::new(false))),
+                            &|| status_state.lock().unwrap().clone(),
+                        );
+                    }
+                }
+
                 std::thread::sleep(Duration::from_millis(100));
                 if let Some(ref stop_flag) = stop_flag {
                     if stop_flag.load(Ordering::SeqCst) {
@@ -524,6 +500,13 @@ pub async fn run(
             if stop_flag.load(Ordering::SeqCst) {
                 println!();
                 println!("{}", "Swarm stopped by control command".yellow());
+
+                // Update status
+                {
+                    let mut status = status_state.lock().unwrap();
+                    status.state = "stopped".to_string();
+                }
+
                 break;
             }
         }
@@ -534,9 +517,32 @@ pub async fn run(
         // Compute waves from current state
         let waves = compute_waves_from_tasks(&all_phases, &phase_tag, all_tags)?;
 
+        // Update status for control commands
+        {
+            let mut status = status_state.lock().unwrap();
+            status.current_wave = wave_number;
+            status.total_waves = waves.len();
+            status.tasks_total = waves.iter().map(|w| w.len()).sum();
+            status.tasks_completed = all_phases.values()
+                .flat_map(|phase| &phase.tasks)
+                .filter(|task| matches!(task.status, TaskStatus::Done))
+                .count();
+            status.state = if pause_flag.as_ref().map_or(false, |f| f.load(Ordering::SeqCst)) {
+                "paused".to_string()
+            } else {
+                "running".to_string()
+            };
+        }
+
         if waves.is_empty() {
             println!();
             println!("{}", "All tasks complete!".green().bold());
+
+            // Update status
+            {
+                let mut status = status_state.lock().unwrap();
+                status.state = "completed".to_string();
+            }
 
             // Publish swarm completed event
             if let Some(ref writer) = &event_writer {

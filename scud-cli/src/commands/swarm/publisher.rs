@@ -3,9 +3,14 @@
 //! Publishes swarm events via PUB socket and accepts control commands via REP socket.
 //! Clients can discover socket addresses via files in `.scud/swarm/<session>/`.
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "zmq")]
+use std::path::PathBuf;
+#[cfg(feature = "zmq")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "zmq")]
+use std::sync::Arc;
 #[cfg(feature = "zmq")]
 use zmq;
 
@@ -17,6 +22,35 @@ pub struct DiscoveredSession {
     pub pub_endpoint: String,
     pub rep_endpoint: String,
     pub session_dir: std::path::PathBuf,
+}
+
+/// Control command format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "command", rename_all = "snake_case")]
+pub enum ControlCommand {
+    Pause,
+    Resume,
+    Stop,
+    Status,
+}
+
+/// Control response format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlResponse {
+    pub success: bool,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<SwarmStatus>,
+}
+
+/// Swarm status information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwarmStatus {
+    pub state: String, // "running", "paused", "completed"
+    pub current_wave: usize,
+    pub total_waves: usize,
+    pub tasks_completed: usize,
+    pub tasks_total: usize,
 }
 
 /// ZMQ event format
@@ -179,6 +213,7 @@ pub struct EventPublisher {
     _context: zmq::Context, // Keep context alive
 }
 
+#[cfg(feature = "zmq")]
 impl EventPublisher {
     /// Create and bind publisher sockets
     ///
@@ -186,21 +221,25 @@ impl EventPublisher {
     pub fn new(session_dir: &Path) -> Result<Self> {
         let context = zmq::Context::new();
 
+        // For simplicity, use fixed endpoints
+        let pub_endpoint = "tcp://127.0.0.1:5555".to_string();
+        let rep_endpoint = "tcp://127.0.0.1:5556".to_string();
+
         // Create PUB socket for events
         let pub_socket = context.socket(zmq::PUB)?;
-        let pub_endpoint = pub_socket.bind("tcp://127.0.0.1:0")?;
+        pub_socket.bind(&pub_endpoint)?;
         tracing::info!("ZMQ PUB bound to {}", pub_endpoint);
 
         // Create REP socket for control
         let rep_socket = context.socket(zmq::REP)?;
-        let rep_endpoint = rep_socket.bind("tcp://127.0.0.1:0")?;
+        rep_socket.bind(&rep_endpoint)?;
         tracing::info!("ZMQ REP bound to {}", rep_endpoint);
 
         let publisher = Self {
             pub_socket,
             rep_socket,
-            pub_endpoint: pub_endpoint.clone(),
-            rep_endpoint: rep_endpoint.clone(),
+            pub_endpoint,
+            rep_endpoint,
             session_dir: session_dir.to_path_buf(),
             _context: context,
         };
@@ -249,12 +288,56 @@ impl EventPublisher {
     }
 
     /// Handle REP socket requests (control commands)
-    pub fn handle_control_request(&self) -> Result<Option<String>> {
+    pub fn handle_control_request(
+        &self,
+        pause_flag: &Arc<AtomicBool>,
+        stop_flag: &Arc<AtomicBool>,
+        status_fn: &dyn Fn() -> SwarmStatus,
+    ) -> Result<Option<String>> {
         // Try to receive a request (non-blocking)
         match self.rep_socket.recv_string(0) {
             Ok(Ok(request)) => {
-                let response = self.process_control_request(&request);
-                self.rep_socket.send(&response, 0)?;
+                let response = match serde_json::from_str::<ControlCommand>(&request) {
+                    Ok(ControlCommand::Pause) => {
+                        pause_flag.store(true, Ordering::SeqCst);
+                        ControlResponse {
+                            success: true,
+                            message: "Swarm paused".into(),
+                            status: None,
+                        }
+                    }
+                    Ok(ControlCommand::Resume) => {
+                        pause_flag.store(false, Ordering::SeqCst);
+                        ControlResponse {
+                            success: true,
+                            message: "Swarm resumed".into(),
+                            status: None,
+                        }
+                    }
+                    Ok(ControlCommand::Stop) => {
+                        stop_flag.store(true, Ordering::SeqCst);
+                        ControlResponse {
+                            success: true,
+                            message: "Swarm stopping".into(),
+                            status: None,
+                        }
+                    }
+                    Ok(ControlCommand::Status) => ControlResponse {
+                        success: true,
+                        message: "Status retrieved".into(),
+                        status: Some(status_fn()),
+                    },
+                    Err(e) => ControlResponse {
+                        success: false,
+                        message: format!("Invalid command: {}", e),
+                        status: None,
+                    },
+                };
+
+                let response_json = serde_json::to_string(&response).unwrap_or_else(|_| {
+                    r#"{"success":false,"message":"Serialization error"}"#.to_string()
+                });
+                self.rep_socket.send(&response_json, 0)?;
                 Ok(Some(request))
             }
             Ok(Err(_)) => {
@@ -269,31 +352,6 @@ impl EventPublisher {
         }
     }
 
-    /// Process a control command request
-    fn process_control_request(&self, request: &str) -> String {
-        match request.trim() {
-            "pause" => {
-                // TODO: This should set a pause flag that the swarm loop checks
-                "paused".to_string()
-            }
-            "resume" => {
-                // TODO: This should clear the pause flag
-                "resumed".to_string()
-            }
-            "stop" => {
-                // TODO: This should set a stop flag
-                "stopping".to_string()
-            }
-            "status" => {
-                // TODO: Return current swarm status
-                "running".to_string()
-            }
-            _ => {
-                format!("unknown command: {}", request)
-            }
-        }
-    }
-
     /// Clean up discovery files on shutdown
     pub fn cleanup(&self) {
         let _ = std::fs::remove_file(self.session_dir.join("zmq-pub.addr"));
@@ -301,7 +359,6 @@ impl EventPublisher {
     }
 }
 
-#[cfg(feature = "zmq")]
 #[cfg(feature = "zmq")]
 impl Drop for EventPublisher {
     fn drop(&mut self) {

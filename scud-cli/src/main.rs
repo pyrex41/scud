@@ -1305,7 +1305,7 @@ async fn main() -> Result<()> {
             no_publish_events,
             None, // pause_flag
             None, // stop_flag
-        ),
+        ).await,
         Commands::Watch {
             session,
             tag,

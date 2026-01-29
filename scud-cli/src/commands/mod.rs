@@ -21,6 +21,7 @@ pub mod stats;
 pub mod tags;
 pub mod view;
 pub mod warmup;
+pub mod watch;
 pub mod waves;
 
 // Task assignment commands
