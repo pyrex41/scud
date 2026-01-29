@@ -270,15 +270,14 @@ pub fn run_beads_loop(
     println!();
     println!("{}", "Beads Execution Mode".cyan().bold());
     println!("{}", "═".repeat(50));
-    println!(
-        "  {} Continuous ready-task polling",
-        "Mode:".dimmed()
-    );
-    println!(
-        "  {} {}",
-        "Event log:".dimmed(),
-        event_writer.session_file().display().to_string().dimmed()
-    );
+    println!("  {} Continuous ready-task polling", "Mode:".dimmed());
+    if let Some(session_file) = event_writer.session_file() {
+        println!(
+            "  {} {}",
+            "Event log:".dimmed(),
+            session_file.display().to_string().dimmed()
+        );
+    }
     println!(
         "  {} {}",
         "Max concurrent:".dimmed(),
@@ -329,10 +328,7 @@ pub fn run_beads_loop(
             } else {
                 // No tasks ready and none in progress - might be blocked
                 println!();
-                println!(
-                    "{}",
-                    "No ready tasks and none in progress.".yellow()
-                );
+                println!("{}", "No ready tasks and none in progress.".yellow());
                 println!(
                     "  {} {} remaining task(s) may be blocked.",
                     "!".yellow(),
@@ -391,7 +387,8 @@ pub fn run_beads_loop(
                     tasks_failed += 1;
 
                     // Log failure event
-                    if let Err(log_err) = event_writer.log_completed(&ready_task.task.id, false, 0) {
+                    if let Err(log_err) = event_writer.log_completed(&ready_task.task.id, false, 0)
+                    {
                         eprintln!("Warning: Failed to log completion event: {}", log_err);
                     }
 
@@ -455,7 +452,9 @@ pub fn run_beads_loop(
                             if potential_unblocked.status == TaskStatus::Pending
                                 && potential_unblocked.dependencies.contains(&task_id)
                             {
-                                if let Err(e) = event_writer.log_unblocked(&potential_unblocked.id, &task_id) {
+                                if let Err(e) =
+                                    event_writer.log_unblocked(&potential_unblocked.id, &task_id)
+                                {
                                     eprintln!("Warning: Failed to log unblock: {}", e);
                                 }
                             }
@@ -498,7 +497,11 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_task(id: &str, status: TaskStatus, deps: Vec<&str>) -> Task {
-        let mut task = Task::new(id.to_string(), format!("Task {}", id), "Description".to_string());
+        let mut task = Task::new(
+            id.to_string(),
+            format!("Task {}", id),
+            "Description".to_string(),
+        );
         task.status = status;
         task.dependencies = deps.into_iter().map(String::from).collect();
         task
@@ -514,8 +517,12 @@ mod tests {
     #[test]
     fn test_get_ready_tasks_no_deps() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::Pending, vec![]));
-        phase.tasks.push(create_test_task("2", TaskStatus::Pending, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::Pending, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("2", TaskStatus::Pending, vec![]));
 
         let mut phases = HashMap::new();
         phases.insert("test".to_string(), phase);
@@ -527,8 +534,12 @@ mod tests {
     #[test]
     fn test_get_ready_tasks_with_deps_met() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::Done, vec![]));
-        phase.tasks.push(create_test_task("2", TaskStatus::Pending, vec!["1"]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::Done, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("2", TaskStatus::Pending, vec!["1"]));
 
         let mut phases = HashMap::new();
         phases.insert("test".to_string(), phase);
@@ -541,8 +552,12 @@ mod tests {
     #[test]
     fn test_get_ready_tasks_with_deps_not_met() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::InProgress, vec![]));
-        phase.tasks.push(create_test_task("2", TaskStatus::Pending, vec!["1"]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::InProgress, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("2", TaskStatus::Pending, vec!["1"]));
 
         let mut phases = HashMap::new();
         phases.insert("test".to_string(), phase);
@@ -600,10 +615,18 @@ mod tests {
     #[test]
     fn test_count_in_progress() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::InProgress, vec![]));
-        phase.tasks.push(create_test_task("2", TaskStatus::InProgress, vec![]));
-        phase.tasks.push(create_test_task("3", TaskStatus::Pending, vec![]));
-        phase.tasks.push(create_test_task("4", TaskStatus::Done, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::InProgress, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("2", TaskStatus::InProgress, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("3", TaskStatus::Pending, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("4", TaskStatus::Done, vec![]));
 
         let mut phases = HashMap::new();
         phases.insert("test".to_string(), phase);
@@ -614,10 +637,18 @@ mod tests {
     #[test]
     fn test_count_remaining() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::InProgress, vec![]));
-        phase.tasks.push(create_test_task("2", TaskStatus::Pending, vec![]));
-        phase.tasks.push(create_test_task("3", TaskStatus::Done, vec![]));
-        phase.tasks.push(create_test_task("4", TaskStatus::Failed, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::InProgress, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("2", TaskStatus::Pending, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("3", TaskStatus::Done, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("4", TaskStatus::Failed, vec![]));
 
         let mut phases = HashMap::new();
         phases.insert("test".to_string(), phase);
@@ -628,7 +659,9 @@ mod tests {
     #[test]
     fn test_claim_task_pending() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::Pending, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::Pending, vec![]));
 
         let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
 
@@ -638,13 +671,18 @@ mod tests {
 
         // Verify the task is now in-progress
         let reloaded = storage.load_group("test").unwrap();
-        assert_eq!(reloaded.get_task("1").unwrap().status, TaskStatus::InProgress);
+        assert_eq!(
+            reloaded.get_task("1").unwrap().status,
+            TaskStatus::InProgress
+        );
     }
 
     #[test]
     fn test_claim_task_already_in_progress() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::InProgress, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::InProgress, vec![]));
 
         let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
 
@@ -656,7 +694,9 @@ mod tests {
     #[test]
     fn test_claim_task_nonexistent() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::Pending, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::Pending, vec![]));
 
         let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
 
@@ -668,7 +708,9 @@ mod tests {
     #[test]
     fn test_claim_task_already_done() {
         let mut phase = Phase::new("test".to_string());
-        phase.tasks.push(create_test_task("1", TaskStatus::Done, vec![]));
+        phase
+            .tasks
+            .push(create_test_task("1", TaskStatus::Done, vec![]));
 
         let (_temp_dir, storage) = setup_storage_with_phase(&phase, "test");
 

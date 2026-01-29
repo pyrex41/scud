@@ -9,6 +9,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "zmq")]
 use super::publisher::EventPublisher;
 use crate::db::Database;
 
@@ -182,6 +183,7 @@ pub struct EventWriter {
     zmq_publisher: Option<super::publisher::EventPublisher>,
     /// Flag to indicate if ZMQ is enabled (for when zmq feature is disabled)
     #[cfg(not(feature = "zmq"))]
+    #[allow(dead_code)]
     zmq_enabled: bool,
 }
 
@@ -249,14 +251,9 @@ impl EventWriter {
         self.db.as_ref().map(|db| db.path().to_path_buf())
     }
 
-    /// Set the ZMQ publisher socket
-    #[cfg(feature = "zmq")]
-    pub fn set_zmq_publisher(&mut self, publisher: zmq::Socket) {
-        self.zmq_publisher = Some(publisher);
-    }
-
     /// Get the ZMQ publisher for control command handling
-    pub fn zmq_publisher(&self) -> Option<&EventPublisher> {
+    #[cfg(feature = "zmq")]
+    pub fn zmq_publisher(&self) -> Option<&super::publisher::EventPublisher> {
         self.zmq_publisher.as_ref()
     }
 
@@ -272,6 +269,7 @@ impl EventWriter {
 
     /// No-op ZMQ publish when zmq feature is disabled
     #[cfg(not(feature = "zmq"))]
+    #[allow(dead_code)]
     fn zmq_publish(&self, _event: super::publisher::ZmqEvent) {
         // ZMQ not available
     }
@@ -509,10 +507,17 @@ impl EventWriter {
     }
 
     /// Publish a ZMQ event directly (for swarm lifecycle events)
+    #[cfg(feature = "zmq")]
     pub fn publish_event(&self, event: &super::publisher::ZmqEvent) -> Result<()> {
         if let Some(ref publisher) = self.zmq_publisher {
             publisher.publish(event)?;
         }
+        Ok(())
+    }
+
+    /// No-op publish_event when zmq feature is disabled
+    #[cfg(not(feature = "zmq"))]
+    pub fn publish_event(&self, _event: &super::publisher::ZmqEvent) -> Result<()> {
         Ok(())
     }
 }

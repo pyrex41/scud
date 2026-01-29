@@ -40,8 +40,14 @@ pub fn insert_transcript(
         let (model, input_tokens, output_tokens) = match &msg.content {
             MessageContent::Structured(s) => (
                 s.model.clone(),
-                s.usage.as_ref().and_then(|u| u.input_tokens).map(|t| t as i64),
-                s.usage.as_ref().and_then(|u| u.output_tokens).map(|t| t as i64),
+                s.usage
+                    .as_ref()
+                    .and_then(|u| u.input_tokens)
+                    .map(|t| t as i64),
+                s.usage
+                    .as_ref()
+                    .and_then(|u| u.output_tokens)
+                    .map(|t| t as i64),
             ),
             _ => (None, None, None),
         };
@@ -110,10 +116,7 @@ pub fn insert_transcript(
     Ok(())
 }
 
-pub fn search_transcripts(
-    conn: &Connection,
-    query: &str,
-) -> Result<Vec<TranscriptSearchResult>> {
+pub fn search_transcripts(conn: &Connection, query: &str) -> Result<Vec<TranscriptSearchResult>> {
     let mut stmt = conn.prepare(
         "SELECT tm.claude_session_id, tm.task_id, tm.timestamp, tm.role,
                 substr(tm.content, 1, 200) as content_preview

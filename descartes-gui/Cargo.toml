@@ -39,6 +39,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
 
+# ZeroMQ for swarm connection
+zeromq = "0.4"
+
 # System (for signal handling)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

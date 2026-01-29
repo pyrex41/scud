@@ -82,6 +82,12 @@ pub mod waves;
 /// - Atomic read-modify-write operations
 pub mod storage;
 
+/// Event publishing system using ZMQ.
+///
+/// Provides ZMQ-based event publishing for task management events.
+/// Supports PUB socket for broadcasting events and REP socket for queries.
+pub mod publisher;
+
 // Re-export commonly used types at the crate root for ergonomic API
 pub use models::{IdFormat, Phase, PhaseStats, Priority, Task, TaskStatus};
 

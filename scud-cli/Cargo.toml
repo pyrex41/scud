@@ -41,6 +41,10 @@ uuid = { version = "1", features = ["v4"] }  # UUID generation for task IDs
 dotenvy = "0.15"  # .env file loading
 regex = "1"       # Pattern matching for error parsing
 walkdir = "2.5"   # Directory traversal for extension discovery
+zmq = { version = "0.10", optional = true }  # ZeroMQ for event publishing
+zeromq = "0.4"    # Alternative ZeroMQ crate for client connections
+scud-core = { path = "../scud-core" }  # Core SCUD types and utilities
+tracing = "0.1"   # Logging framework
 
 # TUI dependencies
 ratatui = "0.29"      # Terminal UI framework
@@ -50,6 +54,7 @@ crossterm = "0.28"    # Cross-platform terminal manipulation
 default = []
 real-llm = []        # Enable tests with real LLM API calls
 real-terminal = []   # Enable tests with real terminal sessions (tmux/kitty)
+zmq = ["dep:zmq"]    # Enable ZMQ event publishing
 
 [dev-dependencies]
 tempfile = "3.8"  # Temporary directories for tests

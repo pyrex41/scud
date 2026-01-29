@@ -142,19 +142,11 @@ pub fn run(
             match claude_tasks::sync_phase(phase, &phase_tag) {
                 Ok(sync_path) => {
                     let path_str: String = sync_path.display().to_string();
-                    println!(
-                        "  {} Synced tasks to: {}",
-                        "✓".green(),
-                        path_str.dimmed()
-                    );
+                    println!("  {} Synced tasks to: {}", "✓".green(), path_str.dimmed());
                 }
                 Err(e) => {
                     let err_str: String = e.to_string();
-                    println!(
-                        "  {} Task sync failed: {}",
-                        "!".yellow(),
-                        err_str.dimmed()
-                    );
+                    println!("  {} Task sync failed: {}", "!".yellow(), err_str.dimmed());
                 }
             }
         }
@@ -171,11 +163,7 @@ pub fn run(
             }
             Err(e) => {
                 let err_str: String = e.to_string();
-                println!(
-                    "  {} Task sync failed: {}",
-                    "!".yellow(),
-                    err_str.dimmed()
-                );
+                println!("  {} Task sync failed: {}", "!".yellow(), err_str.dimmed());
             }
         }
     }
@@ -386,7 +374,11 @@ pub fn run_monitor(
                 sessions
             );
             if sessions.is_empty() {
-                let cmd = if swarm_mode { "scud swarm" } else { "scud spawn" };
+                let cmd = if swarm_mode {
+                    "scud swarm"
+                } else {
+                    "scud spawn"
+                };
                 eprintln!(
                     "{} No {} sessions found in: {}",
                     "DEBUG:".yellow(),
@@ -404,7 +396,10 @@ pub fn run_monitor(
             if sessions.len() == 1 {
                 sessions[0].clone()
             } else {
-                println!("{}", format!("Available {} sessions:", mode_label).cyan().bold());
+                println!(
+                    "{}",
+                    format!("Available {} sessions:", mode_label).cyan().bold()
+                );
                 for (i, s) in sessions.iter().enumerate() {
                     println!("  {} {}", format!("[{}]", i + 1).dimmed(), s);
                 }
@@ -475,6 +470,99 @@ pub fn run_sessions(project_root: Option<PathBuf>, verbose: bool) -> Result<()> 
             "{}",
             "Use -v for details, or: scud monitor --session <name>".dimmed()
         );
+    }
+
+    Ok(())
+}
+
+/// Discover all tmux sessions (not just spawn sessions)
+pub fn run_discover_sessions(_project_root: Option<PathBuf>) -> Result<()> {
+    use colored::Colorize;
+
+    // Get all tmux sessions
+    let output = std::process::Command::new("tmux")
+        .args(["list-sessions", "-F", "#{session_name}:#{session_attached}"])
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to list tmux sessions: {}", e))?;
+
+    if !output.status.success() {
+        println!("{}", "No tmux sessions found or tmux not running.".dimmed());
+        return Ok(());
+    }
+
+    let sessions_output = String::from_utf8_lossy(&output.stdout);
+    let sessions: Vec<&str> = sessions_output.lines().collect();
+
+    if sessions.is_empty() {
+        println!("{}", "No tmux sessions found.".dimmed());
+        return Ok(());
+    }
+
+    println!("{}", "Discovered Sessions:".cyan().bold());
+    println!();
+
+    for session_line in sessions {
+        if let Some((session_name, attached)) = session_line.split_once(':') {
+            let attached_indicator = if attached == "1" {
+                "(attached)".green()
+            } else {
+                "(detached)".dimmed()
+            };
+            println!("  {} {}", session_name.cyan(), attached_indicator);
+        }
+    }
+
+    println!();
+    println!(
+        "{}",
+        "Use 'scud attach <session>' to attach to a session.".dimmed()
+    );
+
+    Ok(())
+}
+
+/// Attach to a tmux session
+pub fn run_attach_session(_project_root: Option<PathBuf>, session_name: &str) -> Result<()> {
+    use colored::Colorize;
+
+    // Check if tmux is available
+    terminal::check_tmux_available()?;
+
+    // Check if session exists
+    if !terminal::tmux_session_exists(session_name) {
+        anyhow::bail!(
+            "Session '{}' does not exist. Use 'scud discover' to list available sessions.",
+            session_name
+        );
+    }
+
+    println!("Attaching to session '{}'...", session_name.cyan());
+    terminal::tmux_attach(session_name)?;
+
+    Ok(())
+}
+
+/// Detach from current tmux session
+pub fn run_detach_session(_project_root: Option<PathBuf>) -> Result<()> {
+    use colored::Colorize;
+
+    // Check if we're in a tmux session
+    if std::env::var("TMUX").is_err() {
+        println!("{}", "Not currently in a tmux session.".yellow());
+        return Ok(());
+    }
+
+    // Send detach command to tmux
+    let output = std::process::Command::new("tmux")
+        .args(["detach"])
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to detach: {}", e))?;
+
+    if output.status.success() {
+        println!("{}", "Detached from tmux session.".green());
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to detach: {}", stderr);
     }
 
     Ok(())

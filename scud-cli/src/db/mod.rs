@@ -1,6 +1,7 @@
 //! SQLite database for event logging, transcript storage, and session history.
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -53,5 +54,17 @@ impl Database {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Get events for a session with optional limits
+    pub fn get_events_for_session_limited(
+        &self,
+        session_id: &str,
+        limit: Option<usize>,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<Vec<crate::commands::swarm::events::AgentEvent>> {
+        let guard = self.connection()?;
+        let conn = guard.as_ref().unwrap();
+        events::get_events_for_session_limited(conn, session_id, limit, since)
     }
 }
