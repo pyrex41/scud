@@ -640,6 +640,18 @@ enum Commands {
         verbose: bool,
     },
 
+    /// Discover all tmux sessions
+    Discover,
+
+    /// Attach to a tmux session
+    Attach {
+        /// Session name to attach to
+        session: String,
+    },
+
+    /// Detach from current tmux session
+    Detach,
+
     /// Restart a task - reset status to pending and spawn in tmux
     Restart {
         /// Task ID to restart
@@ -758,6 +770,29 @@ enum Commands {
         /// than this with no tmux window will be reset to pending.
         #[arg(long, default_value = "30")]
         stale_timeout: u64,
+
+        /// Disable ZMQ event publishing (no real-time monitoring)
+        #[arg(long, default_value = "false")]
+        no_publish_events: bool,
+    },
+
+    /// Watch running swarm via ZMQ events
+    Watch {
+        /// Session ID to watch (discovers automatically if not specified)
+        #[arg(long)]
+        session: Option<String>,
+
+        /// Tag to filter sessions
+        #[arg(long)]
+        tag: Option<String>,
+
+        /// Project root directory
+        #[arg(long)]
+        project_root: Option<PathBuf>,
+
+        /// Output format: text, json
+        #[arg(long, default_value = "text")]
+        format: String,
     },
 
     /// View swarm session retrospective (event timeline and analysis)
@@ -1204,6 +1239,9 @@ async fn main() -> Result<()> {
             commands::spawn::run_monitor(cli.project, session, swarm)
         }
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
+        Commands::Discover => commands::spawn::run_discover_sessions(cli.project),
+        Commands::Attach { session } => commands::spawn::run_attach_session(cli.project, &session),
+        Commands::Detach => commands::spawn::run_detach_session(cli.project),
         Commands::Restart {
             task_id,
             tag,
@@ -1245,6 +1283,7 @@ async fn main() -> Result<()> {
             no_worktree,
             salvo_dir,
             stale_timeout,
+            no_publish_events,
         } => commands::swarm::run(
             cli.project,
             tag.as_deref(),
@@ -1263,7 +1302,28 @@ async fn main() -> Result<()> {
             no_worktree,
             salvo_dir,
             Some(stale_timeout),
+            no_publish_events,
+            None, // pause_flag
+            None, // stop_flag
         ),
+        Commands::Watch {
+            session,
+            tag,
+            project_root,
+            format,
+        } => {
+            let args = commands::watch::WatchArgs {
+                session,
+                tag,
+                project_root,
+                format,
+            };
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(commands::watch::run(args))
+        }
         Commands::Retro { session, json } => {
             let project_root = cli
                 .project

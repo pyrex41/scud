@@ -31,6 +31,7 @@
 
 pub mod beads;
 pub mod events;
+pub mod publisher;
 pub mod session;
 pub mod transcript;
 
@@ -44,6 +45,8 @@ use anyhow::Result;
 use colored::Colorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -68,7 +71,7 @@ pub use crate::SwarmMode;
 
 /// Main entry point for the swarm command
 #[allow(clippy::too_many_arguments)]
-pub fn run(
+pub async fn run(
     project_root: Option<PathBuf>,
     tag: Option<&str>,
     round_size: usize,
@@ -86,6 +89,9 @@ pub fn run(
     no_worktree: bool,
     salvo_dir: Option<PathBuf>,
     stale_timeout_minutes: Option<u64>,
+    no_publish_events: bool,
+    pause_flag: Option<Arc<AtomicBool>>,
+    stop_flag: Option<Arc<AtomicBool>>,
 ) -> Result<()> {
     let effective_tag = tag.unwrap_or("default");
 
@@ -277,6 +283,35 @@ pub fn run(
     // Create EventWriter for SQLite event logging (Phase 1b)
     let event_writer = events::EventWriter::new(&working_dir, &session_name).ok();
 
+    // Start heartbeat background task for connection liveness detection
+    let heartbeat_handle = if event_writer.is_some() {
+        let working_dir = working_dir.clone();
+        let session_name = session_name.clone();
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = Arc::clone(&stop_flag);
+
+        let handle = thread::spawn(move || {
+            let writer = match events::EventWriter::new(&working_dir, &session_name) {
+                Ok(w) => w,
+                Err(e) => {
+                    eprintln!("Failed to create heartbeat EventWriter: {}", e);
+                    return;
+                }
+            };
+
+            while !stop_flag_clone.load(Ordering::Relaxed) {
+                if let Err(e) = writer.log_heartbeat() {
+                    eprintln!("Heartbeat logging error: {}", e);
+                }
+                thread::sleep(Duration::from_secs(5));
+            }
+        });
+
+        Some((handle, stop_flag))
+    } else {
+        None
+    };
+
     // Detect orphan in-progress tasks (tasks with no running tmux window)
     // Only applicable in tmux mode
     let all_phases = storage.load_tasks()?;
@@ -401,15 +436,43 @@ pub fn run(
         println!(
             "  Duration:        {}",
             format!("{:.1}s", result.total_duration.as_secs_f64()).cyan()
-        );
+         );
 
-        return Ok(());
-    }
+         // Stop heartbeat background task
+         if let Some((handle, stop_flag)) = heartbeat_handle {
+             stop_flag.store(true, Ordering::Relaxed);
+             let _ = handle.join();
+         }
+
+         return Ok(());
+     }
 
     // === WAVE MODE: Batch execution ===
     // Main loop: execute waves until all tasks done
     let mut wave_number = 1;
     loop {
+        // Check pause/stop flags from control commands
+        if let Some(ref pause_flag) = pause_flag {
+            while pause_flag.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(100));
+                if let Some(ref stop_flag) = stop_flag {
+                    if stop_flag.load(Ordering::SeqCst) {
+                        println!();
+                        println!("{}", "Swarm stopped by control command".yellow());
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(ref stop_flag) = stop_flag {
+            if stop_flag.load(Ordering::SeqCst) {
+                println!();
+                println!("{}", "Swarm stopped by control command".yellow());
+                break;
+            }
+        }
+
         // Load fresh task state (must reload each iteration to see completed tasks)
         let all_phases = storage.load_tasks()?;
 
@@ -775,6 +838,14 @@ pub fn run(
                 eprintln!("Warning: Failed to sync salvo back to main: {}", e);
                 eprintln!("Run manually: scud salvo sync {}", tag_name);
             }
+        }
+    }
+
+    // Stop heartbeat background task
+    if let Some((handle, stop_flag)) = heartbeat_handle {
+        stop_flag.store(true, Ordering::Relaxed);
+        if let Err(e) = handle.join() {
+            eprintln!("Heartbeat thread join error: {:?}", e);
         }
     }
 
