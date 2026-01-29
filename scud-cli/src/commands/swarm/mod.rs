@@ -277,11 +277,34 @@ pub async fn run(
         round_size,
     );
 
+    // Publish swarm started event
+    if let Some(ref writer) = &event_writer {
+        let _ = writer.publish_event(&publisher::ZmqEvent::SwarmStarted {
+            session_id: session_name.clone(),
+            tag: phase_tag.clone(),
+            total_waves: 0, // Will be updated as waves are computed
+        });
+        let _ = writer.log_swarm_started(&phase_tag, 0);
+    }
+
     // Compute stale timeout duration
     let stale_timeout = stale_timeout_minutes.map(|m| Duration::from_secs(m * 60));
 
     // Create EventWriter for SQLite event logging (Phase 1b)
-    let event_writer = events::EventWriter::new(&working_dir, &session_name).ok();
+    // Include ZMQ publisher if not disabled
+    let event_writer = if !no_publish_events {
+        // Use tokio runtime to create EventWriter with ZMQ
+        let handle = tokio::runtime::Handle::current();
+        handle.block_on(async {
+            events::EventWriter::new_with_zmq(
+                &working_dir,
+                &session_name,
+                true,
+            ).await
+        }).ok()
+    } else {
+        events::EventWriter::new(&working_dir, &session_name).ok()
+    };
 
     // Start heartbeat background task for connection liveness detection
     let heartbeat_handle = if event_writer.is_some() {
@@ -308,6 +331,38 @@ pub async fn run(
         });
 
         Some((handle, stop_flag))
+    } else {
+        None
+    };
+
+    // Start REP socket handler for control commands
+    let control_handle = if let Some(ref writer) = &event_writer {
+        if let Some(zmq_publisher) = writer.zmq_publisher() {
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            let stop_flag_clone = Arc::clone(&stop_flag);
+
+            let handle = thread::spawn(move || {
+                while !stop_flag_clone.load(Ordering::Relaxed) {
+                    match zmq_publisher.handle_control_request() {
+                        Ok(Some(request)) => {
+                            tracing::info!("Processed control request: {}", request);
+                        }
+                        Ok(None) => {
+                            // No request, sleep briefly
+                            thread::sleep(Duration::from_millis(100));
+                        }
+                        Err(e) => {
+                            tracing::warn!("Control request error: {}", e);
+                            thread::sleep(Duration::from_millis(1000));
+                        }
+                    }
+                }
+            });
+
+            Some((handle, stop_flag))
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -482,6 +537,15 @@ pub async fn run(
         if waves.is_empty() {
             println!();
             println!("{}", "All tasks complete!".green().bold());
+
+            // Publish swarm completed event
+            if let Some(ref writer) = &event_writer {
+                let _ = writer.publish_event(&publisher::ZmqEvent::SwarmCompleted {
+                    success: true,
+                });
+                let _ = writer.log_swarm_completed(true);
+            }
+
             break;
         }
 
@@ -797,6 +861,14 @@ pub async fn run(
         session::save_session(project_root.as_ref(), &swarm_session)?;
 
         wave_number += 1;
+    }
+
+    // Publish swarm completed event (successful completion)
+    if let Some(ref writer) = &event_writer {
+        let _ = writer.publish_event(&publisher::ZmqEvent::SwarmCompleted {
+            success: true,
+        });
+        let _ = writer.log_swarm_completed(true);
     }
 
     // Final summary

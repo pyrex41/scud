@@ -9,7 +9,11 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::publisher::EventPublisher;
 use crate::db::Database;
+
+#[cfg(feature = "zmq")]
+use zmq;
 
 /// Event kinds that can be logged
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +92,9 @@ pub enum EventKind {
         success: bool,
     },
 
+    // Heartbeat events (for connection liveness detection)
+    Heartbeat,
+
     // Custom events
     Custom {
         name: String,
@@ -138,7 +145,12 @@ impl AgentEvent {
     }
 
     /// Create a tool call event
-    pub fn tool_call(session_id: &str, task_id: &str, tool: &str, input_summary: Option<&str>) -> Self {
+    pub fn tool_call(
+        session_id: &str,
+        task_id: &str,
+        tool: &str,
+        input_summary: Option<&str>,
+    ) -> Self {
         Self::new(
             session_id,
             task_id,
@@ -164,7 +176,13 @@ impl AgentEvent {
 /// Writer for appending events to SQLite database
 pub struct EventWriter {
     session_id: String,
-    db: Database,
+    db: Option<Database>,
+    /// ZMQ publisher for real-time event streaming
+    #[cfg(feature = "zmq")]
+    zmq_publisher: Option<super::publisher::EventPublisher>,
+    /// Flag to indicate if ZMQ is enabled (for when zmq feature is disabled)
+    #[cfg(not(feature = "zmq"))]
+    zmq_enabled: bool,
 }
 
 impl EventWriter {
@@ -178,7 +196,46 @@ impl EventWriter {
 
         Ok(Self {
             session_id: session_id.to_string(),
-            db,
+            db: Some(db),
+            #[cfg(feature = "zmq")]
+            zmq_publisher: None,
+            #[cfg(not(feature = "zmq"))]
+            zmq_enabled: false,
+        })
+    }
+
+    /// Create EventWriter with optional ZMQ publishing
+    pub fn new_with_zmq(project_root: &Path, session_id: &str, enable_zmq: bool) -> Result<Self> {
+        // Ensure .scud directory exists
+        let scud_dir = project_root.join(".scud");
+        std::fs::create_dir_all(&scud_dir)?;
+
+        let db = Database::new(project_root);
+
+        #[cfg(feature = "zmq")]
+        let zmq_publisher = if enable_zmq {
+            let session_dir = project_root.join(".scud/swarm").join(session_id);
+            match super::publisher::EventPublisher::new(&session_dir) {
+                Ok(pub_) => {
+                    tracing::info!("ZMQ event publishing enabled for session {}", session_id);
+                    Some(pub_)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to create ZMQ publisher: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok(Self {
+            session_id: session_id.to_string(),
+            db: Some(db),
+            #[cfg(feature = "zmq")]
+            zmq_publisher,
+            #[cfg(not(feature = "zmq"))]
+            zmq_enabled: enable_zmq,
         })
     }
 
@@ -188,16 +245,135 @@ impl EventWriter {
     }
 
     /// Get the path to the database file (for display purposes)
-    pub fn session_file(&self) -> PathBuf {
-        self.db.path().to_path_buf()
+    pub fn session_file(&self) -> Option<PathBuf> {
+        self.db.as_ref().map(|db| db.path().to_path_buf())
+    }
+
+    /// Set the ZMQ publisher socket
+    #[cfg(feature = "zmq")]
+    pub fn set_zmq_publisher(&mut self, publisher: zmq::Socket) {
+        self.zmq_publisher = Some(publisher);
+    }
+
+    /// Get the ZMQ publisher for control command handling
+    pub fn zmq_publisher(&self) -> Option<&EventPublisher> {
+        self.zmq_publisher.as_ref()
+    }
+
+    /// Publish event via ZMQ (non-blocking, best-effort)
+    #[cfg(feature = "zmq")]
+    fn zmq_publish(&self, event: super::publisher::ZmqEvent) {
+        if let Some(ref publisher) = self.zmq_publisher {
+            if let Err(e) = publisher.publish(&event) {
+                tracing::debug!("ZMQ publish error (non-fatal): {}", e);
+            }
+        }
+    }
+
+    /// No-op ZMQ publish when zmq feature is disabled
+    #[cfg(not(feature = "zmq"))]
+    fn zmq_publish(&self, _event: super::publisher::ZmqEvent) {
+        // ZMQ not available
     }
 
     /// Write an event to the database
     pub fn write(&self, event: &AgentEvent) -> Result<()> {
-        let guard = self.db.connection()?;
-        let conn = guard.as_ref().unwrap();
-        crate::db::events::insert_event(conn, event)?;
+        if let Some(ref db) = self.db {
+            let guard = db.connection()?;
+            let conn = guard.as_ref().unwrap();
+            crate::db::events::insert_event(conn, event)?;
+        }
+
+        // Also publish via ZMQ if configured
+        self.zmq_publish_event(event);
+
         Ok(())
+    }
+
+    /// Convert AgentEvent to ZmqEvent and publish
+    #[cfg(feature = "zmq")]
+    fn zmq_publish_event(&self, event: &AgentEvent) {
+        use super::publisher::ZmqEvent;
+
+        let zmq_event = match &event.event {
+            EventKind::Spawned => Some(ZmqEvent::TaskSpawned {
+                task_id: event.task_id.clone(),
+            }),
+            EventKind::WaveStarted {
+                wave_number,
+                task_count,
+            } => Some(ZmqEvent::WaveStarted {
+                wave: *wave_number,
+                tasks: vec![], // TODO: could populate if needed
+                task_count: *task_count,
+            }),
+            EventKind::WaveCompleted {
+                wave_number,
+                duration_ms,
+            } => Some(ZmqEvent::WaveCompleted {
+                wave: *wave_number,
+                duration_ms: Some(*duration_ms),
+            }),
+            EventKind::ValidationPassed => Some(ZmqEvent::ValidationPassed),
+            EventKind::ValidationFailed { failures } => Some(ZmqEvent::ValidationFailed {
+                failures: failures.clone(),
+            }),
+            EventKind::ToolCall {
+                tool,
+                input_summary,
+                ..
+            } => Some(ZmqEvent::ToolCall {
+                task_id: event.task_id.clone(),
+                tool: tool.clone(),
+                input_summary: input_summary.clone(),
+            }),
+            EventKind::ToolResult {
+                tool,
+                success,
+                duration_ms,
+                ..
+            } => Some(ZmqEvent::ToolResult {
+                task_id: event.task_id.clone(),
+                tool: tool.clone(),
+                success: *success,
+                duration_ms: *duration_ms,
+            }),
+            EventKind::FileRead { path, .. } => Some(ZmqEvent::FileRead {
+                task_id: event.task_id.clone(),
+                path: path.clone(),
+            }),
+            EventKind::FileWrite {
+                path,
+                lines_changed,
+                ..
+            } => Some(ZmqEvent::FileWrite {
+                task_id: event.task_id.clone(),
+                path: path.clone(),
+                lines_changed: *lines_changed,
+            }),
+            EventKind::Completed {
+                success,
+                duration_ms,
+            } => Some(ZmqEvent::TaskCompleted {
+                task_id: event.task_id.clone(),
+                success: *success,
+                duration_ms: Some(*duration_ms),
+            }),
+            EventKind::Heartbeat => Some(ZmqEvent::Heartbeat {
+                timestamp: event.timestamp.to_rfc3339(),
+            }),
+            _ => None, // Other events not published via ZMQ for now
+        };
+
+        if let Some(zmq_event) = zmq_event {
+            self.zmq_publish(zmq_event);
+        }
+    }
+
+    /// No-op ZMQ publish when zmq feature is disabled
+    #[cfg(not(feature = "zmq"))]
+    fn zmq_publish_event(&self, _event: &AgentEvent) {
+        // ZMQ not available
     }
 
     /// Write an event (SQLite stores all events in one table, no separate task log needed)
@@ -222,7 +398,11 @@ impl EventWriter {
 
     /// Log an unblocked event
     pub fn log_unblocked(&self, task_id: &str, by_task_id: &str) -> Result<()> {
-        self.write(&AgentEvent::unblocked(&self.session_id, task_id, by_task_id))
+        self.write(&AgentEvent::unblocked(
+            &self.session_id,
+            task_id,
+            by_task_id,
+        ))
     }
 
     /// Log a wave started event
@@ -288,6 +468,52 @@ impl EventWriter {
             "repair",
             EventKind::RepairCompleted { attempt, success },
         ))
+    }
+
+    /// Log a heartbeat event
+    pub fn log_heartbeat(&self) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            "heartbeat",
+            EventKind::Heartbeat,
+        ))
+    }
+
+    /// Log a swarm started event
+    pub fn log_swarm_started(&self, tag: &str, total_waves: usize) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            "swarm",
+            EventKind::Custom {
+                name: "swarm_started".to_string(),
+                data: Some(serde_json::json!({
+                    "tag": tag,
+                    "total_waves": total_waves
+                })),
+            },
+        ))
+    }
+
+    /// Log a swarm completed event
+    pub fn log_swarm_completed(&self, success: bool) -> Result<()> {
+        self.write(&AgentEvent::new(
+            &self.session_id,
+            "swarm",
+            EventKind::Custom {
+                name: "swarm_completed".to_string(),
+                data: Some(serde_json::json!({
+                    "success": success
+                })),
+            },
+        ))
+    }
+
+    /// Publish a ZMQ event directly (for swarm lifecycle events)
+    pub fn publish_event(&self, event: &super::publisher::ZmqEvent) -> Result<()> {
+        if let Some(ref publisher) = self.zmq_publisher {
+            publisher.publish(event)?;
+        }
+        Ok(())
     }
 }
 
@@ -377,7 +603,10 @@ impl RetrospectiveTimeline {
                 EventKind::Spawned => {
                     task.spawned_at = Some(event.timestamp);
                 }
-                EventKind::Completed { success, duration_ms } => {
+                EventKind::Completed {
+                    success,
+                    duration_ms,
+                } => {
                     task.completed_at = Some(event.timestamp);
                     task.success = Some(*success);
                     task.duration_ms = Some(*duration_ms);
@@ -507,11 +736,7 @@ pub fn print_retro(project_root: &Path, session_id: Option<&str>) -> Result<()> 
     println!("{}", "═".repeat(60).blue());
     println!();
 
-    println!(
-        "  {} {}",
-        "Session:".dimmed(),
-        timeline.session_id.cyan()
-    );
+    println!("  {} {}", "Session:".dimmed(), timeline.session_id.cyan());
 
     if let (Some(start), Some(end)) = (timeline.started_at, timeline.completed_at) {
         let duration = end.signed_duration_since(start);
@@ -558,10 +783,7 @@ pub fn print_retro(project_root: &Path, session_id: Option<&str>) -> Result<()> 
         }
 
         if !task.tools_used.is_empty() {
-            println!(
-                "    Tools: {}",
-                task.tools_used.join(", ").dimmed()
-            );
+            println!("    Tools: {}", task.tools_used.join(", ").dimmed());
         }
 
         if !task.files_written.is_empty() {
@@ -651,7 +873,11 @@ mod tests {
         assert_eq!(timeline.tasks.len(), 3); // task:1, task:2, task:3
         assert_eq!(timeline.total_events, 6);
 
-        let task1 = timeline.tasks.iter().find(|t| t.task_id == "task:1").unwrap();
+        let task1 = timeline
+            .tasks
+            .iter()
+            .find(|t| t.task_id == "task:1")
+            .unwrap();
         assert_eq!(task1.success, Some(true));
         assert_eq!(task1.duration_ms, Some(5000));
         assert!(task1.tools_used.contains(&"Read".to_string()));
