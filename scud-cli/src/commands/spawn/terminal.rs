@@ -648,6 +648,52 @@ pub fn tmux_window_exists(session_name: &str, window_name: &str) -> bool {
     }
 }
 
+/// Check if a tmux pane shows a shell prompt (indicating process completed/crashed)
+pub fn tmux_pane_shows_prompt(session_name: &str, window_name: &str) -> bool {
+    let window_target = format!("{}:{}", session_name, window_name);
+
+    // Capture last line of pane content
+    let output = std::process::Command::new("tmux")
+        .args(["capture-pane", "-t", &window_target, "-p", "-S", "-1"])
+        .output();
+
+    let Ok(output) = output else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    let last_line = String::from_utf8_lossy(&output.stdout);
+    let last_line = last_line.trim();
+
+    // Common shell prompt patterns
+    // These indicate the agent process has exited and we're back at shell
+    let prompt_patterns = [
+        "$ ",           // bash default
+        "% ",           // zsh default
+        "> ",           // fish, some custom prompts
+        "# ",           // root shell
+        "❯ ",           // starship, some modern prompts
+        "→ ",           // some custom prompts
+    ];
+
+    // Check if line ends with a prompt pattern
+    for pattern in prompt_patterns {
+        if last_line.ends_with(pattern) || last_line.ends_with(pattern.trim()) {
+            return true;
+        }
+    }
+
+    // Also check for common prompt formats: user@host, (env), etc followed by prompt
+    if last_line.contains('@') && (last_line.ends_with('$') || last_line.ends_with('%') || last_line.ends_with('>')) {
+        return true;
+    }
+
+    false
+}
+
 /// Kill a specific tmux window
 pub fn kill_tmux_window(session_name: &str, window_name: &str) -> Result<()> {
     let target = format!("{}:{}", session_name, window_name);

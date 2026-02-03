@@ -362,6 +362,97 @@ If you cannot fix it:
     )
 }
 
+/// Generate a prompt for batch repair agent handling multiple tasks
+pub fn generate_batch_repair_prompt(
+    tasks: &[(String, String, Vec<String>)], // (task_id, title, files_changed)
+    failed_command: &str,
+    error_output: &str,
+    error_locations: &[(String, Option<u32>)], // (file, line)
+) -> String {
+    let tasks_str = tasks
+        .iter()
+        .map(|(id, title, files)| {
+            format!(
+                "- {} | {}\n  Files: {}",
+                id,
+                title,
+                files.join(", ")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let error_locations_str = error_locations
+        .iter()
+        .take(20) // Limit to avoid prompt explosion
+        .map(|(file, line)| {
+            match line {
+                Some(l) => format!("  {}:{}", file, l),
+                None => format!("  {}", file),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"You are a batch repair agent fixing validation failures for multiple SCUD tasks.
+
+## Validation Failure
+The following validation command failed:
+{failed_command}
+
+Error output:
+{error_output}
+
+## Error Locations
+{error_locations}
+
+## Responsible Tasks
+Based on git blame analysis, these tasks may be responsible:
+{tasks}
+
+## Your Mission
+1. Analyze the error output to understand ALL the issues
+2. Read the relevant files and understand what each task was trying to do
+3. Fix issues systematically - some errors may be related
+4. Run the validation command after each fix to check progress: {failed_command}
+
+## Process
+For each issue:
+1. Identify which task introduced it
+2. Read the task details: scud show <task_id>
+3. Fix the issue while preserving intended functionality
+4. Commit: scud commit -m "fix: <task_id> - <description>"
+5. Log: scud log <task_id> "Fixed: <brief description>"
+
+## Important
+- Fix ALL issues before signaling completion
+- Some issues may cascade - fix root causes first
+- If you cannot fix an issue, document why
+- Iterate until validation passes or you're truly blocked
+
+## Completion
+When ALL validation passes:
+  echo "BATCH_REPAIR_COMPLETE: SUCCESS" > .scud/batch-repair-complete
+  echo "FIXED_TASKS: <comma-separated task IDs that were fixed>" >> .scud/batch-repair-complete
+
+If blocked on some tasks:
+  echo "BATCH_REPAIR_COMPLETE: PARTIAL" > .scud/batch-repair-complete
+  echo "FIXED_TASKS: <task IDs fixed>" >> .scud/batch-repair-complete
+  echo "BLOCKED_TASKS: <task IDs blocked>" >> .scud/batch-repair-complete
+  echo "BLOCK_REASON: <explanation>" >> .scud/batch-repair-complete
+
+If completely blocked:
+  echo "BATCH_REPAIR_COMPLETE: BLOCKED" > .scud/batch-repair-complete
+  echo "REASON: <explanation>" >> .scud/batch-repair-complete
+"#,
+        failed_command = failed_command,
+        error_output = error_output,
+        error_locations = error_locations_str,
+        tasks = tasks_str,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

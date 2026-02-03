@@ -336,6 +336,67 @@ During wave execution, the console shows:
 
 ---
 
+## Batch Repair
+
+When backpressure validation fails after a wave, SCUD spawns a single "batch repair"
+agent instead of one agent per failing task. This agent:
+
+- Receives context about ALL responsible tasks at once
+- Can analyze related failures together
+- Iterates internally to fix issues systematically
+- Signals completion via `.scud/batch-repair-complete` marker file
+
+This approach is more efficient than spawning N agents for N failing tasks, since the batch
+repair agent can see the full picture and fix root causes that may affect multiple tasks.
+
+---
+
+## Agent Health Checking
+
+During wave execution, SCUD monitors agent health to prevent tasks from being stuck as `InProgress`:
+
+### Orphan Detection
+
+Every 30 seconds, SCUD checks if each running task's tmux window still exists. If a window
+disappears (agent crashed, killed, or tmux session terminated), the task is marked `Failed`.
+
+### Idle Detection
+
+When an agent has been idle for too long (configurable, default 5 minutes), SCUD checks if
+the tmux pane shows a shell prompt (indicating the agent process has exited). If both
+conditions are true:
+- Agent has been idle beyond the threshold
+- Pane shows a shell prompt (not an active process)
+
+The task is automatically marked `Failed` with an appropriate event emitted.
+
+Configure the idle timeout:
+```bash
+scud swarm --tag myproject --idle-timeout-minutes 10
+```
+
+### Stale Timeout
+
+The optional `--stale-timeout-minutes` flag provides an additional safeguard. Tasks that
+exceed the timeout with no tmux window are reset to `Pending`, allowing them to be
+retried in a subsequent wave.
+
+```bash
+scud swarm --tag myproject --stale-timeout-minutes 30
+```
+
+### How This Prevents Stuck Tasks
+
+Without these health checks, tasks can remain `InProgress` indefinitely when:
+- An agent process crashes but leaves the tmux window open
+- A tmux session is terminated unexpectedly
+- An agent hangs and stops producing output
+
+The combination of orphan detection, idle detection, and stale timeout ensures that
+tasks eventually get marked as `Failed` and can be retried or investigated.
+
+---
+
 ## Quick Start: scud spawn
 
 The simplest way to run parallel agents (without swarm orchestration):

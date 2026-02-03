@@ -90,6 +90,7 @@ pub async fn run(
     no_worktree: bool,
     salvo_dir: Option<PathBuf>,
     stale_timeout_minutes: Option<u64>,
+    idle_timeout_minutes: u64,
     no_publish_events: bool,
     pause_flag: Option<Arc<AtomicBool>>,
     stop_flag: Option<Arc<AtomicBool>>,
@@ -668,6 +669,7 @@ pub async fn run(
                         round_tasks,
                         &session_name,
                         stale_timeout,
+                        idle_timeout_minutes,
                         event_writer.as_ref(),
                     )?;
 
@@ -1489,6 +1491,7 @@ fn wait_for_round_completion(
     tasks: &[TaskInfo],
     session_name: &str,
     stale_timeout: Option<Duration>,
+    idle_timeout_minutes: u64,
     event_writer: Option<&events::EventWriter>,
 ) -> Result<()> {
     use std::collections::HashSet;
@@ -1655,6 +1658,58 @@ fn wait_for_round_completion(
                         last_activity.insert(task_id.clone(), Instant::now());
                     }
                     last_content_hashes.insert(task_id.clone(), hash);
+                }
+            }
+        }
+
+        // Idle timeout failure detection: if agent has been idle AND shows shell prompt
+        let idle_timeout = Duration::from_secs(idle_timeout_minutes * 60);
+        for task_id in &still_running {
+            if completed_tasks.contains(task_id) {
+                continue;
+            }
+
+            // Check if this task has been idle long enough
+            let is_idle_timeout = last_activity
+                .get(task_id)
+                .map(|t| t.elapsed() > idle_timeout)
+                .unwrap_or(false);
+
+            if !is_idle_timeout {
+                continue;
+            }
+
+            // Check if the pane shows a shell prompt (process exited)
+            let window_name = format!("task-{}", task_id);
+            if terminal::tmux_pane_shows_prompt(session_name, &window_name) {
+                print!("\r{}\r", " ".repeat(80));
+                println!(
+                    "    {} {} agent idle with shell prompt, marking failed",
+                    "⚠".yellow(),
+                    task_id.cyan()
+                );
+
+                // Mark as Failed
+                if let Some(tag) = task_tags.get(task_id) {
+                    if let Ok(mut phase) = storage.load_group(tag) {
+                        if let Some(task) = phase.get_task_mut(task_id) {
+                            task.set_status(TaskStatus::Failed);
+                            let _ = storage.update_group(tag, &phase);
+                        }
+                    }
+                }
+                completed_tasks.insert(task_id.clone());
+
+                // Emit failed event
+                if let Some(writer) = event_writer {
+                    let event = events::AgentEvent::new(
+                        writer.session_id(),
+                        task_id,
+                        events::EventKind::Failed {
+                            reason: "agent idle with shell prompt (process crashed)".to_string(),
+                        },
+                    );
+                    let _ = writer.write(&event);
                 }
             }
         }
@@ -2005,94 +2060,136 @@ pub fn run_repair_loop(
         }
     }
 
-    // Attempt repairs on responsible tasks
+    // Collect task info for batch repair
+    let mut task_infos: Vec<(String, String, Vec<String>)> = Vec::new();
+    for task_id in &attribution.responsible_tasks {
+        let (task, _tag) = match find_task_with_tag(storage, task_id, &task_tags) {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let task_files = crate::attribution::get_task_changed_files(
+            working_dir,
+            task_id,
+            wave_state.start_commit.as_deref(),
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
+        task_infos.push((task_id.clone(), task.title.clone(), task_files));
+    }
+
+    // Parse error locations for the prompt
+    let error_locations: Vec<(String, Option<u32>)> =
+        crate::attribution::parse_error_locations(&failed_cmd.stderr, &failed_cmd.stdout);
+
+    // Attempt batch repairs
     for attempt in 1..=max_attempts {
         println!();
         println!(
-            "  {} Repair attempt {}/{}",
+            "  {} Batch repair attempt {}/{}",
             "Repair:".magenta(),
             attempt,
             max_attempts
         );
 
-        let mut all_repaired = true;
+        // Generate batch repair prompt
+        let prompt = agent::generate_batch_repair_prompt(
+            &task_infos,
+            &failed_cmd.command,
+            &format!("{}\n{}", failed_cmd.stderr, failed_cmd.stdout),
+            &error_locations,
+        );
 
-        for task_id in &attribution.responsible_tasks {
-            // Find task details
-            let (task, _tag) = match find_task_with_tag(storage, task_id, &task_tags) {
-                Some(t) => t,
-                None => continue,
-            };
+        // Spawn single batch repairer
+        spawn_batch_repairer(working_dir, session_name, &prompt)?;
 
-            // Get files changed by this task
-            let task_files = crate::attribution::get_task_changed_files(
-                working_dir,
-                task_id,
-                wave_state.start_commit.as_deref(),
-            )?;
+        // Wait for batch repair completion
+        let repair_result = wait_for_batch_repair_completion(working_dir)?;
 
-            // Parse error files
-            let error_files: Vec<String> =
-                crate::attribution::parse_error_locations(&failed_cmd.stderr, &failed_cmd.stdout)
-                    .into_iter()
-                    .map(|(f, _)| f)
-                    .collect();
+        match repair_result {
+            BatchRepairResult::Success(fixed_tasks) => {
+                // Re-run validation
+                println!();
+                println!("  {} Re-running validation...", "Validate:".magenta());
+                let new_result = crate::backpressure::run_validation(working_dir, bp_config)?;
 
-            // Generate repair prompt
-            let prompt = agent::generate_repair_prompt(
-                task_id,
-                &task.title,
-                &failed_cmd.command,
-                &format!("{}\n{}", failed_cmd.stderr, failed_cmd.stdout),
-                &task_files.into_iter().collect::<Vec<_>>(),
-                &error_files,
-            );
+                if new_result.all_passed {
+                    println!("    {} Validation passed after batch repair!", "✓".green());
 
-            // Spawn repairer
-            spawn_repairer(working_dir, session_name, task_id, &prompt)?;
+                    // Mark all responsible tasks as done
+                    for task_id in &attribution.responsible_tasks {
+                        if let Some(tag) = task_tags
+                            .iter()
+                            .find(|(id, _)| id == task_id)
+                            .map(|(_, t)| t)
+                        {
+                            if let Ok(mut phase) = storage.load_group(tag) {
+                                if let Some(task) = phase.get_task_mut(task_id) {
+                                    task.set_status(TaskStatus::Done);
+                                    let _ = storage.update_group(tag, &phase);
+                                }
+                            }
+                        }
+                    }
 
-            // Wait for repair completion
-            if !wait_for_repair_completion_task(working_dir, task_id)? {
-                all_repaired = false;
+                    return Ok(true);
+                }
+
+                println!(
+                    "    {} Validation still failing (fixed: {}), will retry...",
+                    "!".yellow(),
+                    fixed_tasks.join(", ")
+                );
             }
-        }
-
-        if !all_repaired {
-            println!("    {} Some repairs failed or blocked", "!".yellow());
-            continue;
-        }
-
-        // Re-run validation
-        println!();
-        println!("  {} Re-running validation...", "Validate:".magenta());
-        let new_result = crate::backpressure::run_validation(working_dir, bp_config)?;
-
-        if new_result.all_passed {
-            println!("    {} Validation passed after repair!", "✓".green());
-
-            // Mark all responsible tasks as done
-            for task_id in &attribution.responsible_tasks {
-                if let Some(tag) = task_tags
-                    .iter()
-                    .find(|(id, _)| id == task_id)
-                    .map(|(_, t)| t)
-                {
-                    if let Ok(mut phase) = storage.load_group(tag) {
-                        if let Some(task) = phase.get_task_mut(task_id) {
-                            task.set_status(TaskStatus::Done);
-                            let _ = storage.update_group(tag, &phase);
+            BatchRepairResult::Partial(fixed, blocked) => {
+                // Mark fixed tasks as done, blocked as blocked
+                for task_id in &fixed {
+                    if let Some(tag) = task_tags
+                        .iter()
+                        .find(|(id, _)| id == task_id)
+                        .map(|(_, t)| t)
+                    {
+                        if let Ok(mut phase) = storage.load_group(tag) {
+                            if let Some(task) = phase.get_task_mut(task_id) {
+                                task.set_status(TaskStatus::Done);
+                                let _ = storage.update_group(tag, &phase);
+                                println!("    {} Fixed: {}", "✓".green(), task_id);
+                            }
                         }
                     }
                 }
+                for task_id in &blocked {
+                    if let Some(tag) = task_tags
+                        .iter()
+                        .find(|(id, _)| id == task_id)
+                        .map(|(_, t)| t)
+                    {
+                        if let Ok(mut phase) = storage.load_group(tag) {
+                            if let Some(task) = phase.get_task_mut(task_id) {
+                                task.set_status(TaskStatus::Blocked);
+                                let _ = storage.update_group(tag, &phase);
+                                println!("    {} Blocked: {}", "!".yellow(), task_id);
+                            }
+                        }
+                    }
+                }
+
+                // Re-run validation
+                let new_result = crate::backpressure::run_validation(working_dir, bp_config)?;
+                if new_result.all_passed {
+                    println!("    {} Validation passed!", "✓".green());
+                    return Ok(true);
+                }
             }
-
-            return Ok(true);
+            BatchRepairResult::Blocked(reason) => {
+                println!("    {} Batch repair blocked: {}", "!".red(), reason);
+            }
+            BatchRepairResult::Timeout => {
+                println!("    {} Batch repair timed out", "!".yellow());
+            }
         }
-
-        println!(
-            "    {} Validation still failing, will retry...",
-            "!".yellow()
-        );
     }
 
     // Max attempts reached - mark responsible tasks as failed
@@ -2118,7 +2215,8 @@ pub fn run_repair_loop(
     Ok(false)
 }
 
-/// Spawn a repairer agent for a specific task
+/// Spawn a repairer agent for a specific task (kept as fallback for single-task scenarios)
+#[allow(dead_code)]
 fn spawn_repairer(
     working_dir: &std::path::Path,
     session_name: &str,
@@ -2154,7 +2252,8 @@ fn spawn_repairer(
     Ok(())
 }
 
-/// Wait for a repair to complete by polling for marker file
+/// Wait for a repair to complete by polling for marker file (kept as fallback for single-task scenarios)
+#[allow(dead_code)]
 fn wait_for_repair_completion_task(working_dir: &std::path::Path, task_id: &str) -> Result<bool> {
     let marker_path = working_dir
         .join(".scud")
@@ -2185,6 +2284,103 @@ fn wait_for_repair_completion_task(working_dir: &std::path::Path, task_id: &str)
 
         thread::sleep(Duration::from_secs(5));
     }
+}
+
+/// Result of a batch repair attempt
+enum BatchRepairResult {
+    Success(Vec<String>),              // All fixed, list of task IDs
+    Partial(Vec<String>, Vec<String>), // Some fixed, some blocked
+    Blocked(String),                   // Completely blocked with reason
+    Timeout,                           // Timed out
+}
+
+/// Spawn a batch repairer agent
+fn spawn_batch_repairer(
+    working_dir: &std::path::Path,
+    session_name: &str,
+    prompt: &str,
+) -> Result<()> {
+    // Load repairer agent definition
+    let agent_def = AgentDef::try_load("repairer", working_dir).unwrap_or_else(|| AgentDef {
+        agent: crate::agents::AgentMeta {
+            name: "batch-repairer".to_string(),
+            description: "Batch repair agent".to_string(),
+        },
+        model: crate::agents::ModelConfig {
+            harness: "claude".to_string(),
+            model: Some("opus".to_string()),
+        },
+        prompt: Default::default(),
+    });
+
+    let harness = agent_def.harness()?;
+    let model = agent_def.model();
+
+    terminal::spawn_terminal_with_harness_and_model(
+        "batch-repair",
+        prompt,
+        working_dir,
+        session_name,
+        harness,
+        model,
+    )?;
+
+    println!("    {} Spawned batch repairer", "✓".green());
+    Ok(())
+}
+
+/// Wait for batch repair to complete by polling for marker file
+fn wait_for_batch_repair_completion(working_dir: &std::path::Path) -> Result<BatchRepairResult> {
+    let marker_path = working_dir.join(".scud").join("batch-repair-complete");
+
+    let timeout = Duration::from_secs(2700); // 45 minute timeout for batch
+    let start = std::time::Instant::now();
+
+    loop {
+        if start.elapsed() > timeout {
+            return Ok(BatchRepairResult::Timeout);
+        }
+
+        if marker_path.exists() {
+            let content = std::fs::read_to_string(&marker_path)?;
+            let _ = std::fs::remove_file(&marker_path); // Clean up
+
+            // Parse the marker file
+            if content.contains("SUCCESS") {
+                let fixed = parse_task_list(&content, "FIXED_TASKS:");
+                return Ok(BatchRepairResult::Success(fixed));
+            } else if content.contains("PARTIAL") {
+                let fixed = parse_task_list(&content, "FIXED_TASKS:");
+                let blocked = parse_task_list(&content, "BLOCKED_TASKS:");
+                return Ok(BatchRepairResult::Partial(fixed, blocked));
+            } else if content.contains("BLOCKED") {
+                let reason = content
+                    .lines()
+                    .find(|l| l.starts_with("REASON:"))
+                    .map(|l| l.trim_start_matches("REASON:").trim().to_string())
+                    .unwrap_or_else(|| "Unknown reason".to_string());
+                return Ok(BatchRepairResult::Blocked(reason));
+            }
+        }
+
+        thread::sleep(Duration::from_secs(5));
+    }
+}
+
+/// Parse comma-separated task list from marker file line
+fn parse_task_list(content: &str, prefix: &str) -> Vec<String> {
+    content
+        .lines()
+        .find(|l| l.starts_with(prefix))
+        .map(|l| {
+            l.trim_start_matches(prefix)
+                .trim()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Find a task by ID along with its tag

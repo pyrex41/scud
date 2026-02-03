@@ -771,6 +771,11 @@ enum Commands {
         #[arg(long, default_value = "30")]
         stale_timeout: u64,
 
+        /// Minutes of inactivity before marking idle agent as failed (default: 5).
+        /// Only applies when the agent's tmux pane shows a shell prompt.
+        #[arg(long, default_value = "5")]
+        idle_timeout_minutes: u64,
+
         /// Disable ZMQ event publishing (no real-time monitoring)
         #[arg(long, default_value = "false")]
         no_publish_events: bool,
@@ -1283,6 +1288,7 @@ async fn main() -> Result<()> {
             no_worktree,
             salvo_dir,
             stale_timeout,
+            idle_timeout_minutes,
             no_publish_events,
         } => commands::swarm::run(
             cli.project,
@@ -1302,6 +1308,7 @@ async fn main() -> Result<()> {
             no_worktree,
             salvo_dir,
             Some(stale_timeout),
+            idle_timeout_minutes,
             no_publish_events,
             None, // pause_flag
             None, // stop_flag
