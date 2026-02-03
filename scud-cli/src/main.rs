@@ -609,13 +609,17 @@ enum Commands {
         #[arg(short, long)]
         monitor: bool,
 
-        /// Mark spawned tasks as in-progress
-        #[arg(short, long)]
-        claim: bool,
+    /// Mark spawned tasks as in-progress
+    #[arg(short, long)]
+    claim: bool,
 
-        /// AI harness: claude, opencode (overridden by task's agent_type if set)
-        #[arg(short = 'H', long, default_value = "opencode")]
-        harness: String,
+    /// Run in headless mode (no TUI monitor or attach)
+    #[arg(long)]
+    headless: bool,
+
+    /// AI harness: claude, opencode (overridden by task's agent_type if set)
+    #[arg(short = 'H', long, default_value = "opencode")]
+    harness: String,
 
         /// Model to use with harness (overridden by task's agent_type if set)
         #[arg(short = 'M', long, default_value = "xai/grok-code-fast-1")]
@@ -643,10 +647,14 @@ enum Commands {
     /// Discover all tmux sessions
     Discover,
 
-    /// Attach to a tmux session
+    /// Attach to a headless session
     Attach {
-        /// Session name to attach to
-        session: String,
+        /// Task ID to attach to
+        task_id: String,
+
+        /// Override harness (claude, opencode)
+        #[arg(short, long)]
+        harness: Option<String>,
     },
 
     /// Detach from current tmux session
@@ -1225,6 +1233,7 @@ async fn main() -> Result<()> {
             attach,
             monitor,
             claim,
+            headless,
             harness,
             model,
         } => commands::spawn::run(
@@ -1237,6 +1246,7 @@ async fn main() -> Result<()> {
             attach,
             monitor,
             claim,
+            headless,
             &harness,
             &model,
         ),
@@ -1245,7 +1255,7 @@ async fn main() -> Result<()> {
         }
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
         Commands::Discover => commands::spawn::run_discover_sessions(cli.project),
-        Commands::Attach { session } => commands::spawn::run_attach_session(cli.project, &session),
+        Commands::Attach { task_id, harness } => commands::attach::run(cli.project, &task_id, harness.as_deref()),
         Commands::Detach => commands::spawn::run_detach_session(cli.project),
         Commands::Restart {
             task_id,

@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use crate::commands::spawn::headless::StreamStore;
 use crate::commands::spawn::monitor::{
     load_session, save_session, AgentState, AgentStatus, SpawnSession,
 };
@@ -167,14 +168,25 @@ pub struct App {
     pub swarm_session_data: Option<swarm_session::SwarmSession>,
     /// Swarm progress tracking (computed from swarm_session_data and phases)
     pub swarm_progress: Option<SwarmProgress>,
+
+    // === Headless Mode ===
+    /// Stream store for headless mode (None = tmux mode)
+    pub stream_store: Option<StreamStore>,
 }
 
 impl App {
     /// Create new app state
+    ///
+    /// # Arguments
+    /// * `project_root` - Optional project root directory
+    /// * `session_name` - Name of the session to monitor
+    /// * `swarm_mode` - Whether to monitor a swarm session
+    /// * `stream_store` - Optional StreamStore for headless mode (None = tmux mode)
     pub fn new(
         project_root: Option<PathBuf>,
         session_name: &str,
         swarm_mode: bool,
+        stream_store: Option<StreamStore>,
     ) -> Result<Self> {
         // Load storage to get active tag and phases
         let storage = Storage::new(project_root.clone());
@@ -214,6 +226,8 @@ impl App {
             swarm_mode,
             swarm_session_data: None,
             swarm_progress: None,
+            // Headless mode
+            stream_store,
         };
         app.refresh()?;
         app.refresh_waves();
@@ -259,8 +273,30 @@ impl App {
         Ok(())
     }
 
-    /// Refresh live output from the selected agent's tmux pane
+    /// Refresh live output from the selected agent
+    ///
+    /// In headless mode, reads from StreamStore. Otherwise, captures tmux pane content.
     pub fn refresh_live_output(&mut self) {
+        // If we have a stream store (headless mode), read from it
+        if let Some(ref store) = self.stream_store {
+            let agents = self.agents();
+            if agents.is_empty() || self.selected >= agents.len() {
+                self.live_output = vec!["No agent selected".to_string()];
+                return;
+            }
+
+            let agent = &agents[self.selected];
+            self.live_output = store.get_output(&agent.task_id, 100);
+
+            if self.live_output.is_empty() {
+                self.live_output = vec!["Waiting for output...".to_string()];
+            }
+
+            self.last_output_refresh = Instant::now();
+            return;
+        }
+
+        // Fall back to tmux capture-pane (default mode)
         let agents = self.agents();
         if agents.is_empty() || self.selected >= agents.len() {
             self.live_output = vec!["No agent selected".to_string()];
@@ -785,11 +821,8 @@ impl App {
         let (tasks_completed, tasks_in_progress, tasks_failed, tasks_total) =
             if let Some(phase) = phase {
                 // Get all task IDs from swarm waves
-                let swarm_task_ids: HashSet<String> = swarm
-                    .waves
-                    .iter()
-                    .flat_map(|w| w.all_task_ids())
-                    .collect();
+                let swarm_task_ids: HashSet<String> =
+                    swarm.waves.iter().flat_map(|w| w.all_task_ids()).collect();
 
                 let mut completed = 0;
                 let mut in_progress = 0;
@@ -816,14 +849,15 @@ impl App {
             };
 
         // Count validation results
-        let (waves_validated, waves_failed_validation) = swarm.waves.iter().fold(
-            (0, 0),
-            |(validated, failed), wave| match &wave.validation {
-                Some(v) if v.all_passed => (validated + 1, failed),
-                Some(_) => (validated, failed + 1),
-                None => (validated, failed),
-            },
-        );
+        let (waves_validated, waves_failed_validation) =
+            swarm
+                .waves
+                .iter()
+                .fold((0, 0), |(validated, failed), wave| match &wave.validation {
+                    Some(v) if v.all_passed => (validated + 1, failed),
+                    Some(_) => (validated, failed + 1),
+                    None => (validated, failed),
+                });
 
         // Count total repairs
         let total_repairs: usize = swarm.waves.iter().map(|w| w.repairs.len()).sum();

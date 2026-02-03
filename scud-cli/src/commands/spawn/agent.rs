@@ -371,25 +371,16 @@ pub fn generate_batch_repair_prompt(
 ) -> String {
     let tasks_str = tasks
         .iter()
-        .map(|(id, title, files)| {
-            format!(
-                "- {} | {}\n  Files: {}",
-                id,
-                title,
-                files.join(", ")
-            )
-        })
+        .map(|(id, title, files)| format!("- {} | {}\n  Files: {}", id, title, files.join(", ")))
         .collect::<Vec<_>>()
         .join("\n");
 
     let error_locations_str = error_locations
         .iter()
         .take(20) // Limit to avoid prompt explosion
-        .map(|(file, line)| {
-            match line {
-                Some(l) => format!("  {}:{}", file, l),
-                None => format!("  {}", file),
-            }
+        .map(|(file, line)| match line {
+            Some(l) => format!("  {}:{}", file, l),
+            None => format!("  {}", file),
         })
         .collect::<Vec<_>>()
         .join("\n");

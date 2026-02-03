@@ -21,10 +21,10 @@ path = "src/main.rs"
 iced = { version = "0.14", features = ["tokio", "advanced"] }
 
 # SCUD CLI - for config loading
-scud-cli = "1.50.0"
+scud-cli = { path = "../scud-cli" }
 
 # SCUD core - for direct library calls
-scud-core = "1.50.0"
+scud-core = { path = "../scud-core" }
 
 # Async
 tokio = { workspace = true, features = ["full", "sync"] }

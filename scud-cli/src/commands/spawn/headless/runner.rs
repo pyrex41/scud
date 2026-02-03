@@ -1,0 +1,1457 @@
+//! Headless runner implementations for different harnesses
+//!
+//! This module provides the `HeadlessRunner` trait and implementations for running
+//! AI coding agents (Claude Code and OpenCode) in headless/non-interactive mode,
+//! parsing their streaming JSON output into unified `StreamEvent` types.
+
+use anyhow::Result;
+use std::future::Future;
+use std::path::Path;
+use std::pin::Pin;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Child, Command};
+use tokio::sync::mpsc;
+
+use super::events::{StreamEvent, StreamEventKind};
+use crate::commands::spawn::terminal::{find_harness_binary, Harness};
+
+/// Boxed async result type for dyn-compatible async trait methods
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Handle to a running headless session
+pub struct SessionHandle {
+    /// Task ID this session is for
+    pub task_id: String,
+    /// Harness session ID (for continuation)
+    pub session_id: Option<String>,
+    /// Child process
+    child: Child,
+    /// Event receiver
+    pub events: mpsc::Receiver<StreamEvent>,
+}
+
+impl SessionHandle {
+    /// Wait for the session to complete
+    pub async fn wait(mut self) -> Result<bool> {
+        let status = self.child.wait().await?;
+        Ok(status.success())
+    }
+    
+    /// Interrupt the session (send SIGINT)
+    pub fn interrupt(&mut self) -> Result<()> {
+        #[cfg(unix)]
+        {
+            if let Some(pid) = self.child.id() {
+                // Send SIGINT using kill command (avoids nix dependency)
+                let _ = std::process::Command::new("kill")
+                    .arg("-INT")
+                    .arg(pid.to_string())
+                    .status();
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On non-Unix, just kill the process
+            let _ = self.child.start_kill();
+        }
+
+        Ok(())
+    }
+
+    /// Kill the session immediately
+    pub fn kill(&mut self) -> Result<()> {
+        self.child.start_kill()?;
+        Ok(())
+    }
+
+    /// Get the process ID
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+}
+
+/// Trait for headless agent execution
+///
+/// Implementations provide the ability to start agents in headless mode
+/// with streaming JSON output, and to generate commands for interactive
+/// session continuation.
+///
+/// This trait uses boxed futures to be dyn-compatible, allowing runtime
+/// polymorphism via `Box<dyn HeadlessRunner>`.
+pub trait HeadlessRunner: Send + Sync {
+    /// Start an agent with a prompt
+    ///
+    /// Returns a SessionHandle that can be used to receive events,
+    /// wait for completion, or interrupt the session.
+    fn start<'a>(
+        &'a self,
+        task_id: &'a str,
+        prompt: &'a str,
+        working_dir: &'a Path,
+        model: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<SessionHandle>>;
+
+    /// Get the command to launch interactive mode for session continuation
+    ///
+    /// Returns the command and arguments needed to resume the session
+    /// interactively (e.g., `claude --resume <session_id>`).
+    fn interactive_command(&self, session_id: &str) -> Vec<String>;
+
+    /// Get the harness type this runner supports
+    fn harness(&self) -> Harness;
+}
+
+/// Claude Code headless runner
+///
+/// Runs Claude Code in headless mode with `--output-format stream-json`,
+/// parsing the streaming JSON events for display in TUI/GUI.
+pub struct ClaudeHeadless {
+    binary_path: String,
+    allowed_tools: Vec<String>,
+}
+
+impl ClaudeHeadless {
+    /// Create a new Claude headless runner
+    ///
+    /// Finds the Claude binary in PATH or common installation locations.
+    pub fn new() -> Result<Self> {
+        let binary_path = find_harness_binary(Harness::Claude)?.to_string();
+        Ok(Self {
+            binary_path,
+            allowed_tools: vec![
+                "Read".to_string(),
+                "Write".to_string(),
+                "Edit".to_string(),
+                "Bash".to_string(),
+                "Glob".to_string(),
+                "Grep".to_string(),
+            ],
+        })
+    }
+
+    /// Create with an explicit binary path (useful for testing)
+    #[cfg(test)]
+    pub fn with_binary_path(path: impl Into<String>) -> Self {
+        Self {
+            binary_path: path.into(),
+            allowed_tools: vec![],
+        }
+    }
+
+    /// Set the allowed tools for this runner
+    pub fn with_allowed_tools(mut self, tools: Vec<String>) -> Self {
+        self.allowed_tools = tools;
+        self
+    }
+
+    /// Get the binary path
+    pub fn binary_path(&self) -> &str {
+        &self.binary_path
+    }
+}
+
+impl HeadlessRunner for ClaudeHeadless {
+    fn start<'a>(
+        &'a self,
+        task_id: &'a str,
+        prompt: &'a str,
+        working_dir: &'a Path,
+        model: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<SessionHandle>> {
+        Box::pin(async move {
+            let mut cmd = Command::new(&self.binary_path);
+
+            // Core headless flags
+            cmd.arg("-p").arg(prompt);
+            cmd.arg("--output-format").arg("stream-json");
+            cmd.arg("--verbose");
+            cmd.arg("--dangerously-skip-permissions");
+
+            // Model selection
+            if let Some(m) = model {
+                cmd.arg("--model").arg(m);
+            }
+
+            // Allowed tools
+            if !self.allowed_tools.is_empty() {
+                cmd.arg("--allowedTools")
+                    .arg(self.allowed_tools.join(","));
+            }
+
+            // Working directory and environment
+            cmd.current_dir(working_dir);
+            cmd.env("SCUD_TASK_ID", task_id);
+
+            // Capture stdout for streaming
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+
+            let mut child = cmd.spawn()?;
+
+            // Create event channel
+            let (tx, rx) = mpsc::channel(1000);
+
+            // Spawn task to read stdout and parse events
+            let stdout = child.stdout.take().expect("stdout was piped");
+            let task_id_clone = task_id.to_string();
+
+            tokio::spawn(async move {
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(event) = parse_claude_event(&line) {
+                        if tx.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+
+                // Send completion event
+                let _ = tx.send(StreamEvent::complete(true)).await;
+            });
+
+            Ok(SessionHandle {
+                task_id: task_id_clone,
+                session_id: None, // Will be set when we parse session_id from events
+                child,
+                events: rx,
+            })
+        })
+    }
+
+    fn interactive_command(&self, session_id: &str) -> Vec<String> {
+        vec![
+            self.binary_path.clone(),
+            "--resume".to_string(),
+            session_id.to_string(),
+        ]
+    }
+
+    fn harness(&self) -> Harness {
+        Harness::Claude
+    }
+}
+
+/// Parse a line of Claude stream-json output into a StreamEvent
+fn parse_claude_event(line: &str) -> Option<StreamEvent> {
+    let json: serde_json::Value = serde_json::from_str(line).ok()?;
+
+    let event_type = json.get("type")?.as_str()?;
+
+    match event_type {
+        "stream_event" => {
+            // Check for text delta
+            if let Some(delta) = json.pointer("/event/delta") {
+                if delta.get("type")?.as_str()? == "text_delta" {
+                    let text = delta.get("text")?.as_str()?;
+                    return Some(StreamEvent::text_delta(text));
+                }
+            }
+            None
+        }
+        "assistant" | "content_block_delta" => {
+            // Alternative text delta format
+            if let Some(text) = json.pointer("/delta/text").and_then(|v| v.as_str()) {
+                return Some(StreamEvent::text_delta(text));
+            }
+            if let Some(text) = json.pointer("/content/0/text").and_then(|v| v.as_str()) {
+                return Some(StreamEvent::text_delta(text));
+            }
+            None
+        }
+        "tool_use" => {
+            let tool_name = json.get("name")?.as_str()?;
+            let tool_id = json.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let input = json
+                .get("input")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let input_summary = summarize_json(&input);
+            Some(StreamEvent::tool_start(tool_name, tool_id, &input_summary))
+        }
+        "tool_result" => {
+            let tool_id = json
+                .get("tool_use_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let success = !json
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            Some(StreamEvent::new(StreamEventKind::ToolResult {
+                tool_name: String::new(), // Not always available
+                tool_id: tool_id.to_string(),
+                success,
+            }))
+        }
+        "result" => {
+            // Check for session_id
+            if let Some(session_id) = json.get("session_id").and_then(|v| v.as_str()) {
+                return Some(StreamEvent::new(StreamEventKind::SessionAssigned {
+                    session_id: session_id.to_string(),
+                }));
+            }
+            // Otherwise treat as completion
+            Some(StreamEvent::complete(true))
+        }
+        "error" => {
+            let message = json
+                .get("error")
+                .and_then(|e| e.as_str())
+                .or_else(|| json.get("message").and_then(|e| e.as_str()))
+                .unwrap_or("Unknown error");
+            Some(StreamEvent::error(message))
+        }
+        _ => None,
+    }
+}
+
+/// OpenCode headless runner
+///
+/// Runs OpenCode CLI in headless mode using `opencode run --format json`
+/// and parses the streaming JSON output into unified StreamEvent types.
+pub struct OpenCodeHeadless {
+    binary_path: String,
+}
+
+impl OpenCodeHeadless {
+    /// Create a new OpenCode headless runner
+    ///
+    /// Locates the OpenCode binary using the standard harness discovery mechanism.
+    pub fn new() -> Result<Self> {
+        let binary_path = find_harness_binary(Harness::OpenCode)?.to_string();
+        Ok(Self { binary_path })
+    }
+
+    /// Create with an explicit binary path (useful for testing)
+    #[cfg(test)]
+    pub fn with_binary_path(path: impl Into<String>) -> Self {
+        Self {
+            binary_path: path.into(),
+        }
+    }
+}
+
+impl HeadlessRunner for OpenCodeHeadless {
+    fn start<'a>(
+        &'a self,
+        task_id: &'a str,
+        prompt: &'a str,
+        working_dir: &'a Path,
+        model: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<SessionHandle>> {
+        Box::pin(async move {
+            // OpenCode uses `run` command with JSON format for headless streaming
+            let mut cmd = Command::new(&self.binary_path);
+
+            cmd.arg("run");
+            cmd.arg("--format").arg("json");
+            cmd.arg("--variant").arg("minimal");
+
+            if let Some(m) = model {
+                cmd.arg("--model").arg(m);
+            }
+
+            cmd.arg(prompt);
+            cmd.current_dir(working_dir);
+            cmd.env("SCUD_TASK_ID", task_id);
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+
+            let mut child = cmd.spawn()?;
+            let (tx, rx) = mpsc::channel(1000);
+
+            let stdout = child.stdout.take().expect("stdout was piped");
+
+            tokio::spawn(async move {
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(event) = parse_opencode_event(&line) {
+                        if tx.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+
+                let _ = tx.send(StreamEvent::complete(true)).await;
+            });
+
+            Ok(SessionHandle {
+                task_id: task_id.to_string(),
+                session_id: None,
+                child,
+                events: rx,
+            })
+        })
+    }
+
+    fn interactive_command(&self, session_id: &str) -> Vec<String> {
+        // OpenCode uses attach command for session continuation
+        vec![
+            self.binary_path.clone(),
+            "attach".to_string(),
+            "http://localhost:4096".to_string(),
+            "--session".to_string(),
+            session_id.to_string(),
+        ]
+    }
+
+    fn harness(&self) -> Harness {
+        Harness::OpenCode
+    }
+}
+
+/// Enum-based runner that wraps concrete implementations
+///
+/// This provides polymorphism without requiring the trait to be object-safe.
+/// Use this instead of `Box<dyn HeadlessRunner>` when you need to store
+/// or pass around a runner of unknown concrete type.
+pub enum AnyRunner {
+    Claude(ClaudeHeadless),
+    OpenCode(OpenCodeHeadless),
+}
+
+impl AnyRunner {
+    /// Create a runner for the specified harness
+    pub fn new(harness: Harness) -> Result<Self> {
+        match harness {
+            Harness::Claude => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
+            Harness::OpenCode => Ok(AnyRunner::OpenCode(OpenCodeHeadless::new()?)),
+        }
+    }
+
+    /// Start an agent with a prompt
+    pub async fn start(
+        &self,
+        task_id: &str,
+        prompt: &str,
+        working_dir: &Path,
+        model: Option<&str>,
+    ) -> Result<SessionHandle> {
+        match self {
+            AnyRunner::Claude(runner) => runner.start(task_id, prompt, working_dir, model).await,
+            AnyRunner::OpenCode(runner) => runner.start(task_id, prompt, working_dir, model).await,
+        }
+    }
+
+    /// Get the command to launch interactive mode for session continuation
+    pub fn interactive_command(&self, session_id: &str) -> Vec<String> {
+        match self {
+            AnyRunner::Claude(runner) => runner.interactive_command(session_id),
+            AnyRunner::OpenCode(runner) => runner.interactive_command(session_id),
+        }
+    }
+
+    /// Get the harness type this runner supports
+    pub fn harness(&self) -> Harness {
+        match self {
+            AnyRunner::Claude(runner) => runner.harness(),
+            AnyRunner::OpenCode(runner) => runner.harness(),
+        }
+    }
+}
+
+/// Create a headless runner for the specified harness
+///
+/// This is a convenience function that returns an `AnyRunner` enum
+/// which provides a unified interface for all runner implementations.
+pub fn create_runner(harness: Harness) -> Result<AnyRunner> {
+    AnyRunner::new(harness)
+}
+
+/// Parse a line of OpenCode JSON output into a StreamEvent
+///
+/// OpenCode CLI (`opencode run --format json`) outputs newline-delimited JSON events
+/// with the following structure:
+///
+/// - `{"type": "assistant", "message": {"content": [{"text": "..."}]}}` - Text output
+/// - `{"type": "tool_call", "subtype": "started", "tool_call": {"name": "...", "input": {...}}}` - Tool start
+/// - `{"type": "tool_call", "subtype": "completed", "tool_call": {...}, "result": {...}}` - Tool result
+/// - `{"type": "result", "success": true}` - Completion
+/// - `{"type": "error", "message": "..."}` - Error
+/// - `{"type": "session", "session_id": "..."}` - Session assignment
+///
+/// Returns `None` for unparseable or unknown event types (graceful degradation).
+pub fn parse_opencode_event(line: &str) -> Option<StreamEvent> {
+    let json: serde_json::Value = serde_json::from_str(line).ok()?;
+
+    let event_type = json.get("type")?.as_str()?;
+
+    match event_type {
+        // Assistant text output - may have various content structures
+        "assistant" | "message" | "content" => {
+            // Try multiple paths for text content
+            let text = json
+                .pointer("/message/content/0/text")
+                .or_else(|| json.pointer("/content/0/text"))
+                .or_else(|| json.pointer("/message/text"))
+                .or_else(|| json.get("text"))
+                .or_else(|| json.get("delta"))
+                .and_then(|v| v.as_str())?;
+            Some(StreamEvent::text_delta(text))
+        }
+
+        // Tool call events with subtype
+        "tool_call" | "tool_use" => {
+            let subtype = json
+                .get("subtype")
+                .or_else(|| json.get("status"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("started");
+
+            match subtype {
+                "started" | "start" | "pending" => {
+                    // Extract tool name from various possible locations
+                    let tool_name = json
+                        .pointer("/tool_call/name")
+                        .or_else(|| json.pointer("/tool_call/tool"))
+                        .or_else(|| json.get("name"))
+                        .or_else(|| json.get("tool"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+
+                    // Extract tool ID
+                    let tool_id = json
+                        .pointer("/tool_call/id")
+                        .or_else(|| json.get("id"))
+                        .or_else(|| json.get("tool_id"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    // Extract and summarize input
+                    let input = json
+                        .pointer("/tool_call/input")
+                        .or_else(|| json.get("input"))
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    let input_summary = summarize_json(&input);
+
+                    Some(StreamEvent::tool_start(tool_name, tool_id, &input_summary))
+                }
+                "completed" | "complete" | "done" | "success" => {
+                    let tool_name = json
+                        .pointer("/tool_call/name")
+                        .or_else(|| json.get("name"))
+                        .or_else(|| json.get("tool"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    let tool_id = json
+                        .pointer("/tool_call/id")
+                        .or_else(|| json.get("id"))
+                        .or_else(|| json.get("tool_id"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    // Check for error in result
+                    let success = !json
+                        .pointer("/result/is_error")
+                        .or_else(|| json.get("is_error"))
+                        .or_else(|| json.get("error"))
+                        .map(|v| v.as_bool().unwrap_or(false) || v.is_string())
+                        .unwrap_or(false);
+
+                    Some(StreamEvent::new(StreamEventKind::ToolResult {
+                        tool_name: tool_name.to_string(),
+                        tool_id: tool_id.to_string(),
+                        success,
+                    }))
+                }
+                "failed" | "error" => {
+                    let tool_name = json
+                        .pointer("/tool_call/name")
+                        .or_else(|| json.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    let tool_id = json
+                        .pointer("/tool_call/id")
+                        .or_else(|| json.get("id"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    Some(StreamEvent::new(StreamEventKind::ToolResult {
+                        tool_name: tool_name.to_string(),
+                        tool_id: tool_id.to_string(),
+                        success: false,
+                    }))
+                }
+                _ => None,
+            }
+        }
+
+        // Completion event
+        "result" | "done" | "complete" => {
+            let success = json
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            Some(StreamEvent::complete(success))
+        }
+
+        // Error event
+        "error" => {
+            let message = json
+                .get("message")
+                .or_else(|| json.get("error"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
+            Some(StreamEvent::error(message))
+        }
+
+        // Session assignment
+        "session" | "session_start" | "init" => {
+            let session_id = json
+                .get("session_id")
+                .or_else(|| json.get("id"))
+                .and_then(|v| v.as_str())?;
+            Some(StreamEvent::new(StreamEventKind::SessionAssigned {
+                session_id: session_id.to_string(),
+            }))
+        }
+
+        // Unknown event type - return None for graceful handling
+        _ => None,
+    }
+}
+
+/// Summarize JSON input for compact display
+///
+/// Produces a short, human-readable summary of JSON values:
+/// - Objects: `{key1, key2, ...}` (max 3 keys)
+/// - Strings: First 50 chars with ellipsis
+/// - Other: JSON stringified, truncated
+fn summarize_json(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(obj) => {
+            let keys: Vec<&str> = obj.keys().map(|k| k.as_str()).take(3).collect();
+            if keys.is_empty() {
+                "{}".to_string()
+            } else if keys.len() < obj.len() {
+                format!("{{{},...}}", keys.join(", "))
+            } else {
+                format!("{{{}}}", keys.join(", "))
+            }
+        }
+        serde_json::Value::String(s) => {
+            if s.len() > 50 {
+                format!("\"{}...\"", &s[..47])
+            } else {
+                format!("\"{}\"", s)
+            }
+        }
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::Array(arr) => {
+            format!("[{} items]", arr.len())
+        }
+        other => {
+            let s = other.to_string();
+            if s.len() > 50 {
+                format!("{}...", &s[..47])
+            } else {
+                s
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =======================
+    // Claude event parsing
+    // =======================
+
+    #[test]
+    fn test_parse_claude_text_delta() {
+        let line =
+            r#"{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"Hello"}}}"#;
+        let event = parse_claude_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Hello"
+        ));
+    }
+
+    #[test]
+    fn test_parse_claude_tool_use() {
+        let line =
+            r#"{"type":"tool_use","name":"Read","id":"tool_1","input":{"path":"src/main.rs"}}"#;
+        let event = parse_claude_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::ToolStart {
+                    ref tool_name,
+                    ref tool_id,
+                    ref input_summary,
+                },
+                ..
+            }) => {
+                assert_eq!(tool_name, "Read");
+                assert_eq!(tool_id, "tool_1");
+                assert!(input_summary.contains("path"));
+            }
+            _ => panic!("Expected ToolStart"),
+        }
+    }
+
+    #[test]
+    fn test_parse_claude_error() {
+        let line = r#"{"type":"error","error":"Rate limit exceeded"}"#;
+        let event = parse_claude_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::Error { ref message },
+                ..
+            }) => {
+                assert_eq!(message, "Rate limit exceeded");
+            }
+            _ => panic!("Expected Error event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_claude_result_with_session() {
+        let line = r#"{"type":"result","session_id":"sess-abc123"}"#;
+        let event = parse_claude_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::SessionAssigned { ref session_id },
+                ..
+            }) => {
+                assert_eq!(session_id, "sess-abc123");
+            }
+            _ => panic!("Expected SessionAssigned"),
+        }
+    }
+
+    #[test]
+    fn test_parse_claude_result_completion() {
+        let line = r#"{"type":"result"}"#;
+        let event = parse_claude_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: true },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_claude_tool_result() {
+        let line = r#"{"type":"tool_result","tool_use_id":"tool_1","content":"success"}"#;
+        let event = parse_claude_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::ToolResult {
+                    ref tool_id,
+                    success,
+                    ..
+                },
+                ..
+            }) => {
+                assert_eq!(tool_id, "tool_1");
+                assert!(success);
+            }
+            _ => panic!("Expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_parse_claude_tool_result_error() {
+        let line = r#"{"type":"tool_result","tool_use_id":"tool_2","is_error":true}"#;
+        let event = parse_claude_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::ToolResult { success, .. },
+                ..
+            }) => {
+                assert!(!success);
+            }
+            _ => panic!("Expected ToolResult with failure"),
+        }
+    }
+
+    #[test]
+    fn test_parse_claude_unknown_type_returns_none() {
+        let line = r#"{"type":"unknown_event","data":"test"}"#;
+        let event = parse_claude_event(line);
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_claude_interactive_command() {
+        let runner = ClaudeHeadless::with_binary_path("/usr/local/bin/claude");
+        let cmd = runner.interactive_command("sess_123");
+        assert_eq!(cmd[0], "/usr/local/bin/claude");
+        assert_eq!(cmd[1], "--resume");
+        assert_eq!(cmd[2], "sess_123");
+    }
+
+    // =======================
+    // OpenCode event parsing
+    // =======================
+
+    #[test]
+    fn test_parse_assistant_text_with_message_content() {
+        let line = r#"{"type": "assistant", "message": {"content": [{"text": "Hello world"}]}}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Hello world"
+        ));
+    }
+
+    #[test]
+    fn test_parse_content_type_with_text() {
+        let line = r#"{"type": "content", "content": [{"text": "Response text"}]}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Response text"
+        ));
+    }
+
+    #[test]
+    fn test_parse_message_type_with_direct_text() {
+        let line = r#"{"type": "message", "text": "Direct text"}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Direct text"
+        ));
+    }
+
+    #[test]
+    fn test_parse_assistant_with_delta_field() {
+        let line = r#"{"type": "assistant", "delta": "Streaming chunk"}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Streaming chunk"
+        ));
+    }
+
+    // ===================
+    // Tool call parsing
+    // ===================
+
+    #[test]
+    fn test_parse_tool_call_started() {
+        let line = r#"{"type": "tool_call", "subtype": "started", "tool_call": {"name": "read_file", "id": "tool_1", "input": {"path": "src/main.rs"}}}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolStart {
+                        ref tool_name,
+                        ref tool_id,
+                        ref input_summary,
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "read_file");
+                assert_eq!(tool_id, "tool_1");
+                assert!(input_summary.contains("path"));
+            }
+            _ => panic!("Expected ToolStart, got {:?}", event),
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_use_start() {
+        let line = r#"{"type": "tool_use", "status": "start", "name": "bash", "id": "t123"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolStart {
+                        ref tool_name,
+                        ref tool_id,
+                        ..
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "bash");
+                assert_eq!(tool_id, "t123");
+            }
+            _ => panic!("Expected ToolStart"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_call_completed() {
+        let line = r#"{"type": "tool_call", "subtype": "completed", "tool_call": {"name": "write_file", "id": "t2"}, "result": {}}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolResult {
+                        ref tool_name,
+                        ref tool_id,
+                        success,
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "write_file");
+                assert_eq!(tool_id, "t2");
+                assert!(success);
+            }
+            _ => panic!("Expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_call_with_error() {
+        let line = r#"{"type": "tool_call", "subtype": "completed", "name": "bash", "result": {"is_error": true}}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolResult {
+                        success, ..
+                    },
+                ..
+            }) => {
+                assert!(!success);
+            }
+            _ => panic!("Expected ToolResult with failure"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_call_failed_subtype() {
+        let line = r#"{"type": "tool_call", "subtype": "failed", "name": "git", "id": "t3"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolResult {
+                        success, ..
+                    },
+                ..
+            }) => {
+                assert!(!success);
+            }
+            _ => panic!("Expected failed ToolResult"),
+        }
+    }
+
+    // ===================
+    // Completion parsing
+    // ===================
+
+    #[test]
+    fn test_parse_result_success() {
+        let line = r#"{"type": "result", "success": true}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: true },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_result_failure() {
+        let line = r#"{"type": "result", "success": false}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: false },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_done_type() {
+        let line = r#"{"type": "done"}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: true },
+                ..
+            })
+        ));
+    }
+
+    // ===================
+    // Error parsing
+    // ===================
+
+    #[test]
+    fn test_parse_error_with_message() {
+        let line = r#"{"type": "error", "message": "Connection failed"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::Error { ref message },
+                ..
+            }) => {
+                assert_eq!(message, "Connection failed");
+            }
+            _ => panic!("Expected Error event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_with_error_field() {
+        let line = r#"{"type": "error", "error": "Rate limited"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::Error { ref message },
+                ..
+            }) => {
+                assert_eq!(message, "Rate limited");
+            }
+            _ => panic!("Expected Error event"),
+        }
+    }
+
+    // ===================
+    // Session parsing
+    // ===================
+
+    #[test]
+    fn test_parse_session_assignment() {
+        let line = r#"{"type": "session", "session_id": "sess_abc123"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::SessionAssigned { ref session_id },
+                ..
+            }) => {
+                assert_eq!(session_id, "sess_abc123");
+            }
+            _ => panic!("Expected SessionAssigned"),
+        }
+    }
+
+    #[test]
+    fn test_parse_session_with_id_field() {
+        let line = r#"{"type": "init", "id": "session_xyz"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::SessionAssigned { ref session_id },
+                ..
+            }) => {
+                assert_eq!(session_id, "session_xyz");
+            }
+            _ => panic!("Expected SessionAssigned"),
+        }
+    }
+
+    // ===================
+    // Edge cases
+    // ===================
+
+    #[test]
+    fn test_parse_unknown_event_returns_none() {
+        let line = r#"{"type": "custom_event", "data": "something"}"#;
+        let event = parse_opencode_event(line);
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_invalid_json_returns_none() {
+        let line = "not json at all";
+        let event = parse_opencode_event(line);
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_missing_type_returns_none() {
+        let line = r#"{"message": "no type field"}"#;
+        let event = parse_opencode_event(line);
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_empty_json_returns_none() {
+        let line = "{}";
+        let event = parse_opencode_event(line);
+        assert!(event.is_none());
+    }
+
+    // ===================
+    // JSON summarization
+    // ===================
+
+    #[test]
+    fn test_summarize_json_object() {
+        let value = serde_json::json!({"path": "/foo", "content": "bar"});
+        let summary = summarize_json(&value);
+        assert!(summary.contains("path"));
+        assert!(summary.contains("content"));
+    }
+
+    #[test]
+    fn test_summarize_json_object_truncated() {
+        let value = serde_json::json!({
+            "key1": "v1",
+            "key2": "v2",
+            "key3": "v3",
+            "key4": "v4"
+        });
+        let summary = summarize_json(&value);
+        assert!(summary.contains("..."));
+    }
+
+    #[test]
+    fn test_summarize_json_empty_object() {
+        let value = serde_json::json!({});
+        let summary = summarize_json(&value);
+        assert_eq!(summary, "{}");
+    }
+
+    #[test]
+    fn test_summarize_json_string() {
+        let value = serde_json::json!("short string");
+        let summary = summarize_json(&value);
+        assert_eq!(summary, "\"short string\"");
+    }
+
+    #[test]
+    fn test_summarize_json_long_string() {
+        let long = "a".repeat(100);
+        let value = serde_json::json!(long);
+        let summary = summarize_json(&value);
+        assert!(summary.len() < 60);
+        assert!(summary.ends_with("...\""));
+    }
+
+    #[test]
+    fn test_summarize_json_null() {
+        let value = serde_json::Value::Null;
+        let summary = summarize_json(&value);
+        assert_eq!(summary, "");
+    }
+
+    #[test]
+    fn test_summarize_json_array() {
+        let value = serde_json::json!([1, 2, 3, 4, 5]);
+        let summary = summarize_json(&value);
+        assert_eq!(summary, "[5 items]");
+    }
+
+    #[test]
+    fn test_summarize_json_number() {
+        let value = serde_json::json!(42);
+        let summary = summarize_json(&value);
+        assert_eq!(summary, "42");
+    }
+
+    // ===================
+    // Interactive command
+    // ===================
+
+    #[test]
+    fn test_interactive_command_format() {
+        let runner = OpenCodeHeadless::with_binary_path("/usr/local/bin/opencode");
+        let cmd = runner.interactive_command("session_123");
+        assert_eq!(cmd[0], "/usr/local/bin/opencode");
+        assert_eq!(cmd[1], "attach");
+        assert!(cmd.contains(&"--session".to_string()));
+        assert!(cmd.contains(&"session_123".to_string()));
+    }
+
+    // ===================
+    // OpenCodeHeadless struct tests
+    // ===================
+
+    #[test]
+    fn test_opencode_headless_with_binary_path() {
+        let runner = OpenCodeHeadless::with_binary_path("/custom/path/opencode");
+        // Verify harness returns OpenCode
+        assert!(matches!(runner.harness(), Harness::OpenCode));
+    }
+
+    #[test]
+    fn test_opencode_interactive_command_structure() {
+        let runner = OpenCodeHeadless::with_binary_path("/bin/opencode");
+        let cmd = runner.interactive_command("sess-xyz-789");
+
+        // Should produce: opencode attach http://localhost:4096 --session sess-xyz-789
+        assert_eq!(cmd.len(), 5);
+        assert_eq!(cmd[0], "/bin/opencode");
+        assert_eq!(cmd[1], "attach");
+        assert_eq!(cmd[2], "http://localhost:4096");
+        assert_eq!(cmd[3], "--session");
+        assert_eq!(cmd[4], "sess-xyz-789");
+    }
+
+    #[test]
+    fn test_opencode_harness_type() {
+        let runner = OpenCodeHeadless::with_binary_path("opencode");
+        assert_eq!(runner.harness(), Harness::OpenCode);
+    }
+
+    // ===================
+    // ClaudeHeadless struct tests
+    // ===================
+
+    #[test]
+    fn test_claude_headless_with_binary_path() {
+        let runner = ClaudeHeadless::with_binary_path("/custom/claude");
+        assert_eq!(runner.binary_path(), "/custom/claude");
+        assert!(matches!(runner.harness(), Harness::Claude));
+    }
+
+    #[test]
+    fn test_claude_headless_with_allowed_tools() {
+        let runner = ClaudeHeadless::with_binary_path("/bin/claude")
+            .with_allowed_tools(vec!["Read".to_string(), "Write".to_string()]);
+        // The runner should accept the tools (no getter, but constructor works)
+        assert_eq!(runner.binary_path(), "/bin/claude");
+    }
+
+    #[test]
+    fn test_claude_interactive_command_structure() {
+        let runner = ClaudeHeadless::with_binary_path("/usr/bin/claude");
+        let cmd = runner.interactive_command("sess-abc-123");
+
+        // Should produce: claude --resume sess-abc-123
+        assert_eq!(cmd.len(), 3);
+        assert_eq!(cmd[0], "/usr/bin/claude");
+        assert_eq!(cmd[1], "--resume");
+        assert_eq!(cmd[2], "sess-abc-123");
+    }
+
+    #[test]
+    fn test_claude_harness_type() {
+        let runner = ClaudeHeadless::with_binary_path("claude");
+        assert_eq!(runner.harness(), Harness::Claude);
+    }
+
+    // ===================
+    // AnyRunner enum tests
+    // ===================
+
+    #[test]
+    fn test_any_runner_claude_variant() {
+        let runner = AnyRunner::Claude(ClaudeHeadless::with_binary_path("/bin/claude"));
+        assert_eq!(runner.harness(), Harness::Claude);
+
+        let cmd = runner.interactive_command("session-1");
+        assert_eq!(cmd[0], "/bin/claude");
+        assert_eq!(cmd[1], "--resume");
+    }
+
+    #[test]
+    fn test_any_runner_opencode_variant() {
+        let runner = AnyRunner::OpenCode(OpenCodeHeadless::with_binary_path("/bin/opencode"));
+        assert_eq!(runner.harness(), Harness::OpenCode);
+
+        let cmd = runner.interactive_command("session-2");
+        assert_eq!(cmd[0], "/bin/opencode");
+        assert_eq!(cmd[1], "attach");
+    }
+
+    #[test]
+    fn test_any_runner_harness_matches() {
+        let claude = AnyRunner::Claude(ClaudeHeadless::with_binary_path("claude"));
+        let opencode = AnyRunner::OpenCode(OpenCodeHeadless::with_binary_path("opencode"));
+
+        // Verify harness() returns correct type for each variant
+        assert!(matches!(claude.harness(), Harness::Claude));
+        assert!(matches!(opencode.harness(), Harness::OpenCode));
+    }
+
+    // ===================
+    // Additional OpenCode parsing edge cases
+    // ===================
+
+    #[test]
+    fn test_parse_opencode_tool_with_pending_status() {
+        let line = r#"{"type": "tool_call", "status": "pending", "tool": "write_file", "id": "t99"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolStart {
+                        ref tool_name,
+                        ref tool_id,
+                        ..
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "write_file");
+                assert_eq!(tool_id, "t99");
+            }
+            _ => panic!("Expected ToolStart for pending status"),
+        }
+    }
+
+    #[test]
+    fn test_parse_opencode_tool_done_status() {
+        let line = r#"{"type": "tool_call", "subtype": "done", "name": "exec", "id": "t50"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolResult {
+                        ref tool_name,
+                        success,
+                        ..
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "exec");
+                assert!(success);
+            }
+            _ => panic!("Expected ToolResult for done subtype"),
+        }
+    }
+
+    #[test]
+    fn test_parse_opencode_tool_success_status() {
+        let line =
+            r#"{"type": "tool_use", "subtype": "success", "tool_call": {"name": "bash", "id": "t77"}}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::ToolResult { success, .. },
+                ..
+            }) => {
+                assert!(success);
+            }
+            _ => panic!("Expected ToolResult for success subtype"),
+        }
+    }
+
+    #[test]
+    fn test_parse_opencode_complete_type() {
+        let line = r#"{"type": "complete", "success": true}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: true },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_opencode_session_start_type() {
+        let line = r#"{"type": "session_start", "session_id": "sess-start-001"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::SessionAssigned { ref session_id },
+                ..
+            }) => {
+                assert_eq!(session_id, "sess-start-001");
+            }
+            _ => panic!("Expected SessionAssigned for session_start type"),
+        }
+    }
+
+    #[test]
+    fn test_parse_opencode_assistant_with_message_text() {
+        let line = r#"{"type": "assistant", "message": {"text": "Thinking about this..."}}"#;
+        let event = parse_opencode_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Thinking about this..."
+        ));
+    }
+
+    #[test]
+    fn test_parse_opencode_tool_call_error_subtype() {
+        let line = r#"{"type": "tool_call", "subtype": "error", "tool_call": {"name": "git", "id": "t88"}}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolResult {
+                        ref tool_name,
+                        success,
+                        ..
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "git");
+                assert!(!success);
+            }
+            _ => panic!("Expected failed ToolResult for error subtype"),
+        }
+    }
+
+    #[test]
+    fn test_parse_opencode_tool_with_nested_input() {
+        let line = r#"{"type": "tool_call", "subtype": "started", "tool_call": {"name": "write_file", "id": "t100", "input": {"path": "src/lib.rs", "content": "// Code here", "mode": "overwrite"}}}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolStart {
+                        ref tool_name,
+                        ref input_summary,
+                        ..
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "write_file");
+                // Input should be summarized with keys
+                assert!(input_summary.contains("path"));
+            }
+            _ => panic!("Expected ToolStart with input summary"),
+        }
+    }
+
+    #[test]
+    fn test_parse_opencode_tool_result_with_error_string() {
+        let line = r#"{"type": "tool_call", "subtype": "completed", "name": "bash", "error": "Command not found"}"#;
+        let event = parse_opencode_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::ToolResult { success, .. },
+                ..
+            }) => {
+                // error field as string should indicate failure
+                assert!(!success);
+            }
+            _ => panic!("Expected failed ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_parse_opencode_unknown_subtype_returns_none() {
+        let line = r#"{"type": "tool_call", "subtype": "unknown_status", "name": "bash"}"#;
+        let event = parse_opencode_event(line);
+        assert!(event.is_none());
+    }
+}

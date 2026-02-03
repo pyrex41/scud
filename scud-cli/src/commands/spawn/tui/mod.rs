@@ -28,6 +28,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+use crate::commands::spawn::headless::StreamStore;
+
 use self::app::{App, FocusedPanel, ViewMode};
 use self::ui::render;
 
@@ -44,7 +46,18 @@ enum AppExit {
 }
 
 /// Run the TUI monitor
-pub fn run(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) -> Result<()> {
+///
+/// # Arguments
+/// * `project_root` - Optional project root directory
+/// * `session_name` - Name of the session to monitor
+/// * `swarm_mode` - Whether to monitor a swarm session
+/// * `stream_store` - Optional StreamStore for headless mode (None = tmux mode)
+pub fn run(
+    project_root: Option<PathBuf>,
+    session_name: &str,
+    swarm_mode: bool,
+    stream_store: Option<StreamStore>,
+) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -53,7 +66,7 @@ pub fn run(project_root: Option<PathBuf>, session_name: &str, swarm_mode: bool) 
     let mut terminal = Terminal::new(backend)?;
 
     // Create app state
-    let mut app = App::new(project_root.clone(), session_name, swarm_mode)?;
+    let mut app = App::new(project_root.clone(), session_name, swarm_mode, stream_store)?;
 
     // Main loop
     let result = run_app(&mut terminal, &mut app);

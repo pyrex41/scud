@@ -28,7 +28,11 @@ pub struct ModelOption {
 
 impl ModelOption {
     /// Create a new model option
-    pub fn new(id: impl Into<String>, name: impl Into<String>, description: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -52,17 +56,9 @@ pub fn default_models() -> Vec<ModelOption> {
             "Claude Code",
             "Anthropic's Claude with code tools",
         ),
-        ModelOption::new(
-            "opencode",
-            "OpenCode",
-            "OpenAI-based code assistant",
-        ),
-        ModelOption::new(
-            "codex",
-            "Codex",
-            "OpenAI Codex for code completion",
-        )
-        .with_available(false),
+        ModelOption::new("opencode", "OpenCode", "OpenAI-based code assistant"),
+        ModelOption::new("codex", "Codex", "OpenAI Codex for code completion")
+            .with_available(false),
     ]
 }
 
@@ -78,7 +74,10 @@ pub struct ModelSelectorState {
 impl ModelSelectorState {
     /// Create new state with given selection
     pub fn new(selected: usize) -> Self {
-        Self { selected, offset: 0 }
+        Self {
+            selected,
+            offset: 0,
+        }
     }
 
     /// Move selection up

@@ -450,6 +450,40 @@ impl DescartesGui {
                     ScudEvent::Error(error) => {
                         self.error = Some(error);
                     }
+                    // Headless streaming events
+                    ScudEvent::HeadlessStarted { task_id, harness } => {
+                        self.state.agent_status = AgentStatus::Running;
+                        self.state.current_task = Some(task_id.clone());
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Headless session started for task {} ({})\n", task_id, harness));
+                    }
+                    ScudEvent::ToolStart {
+                        task_id,
+                        tool_name,
+                        tool_id: _,
+                        input_summary,
+                    } => {
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("[{}] >> {} {}\n", task_id, tool_name, input_summary));
+                    }
+                    ScudEvent::ToolResult {
+                        task_id,
+                        tool_name,
+                        tool_id: _,
+                        success,
+                    } => {
+                        let status = if success { "ok" } else { "failed" };
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("[{}] << {} {}\n", task_id, tool_name, status));
+                    }
+                    ScudEvent::SessionAssigned { task_id, session_id } => {
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("[{}] Session assigned: {}\n", task_id, session_id));
+                    }
                 }
                 Task::none()
             }

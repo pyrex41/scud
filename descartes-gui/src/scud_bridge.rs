@@ -4,6 +4,7 @@
 //! for task operations and subprocess calls for swarm execution.
 
 use serde::Deserialize;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -11,6 +12,12 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use scud_core::{compute_waves, Phase, Storage, Task, TaskStatus};
+
+// Import headless streaming infrastructure from scud-cli
+use scud::commands::spawn::headless::{
+    create_runner, AnyRunner, SessionHandle, SessionStatus, StreamEventKind, StreamStore,
+};
+use scud::commands::spawn::terminal::Harness;
 
 use crate::state::TaskInfo;
 
@@ -58,6 +65,30 @@ pub enum ScudEvent {
 
     /// Error occurred
     Error(String),
+
+    // Headless streaming events (for direct agent output visibility)
+
+    /// Headless session started
+    HeadlessStarted { task_id: String, harness: String },
+
+    /// Tool execution started (headless mode)
+    ToolStart {
+        task_id: String,
+        tool_name: String,
+        tool_id: String,
+        input_summary: String,
+    },
+
+    /// Tool execution completed (headless mode)
+    ToolResult {
+        task_id: String,
+        tool_name: String,
+        tool_id: String,
+        success: bool,
+    },
+
+    /// Agent session ID assigned (for continuation)
+    SessionAssigned { task_id: String, session_id: String },
 }
 
 /// Commands to send to SCUD
@@ -99,6 +130,9 @@ pub enum ScudCommand {
 
     /// Mark a task as blocked
     BlockTask { task_id: String },
+
+    /// Run a single task in headless mode with streaming output
+    RunTaskHeadless { task_id: String, harness: String },
 }
 
 /// JSON event format from SCUD CLI when running with --json-events
@@ -201,6 +235,12 @@ pub struct ScudBridge {
 
     /// Whether the swarm is currently paused
     paused: bool,
+
+    /// Stream store for headless session management
+    stream_store: StreamStore,
+
+    /// Working directory for headless execution
+    working_dir: PathBuf,
 }
 
 impl ScudBridge {
@@ -214,6 +254,24 @@ impl ScudBridge {
             command_rx,
             swarm_handle: None,
             paused: false,
+            stream_store: StreamStore::new(),
+            working_dir: std::env::current_dir().unwrap_or_default(),
+        }
+    }
+
+    /// Create a new ScudBridge with a specific working directory
+    pub fn with_working_dir(
+        event_tx: mpsc::Sender<ScudEvent>,
+        command_rx: mpsc::Receiver<ScudCommand>,
+        working_dir: PathBuf,
+    ) -> Self {
+        Self {
+            event_tx,
+            command_rx,
+            swarm_handle: None,
+            paused: false,
+            stream_store: StreamStore::new(),
+            working_dir,
         }
     }
 
@@ -229,6 +287,21 @@ impl ScudBridge {
         let (command_tx, command_rx) = mpsc::channel(100);
 
         let bridge = Self::new(event_tx, command_rx);
+        (bridge, command_tx, event_rx)
+    }
+
+    /// Create a new ScudBridge with specific working directory and return channel handles
+    pub fn create_with_working_dir(
+        working_dir: PathBuf,
+    ) -> (
+        Self,
+        mpsc::Sender<ScudCommand>,
+        mpsc::Receiver<ScudEvent>,
+    ) {
+        let (event_tx, event_rx) = mpsc::channel(100);
+        let (command_tx, command_rx) = mpsc::channel(100);
+
+        let bridge = Self::with_working_dir(event_tx, command_rx, working_dir);
         (bridge, command_tx, event_rx)
     }
 
@@ -270,6 +343,9 @@ impl ScudBridge {
                 }
                 ScudCommand::BlockTask { task_id } => {
                     self.block_task(&task_id).await;
+                }
+                ScudCommand::RunTaskHeadless { task_id, harness } => {
+                    self.run_task_headless(&task_id, &harness).await;
                 }
             }
         }
@@ -786,6 +862,260 @@ impl ScudBridge {
             }
         }
     }
+
+    /// Run a task in headless mode with direct streaming output
+    ///
+    /// Uses the scud-cli headless infrastructure for proper event parsing.
+    /// Spawns the appropriate harness (Claude/OpenCode) and streams structured
+    /// events (text deltas, tool calls, completion) back to the GUI.
+    async fn run_task_headless(&mut self, task_id: &str, harness_name: &str) {
+        info!(
+            "Running task {} in headless mode with harness {}",
+            task_id, harness_name
+        );
+
+        // Parse harness type
+        let harness = match Harness::parse(harness_name) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("Invalid harness: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Invalid harness: {}", e)))
+                    .await;
+                return;
+            }
+        };
+
+        // Load task details
+        let task_id_clone = task_id.to_string();
+        let task_result = tokio::task::spawn_blocking(move || -> Result<(Task, String), String> {
+            let storage = Storage::new(None);
+            let tag = storage
+                .get_active_group()
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "No active task group".to_string())?;
+            let phase = storage.load_group(&tag).map_err(|e| e.to_string())?;
+            let task = phase
+                .get_task(&task_id_clone)
+                .cloned()
+                .ok_or_else(|| format!("Task '{}' not found", task_id_clone))?;
+            Ok((task, tag))
+        })
+        .await;
+
+        let (task, tag) = match task_result {
+            Ok(Ok((t, tag))) => (t, tag),
+            Ok(Err(e)) => {
+                error!("Failed to load task: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to load task: {}", e)))
+                    .await;
+                return;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Task spawn error: {}", e)))
+                    .await;
+                return;
+            }
+        };
+
+        // Create stream session for this task
+        self.stream_store.create_session(task_id, &tag);
+
+        // Emit headless started event
+        let _ = self
+            .event_tx
+            .send(ScudEvent::HeadlessStarted {
+                task_id: task_id.to_string(),
+                harness: harness_name.to_string(),
+            })
+            .await;
+
+        // Emit task started event
+        let _ = self
+            .event_tx
+            .send(ScudEvent::TaskStarted {
+                task_id: task_id.to_string(),
+            })
+            .await;
+
+        // Build prompt for the agent
+        let prompt = format!(
+            "Complete the following task:\n\n## Task: {}\n\n{}\n\nWhen done, run: scud set-status {} done",
+            task.title, task.description, task_id
+        );
+
+        // Create the headless runner
+        let runner: AnyRunner = match create_runner(harness) {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to create runner: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to create runner: {}", e)))
+                    .await;
+                return;
+            }
+        };
+
+        info!("Starting headless runner for task {}", task_id);
+
+        // Start the session
+        let mut session: SessionHandle = match runner
+            .start(task_id, &prompt, &self.working_dir, None)
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to start headless session: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!(
+                        "Failed to start headless session: {}",
+                        e
+                    )))
+                    .await;
+                return;
+            }
+        };
+
+        // Store PID for potential interruption
+        if let Some(pid) = session.pid() {
+            self.stream_store.set_pid(task_id, pid);
+        }
+
+        // Stream events from the session
+        let task_id_owned = task_id.to_string();
+        let event_tx = self.event_tx.clone();
+
+        while let Some(stream_event) = session.events.recv().await {
+            // Store event in stream store for persistence/replay
+            self.stream_store.push_event(&task_id_owned, stream_event.clone());
+
+            // Convert StreamEvent to ScudEvent and send to GUI
+            match stream_event.kind {
+                StreamEventKind::TextDelta { text } => {
+                    let _ = event_tx
+                        .send(ScudEvent::TaskOutput {
+                            task_id: task_id_owned.clone(),
+                            text,
+                        })
+                        .await;
+                }
+                StreamEventKind::ToolStart {
+                    tool_name,
+                    tool_id,
+                    input_summary,
+                } => {
+                    let _ = event_tx
+                        .send(ScudEvent::ToolStart {
+                            task_id: task_id_owned.clone(),
+                            tool_name,
+                            tool_id,
+                            input_summary,
+                        })
+                        .await;
+                }
+                StreamEventKind::ToolResult {
+                    tool_name,
+                    tool_id,
+                    success,
+                } => {
+                    let _ = event_tx
+                        .send(ScudEvent::ToolResult {
+                            task_id: task_id_owned.clone(),
+                            tool_name,
+                            tool_id,
+                            success,
+                        })
+                        .await;
+                }
+                StreamEventKind::SessionAssigned { session_id } => {
+                    self.stream_store.set_session_id(&task_id_owned, &session_id);
+                    let _ = event_tx
+                        .send(ScudEvent::SessionAssigned {
+                            task_id: task_id_owned.clone(),
+                            session_id,
+                        })
+                        .await;
+                }
+                StreamEventKind::Complete { success } => {
+                    let _ = event_tx
+                        .send(ScudEvent::TaskCompleted {
+                            task_id: task_id_owned.clone(),
+                            success,
+                        })
+                        .await;
+                    if success {
+                        info!("Headless task {} completed successfully", task_id_owned);
+                    } else {
+                        warn!("Headless task {} completed with failure", task_id_owned);
+                    }
+                    break;
+                }
+                StreamEventKind::Error { message } => {
+                    error!("Headless task {} error: {}", task_id_owned, message);
+                    let _ = event_tx
+                        .send(ScudEvent::Error(format!(
+                            "Task {} error: {}",
+                            task_id_owned, message
+                        )))
+                        .await;
+                    let _ = event_tx
+                        .send(ScudEvent::TaskCompleted {
+                            task_id: task_id_owned.clone(),
+                            success: false,
+                        })
+                        .await;
+                    break;
+                }
+            }
+        }
+
+        // Wait for the session to fully complete
+        match session.wait().await {
+            Ok(success) => {
+                info!(
+                    "Headless session for task {} finished with success={}",
+                    task_id, success
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Error waiting for headless session to complete: {}",
+                    e
+                );
+            }
+        }
+
+        // Save session metadata for potential continuation
+        if let Err(e) = self.stream_store.save_session_metadata(task_id, &self.working_dir) {
+            debug!("Failed to save session metadata: {}", e);
+        }
+    }
+
+    /// Get the stream store for external access (e.g., for TUI integration)
+    pub fn stream_store(&self) -> &StreamStore {
+        &self.stream_store
+    }
+
+    /// Get headless session output for a task
+    pub fn get_headless_output(&self, task_id: &str, limit: usize) -> Vec<String> {
+        self.stream_store.get_output(task_id, limit)
+    }
+
+    /// Check if a headless session is active for a task
+    pub fn is_headless_active(&self, task_id: &str) -> bool {
+        self.stream_store
+            .get_status(task_id)
+            .map(|s| matches!(s, SessionStatus::Starting | SessionStatus::Running))
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -896,5 +1226,118 @@ mod tests {
             }
             _ => panic!("Wrong event type"),
         }
+    }
+
+    // Headless streaming event tests
+
+    #[test]
+    fn test_headless_started_event() {
+        let event = ScudEvent::HeadlessStarted {
+            task_id: "task-1".to_string(),
+            harness: "claude".to_string(),
+        };
+        match event {
+            ScudEvent::HeadlessStarted { task_id, harness } => {
+                assert_eq!(task_id, "task-1");
+                assert_eq!(harness, "claude");
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn test_tool_start_event() {
+        let event = ScudEvent::ToolStart {
+            task_id: "task-1".to_string(),
+            tool_name: "Read".to_string(),
+            tool_id: "tool_123".to_string(),
+            input_summary: "{path}".to_string(),
+        };
+        match event {
+            ScudEvent::ToolStart {
+                task_id,
+                tool_name,
+                tool_id,
+                input_summary,
+            } => {
+                assert_eq!(task_id, "task-1");
+                assert_eq!(tool_name, "Read");
+                assert_eq!(tool_id, "tool_123");
+                assert_eq!(input_summary, "{path}");
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_event() {
+        let event = ScudEvent::ToolResult {
+            task_id: "task-1".to_string(),
+            tool_name: "Bash".to_string(),
+            tool_id: "tool_456".to_string(),
+            success: true,
+        };
+        match event {
+            ScudEvent::ToolResult {
+                task_id,
+                tool_name,
+                tool_id,
+                success,
+            } => {
+                assert_eq!(task_id, "task-1");
+                assert_eq!(tool_name, "Bash");
+                assert_eq!(tool_id, "tool_456");
+                assert!(success);
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn test_session_assigned_event() {
+        let event = ScudEvent::SessionAssigned {
+            task_id: "task-1".to_string(),
+            session_id: "sess_abc123".to_string(),
+        };
+        match event {
+            ScudEvent::SessionAssigned {
+                task_id,
+                session_id,
+            } => {
+                assert_eq!(task_id, "task-1");
+                assert_eq!(session_id, "sess_abc123");
+            }
+            _ => panic!("Wrong event type"),
+        }
+    }
+
+    #[test]
+    fn test_bridge_creation_with_working_dir() {
+        let temp_dir = std::env::temp_dir();
+        let (bridge, _cmd_tx, _event_rx) =
+            ScudBridge::create_with_working_dir(temp_dir.clone());
+        assert_eq!(bridge.working_dir, temp_dir);
+    }
+
+    #[test]
+    fn test_stream_store_initialization() {
+        let (bridge, _cmd_tx, _event_rx) = ScudBridge::create();
+        // Stream store should be accessible and empty
+        assert!(bridge.stream_store().all_tasks().is_empty());
+    }
+
+    #[test]
+    fn test_is_headless_active_no_session() {
+        let (bridge, _cmd_tx, _event_rx) = ScudBridge::create();
+        // No session exists, should return false
+        assert!(!bridge.is_headless_active("nonexistent-task"));
+    }
+
+    #[test]
+    fn test_get_headless_output_no_session() {
+        let (bridge, _cmd_tx, _event_rx) = ScudBridge::create();
+        // No session exists, should return empty vec
+        let output = bridge.get_headless_output("nonexistent-task", 100);
+        assert!(output.is_empty());
     }
 }

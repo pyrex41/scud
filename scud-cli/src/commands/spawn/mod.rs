@@ -7,6 +7,7 @@
 //! - Install Claude Code hooks for automatic task completion
 
 pub mod agent;
+pub mod headless;
 pub mod hooks;
 pub mod monitor;
 pub mod terminal;
@@ -23,6 +24,7 @@ use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 use crate::sync::claude_tasks;
 
+use self::headless::StreamStore;
 use self::monitor::SpawnSession;
 use self::terminal::Harness;
 
@@ -44,6 +46,7 @@ pub fn run(
     attach: bool,
     monitor: bool,
     claim: bool,
+    headless: bool,
     harness_arg: &str,
     model_arg: &str,
 ) -> Result<()> {
@@ -53,8 +56,10 @@ pub fn run(
         anyhow::bail!("SCUD not initialized. Run: scud init");
     }
 
-    // Check tmux is available
-    terminal::check_tmux_available()?;
+    // Check tmux is available (only needed for non-headless mode)
+    if !headless {
+        terminal::check_tmux_available()?;
+    }
 
     // Load all phases for cross-tag dependency checking
     let all_phases = storage.load_tasks()?;
@@ -83,12 +88,15 @@ pub fn run(
     let session_name = session.unwrap_or_else(|| format!("scud-{}", phase_tag));
 
     // Display spawn plan
+    let terminal_type = if headless { "headless" } else { "tmux" };
     println!("{}", "SCUD Spawn".cyan().bold());
     println!("{}", "═".repeat(50));
-    println!("{:<20} {}", "Terminal:".dimmed(), "tmux".green());
+    println!("{:<20} {}", "Mode:".dimmed(), terminal_type.green());
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().green());
     println!("{:<20} {}", "Model:".dimmed(), model_arg.green());
-    println!("{:<20} {}", "Session:".dimmed(), session_name.cyan());
+    if !headless {
+        println!("{:<20} {}", "Session:".dimmed(), session_name.cyan());
+    }
     println!("{:<20} {}", "Tasks:".dimmed(), ready_tasks.len());
     println!();
 
@@ -107,6 +115,9 @@ pub fn run(
         println!("{}", "Dry run - no terminals spawned.".yellow());
         return Ok(());
     }
+
+    // Create stream store for headless mode
+    let stream_store = if headless { Some(StreamStore::new()) } else { None };
 
     // Get working directory
     let working_dir = project_root
@@ -168,13 +179,17 @@ pub fn run(
         }
     }
 
-    // Create spawn session metadata
-    let mut spawn_session = SpawnSession::new(
-        &session_name,
-        &phase_tag,
-        "tmux",
-        &working_dir.to_string_lossy(),
-    );
+    // Create spawn session metadata (only for tmux mode)
+    let mut spawn_session = if !headless {
+        Some(SpawnSession::new(
+            &session_name,
+            &phase_tag,
+            "tmux",
+            &working_dir.to_string_lossy(),
+        ))
+    } else {
+        None
+    };
 
     // Spawn agents
     println!("{}", "Spawning agents...".green());
@@ -182,60 +197,89 @@ pub fn run(
     let mut success_count = 0;
     let mut claimed_tasks: Vec<(String, String)> = Vec::new(); // (task_id, tag) pairs for claiming
 
-    for info in &ready_tasks {
-        // Resolve agent config (harness, model, prompt) from task's agent_type
-        let config = agent::resolve_agent_config(
-            info.task,
-            &info.tag,
+    if headless {
+        // Headless mode - use streaming runners
+        let store = stream_store.as_ref().expect("stream_store should be Some in headless mode");
+
+        // Use tokio runtime for async headless spawning
+        let rt = tokio::runtime::Runtime::new()?;
+        let spawned_ids = rt.block_on(spawn_headless(
+            &ready_tasks,
+            &working_dir,
             harness,
             Some(model_arg),
-            &working_dir,
-        );
+            store,
+        ))?;
 
-        // Warn if agent type was specified but definition not found
-        if info.task.agent_type.is_some() && !config.from_agent_def {
-            println!(
-                "  {} Agent '{}' not found, using CLI defaults",
-                "!".yellow(),
-                info.task.agent_type.as_deref().unwrap_or("unknown")
-            );
-        }
+        success_count = spawned_ids.len();
 
-        match terminal::spawn_terminal_with_task_list(
-            &info.task.id,
-            &config.prompt,
-            &working_dir,
-            &session_name,
-            config.harness,
-            config.model.as_deref(),
-            &task_list_id,
-        ) {
-            Ok(window_index) => {
-                println!(
-                    "  {} Spawned: {} | {} [{}] {}:{}",
-                    "✓".green(),
-                    info.task.id.cyan(),
-                    info.task.title.dimmed(),
-                    config.display_info().dimmed(),
-                    session_name.dimmed(),
-                    window_index.dimmed(),
-                );
-                spawn_session.add_agent(&info.task.id, &info.task.title, &info.tag);
-                success_count += 1;
-
-                // Track for claiming
-                if claim {
-                    claimed_tasks.push((info.task.id.clone(), info.tag.clone()));
+        // Track for claiming
+        if claim {
+            for task_id in &spawned_ids {
+                if let Some(info) = ready_tasks.iter().find(|t| t.task.id == *task_id) {
+                    claimed_tasks.push((task_id.clone(), info.tag.clone()));
                 }
             }
-            Err(e) => {
-                println!("  {} Failed: {} - {}", "✗".red(), info.task.id.red(), e);
-            }
         }
+    } else {
+        // tmux mode - use terminal spawning
+        for info in &ready_tasks {
+            // Resolve agent config (harness, model, prompt) from task's agent_type
+            let config = agent::resolve_agent_config(
+                info.task,
+                &info.tag,
+                harness,
+                Some(model_arg),
+                &working_dir,
+            );
 
-        // Small delay between spawns to avoid overwhelming the system
-        if success_count < ready_tasks.len() {
-            thread::sleep(Duration::from_millis(500));
+            // Warn if agent type was specified but definition not found
+            if info.task.agent_type.is_some() && !config.from_agent_def {
+                println!(
+                    "  {} Agent '{}' not found, using CLI defaults",
+                    "!".yellow(),
+                    info.task.agent_type.as_deref().unwrap_or("unknown")
+                );
+            }
+
+            match terminal::spawn_terminal_with_task_list(
+                &info.task.id,
+                &config.prompt,
+                &working_dir,
+                &session_name,
+                config.harness,
+                config.model.as_deref(),
+                &task_list_id,
+            ) {
+                Ok(window_index) => {
+                    println!(
+                        "  {} Spawned: {} | {} [{}] {}:{}",
+                        "✓".green(),
+                        info.task.id.cyan(),
+                        info.task.title.dimmed(),
+                        config.display_info().dimmed(),
+                        session_name.dimmed(),
+                        window_index.dimmed(),
+                    );
+                    if let Some(ref mut session) = spawn_session {
+                        session.add_agent(&info.task.id, &info.task.title, &info.tag);
+                    }
+                    success_count += 1;
+
+                    // Track for claiming
+                    if claim {
+                        claimed_tasks.push((info.task.id.clone(), info.tag.clone()));
+                    }
+                }
+                Err(e) => {
+                    println!("  {} Failed: {} - {}", "✗".red(), info.task.id.red(), e);
+                }
+            }
+
+            // Small delay between spawns to avoid overwhelming the system
+            if success_count < ready_tasks.len() {
+                thread::sleep(Duration::from_millis(500));
+            }
         }
     }
 
@@ -278,22 +322,25 @@ pub fn run(
         }
     }
 
-    // Setup control window for tmux
-    if let Err(e) = terminal::setup_tmux_control_window(&session_name, &phase_tag) {
-        println!(
-            "  {} Control window setup: {}",
-            "!".yellow(),
-            e.to_string().dimmed()
-        );
-    }
+    // Setup control window and save session metadata (tmux mode only)
+    if !headless {
+        if let Err(e) = terminal::setup_tmux_control_window(&session_name, &phase_tag) {
+            println!(
+                "  {} Control window setup: {}",
+                "!".yellow(),
+                e.to_string().dimmed()
+            );
+        }
 
-    // Save session metadata
-    if let Err(e) = monitor::save_session(project_root.as_ref(), &spawn_session) {
-        println!(
-            "  {} Session metadata: {}",
-            "!".yellow(),
-            e.to_string().dimmed()
-        );
+        if let Some(ref session) = spawn_session {
+            if let Err(e) = monitor::save_session(project_root.as_ref(), session) {
+                println!(
+                    "  {} Session metadata: {}",
+                    "!".yellow(),
+                    e.to_string().dimmed()
+                );
+            }
+        }
     }
 
     // Summary
@@ -305,15 +352,27 @@ pub fn run(
         ready_tasks.len()
     );
 
-    println!();
-    println!(
-        "To attach: {}",
-        format!("tmux attach -t {}", session_name).cyan()
-    );
-    println!(
-        "To list:   {}",
-        format!("tmux list-windows -t {}", session_name).dimmed()
-    );
+    if headless {
+        println!();
+        println!(
+            "To resume: {}",
+            "scud attach <task_id>".cyan()
+        );
+        println!(
+            "To list:   {}",
+            "scud attach --list".dimmed()
+        );
+    } else {
+        println!();
+        println!(
+            "To attach: {}",
+            format!("tmux attach -t {}", session_name).cyan()
+        );
+        println!(
+            "To list:   {}",
+            format!("tmux list-windows -t {}", session_name).dimmed()
+        );
+    }
 
     // Monitor takes priority over attach
     if monitor {
@@ -321,11 +380,11 @@ pub fn run(
         println!("Starting monitor...");
         // Small delay to let agents start
         thread::sleep(Duration::from_secs(1));
-        return tui::run(project_root, &session_name, false); // spawn mode, not swarm
+        return tui::run(project_root, &session_name, false, stream_store); // pass store for headless mode
     }
 
-    // Attach if requested
-    if attach {
+    // Attach if requested (tmux mode only)
+    if attach && !headless {
         println!();
         println!("Attaching to session...");
         terminal::tmux_attach(&session_name)?;
@@ -411,7 +470,7 @@ pub fn run_monitor(
         }
     };
 
-    tui::run(project_root, &session_name, swarm_mode)
+    tui::run(project_root, &session_name, swarm_mode, None)
 }
 
 /// List spawn sessions
@@ -689,4 +748,122 @@ mod tests {
         // Task 2 is NOT ready (dep not done)
         assert!(!is_task_ready(&phase.tasks[1], &phase, &all_tasks));
     }
+}
+
+/// Spawn agents in headless mode (no tmux)
+///
+/// This function spawns agents using the HeadlessRunner infrastructure,
+/// which captures streaming JSON output instead of using tmux terminals.
+/// Session metadata is automatically saved when a session ID is assigned,
+/// enabling session continuation via `scud attach`.
+///
+/// # Arguments
+/// * `tasks` - Tasks to spawn agents for
+/// * `working_dir` - Working directory for agent processes
+/// * `harness` - Which harness to use (Claude or OpenCode)
+/// * `model` - Optional model override
+/// * `store` - StreamStore for capturing agent output
+///
+/// # Returns
+/// Vector of task IDs that were successfully spawned
+async fn spawn_headless(
+    tasks: &[TaskInfo<'_>],
+    working_dir: &std::path::Path,
+    harness: Harness,
+    model: Option<&str>,
+    store: &StreamStore,
+) -> Result<Vec<String>> {
+    use crate::commands::attach::{save_session_metadata, SessionMetadata};
+
+    // Create the appropriate runner for the harness
+    let runner = headless::create_runner(harness)?;
+
+    let mut spawned_task_ids = Vec::new();
+
+    for info in tasks {
+        // Create session in store
+        store.create_session(&info.task.id, &info.tag);
+
+        // Resolve agent config (handles agent_type, custom prompts, etc.)
+        let config = agent::resolve_agent_config(
+            info.task,
+            &info.tag,
+            harness,
+            model,
+            working_dir,
+        );
+
+        // Start headless session
+        match runner.start(&info.task.id, &config.prompt, working_dir, config.model.as_deref()).await {
+            Ok(mut handle) => {
+                // Set PID in store for interruption support
+                if let Some(pid) = handle.pid() {
+                    store.set_pid(&info.task.id, pid);
+                }
+
+                println!(
+                    "  {} Spawned (headless): {} | {} [{}]",
+                    "✓".green(),
+                    info.task.id.cyan(),
+                    info.task.title.dimmed(),
+                    config.display_info().dimmed(),
+                );
+
+                spawned_task_ids.push(info.task.id.clone());
+
+                // Spawn background task to collect events and save session metadata
+                let store_clone = store.clone();
+                let task_id = info.task.id.clone();
+                let tag = info.tag.clone();
+                let harness_name = harness.name().to_string();
+                let working_dir = working_dir.to_path_buf();
+
+                tokio::spawn(async move {
+                    while let Some(event) = handle.events.recv().await {
+                        // Check for session ID assignment - save metadata for continuation
+                        if let headless::StreamEventKind::SessionAssigned { ref session_id } = event.kind {
+                            store_clone.set_session_id(&task_id, session_id);
+
+                            // Save session metadata for `scud attach` continuation
+                            let mut metadata = SessionMetadata::new(
+                                &task_id,
+                                session_id,
+                                &tag,
+                                &harness_name,
+                            );
+                            if let Some(pid) = handle.pid() {
+                                metadata = metadata.with_pid(pid);
+                            }
+                            if let Err(e) = save_session_metadata(&working_dir, &metadata) {
+                                eprintln!(
+                                    "  {} Failed to save session metadata for {}: {}",
+                                    "!".yellow(),
+                                    task_id,
+                                    e
+                                );
+                            }
+                        }
+
+                        // Push event to store for TUI/GUI display
+                        store_clone.push_event(&task_id, event);
+                    }
+                });
+            }
+            Err(e) => {
+                // Record error in store
+                store.push_event(
+                    &info.task.id,
+                    headless::StreamEvent::error(e.to_string()),
+                );
+                println!(
+                    "  {} Failed (headless): {} - {}",
+                    "✗".red(),
+                    info.task.id.red(),
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(spawned_task_ids)
 }

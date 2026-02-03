@@ -213,7 +213,8 @@ impl<'a> AgentSelector<'a> {
     /// Generate title with agent counts
     fn generate_title(&self, state: &AgentSelectorState) -> String {
         let total = self.agents.len();
-        let running = self.agents
+        let running = self
+            .agents
             .iter()
             .filter(|a| a.status == AgentDisplayStatus::Running)
             .count();
@@ -323,10 +324,7 @@ impl StatefulWidget for AgentSelector<'_> {
                     Line::from(vec![
                         Span::styled(prefix, Style::default().fg(ACCENT)),
                         Span::styled(format!("{} ", icon), Style::default().fg(icon_color)),
-                        Span::styled(
-                            format!("{}: ", agent.name),
-                            Style::default().fg(TEXT_MUTED),
-                        ),
+                        Span::styled(format!("{}: ", agent.name), Style::default().fg(TEXT_MUTED)),
                         Span::styled(
                             title,
                             Style::default()

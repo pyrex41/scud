@@ -34,6 +34,9 @@ pub mod spawn;
 // Single agent execution
 pub mod run;
 
+// Headless session resumption
+pub mod attach;
+
 // Task restart (reset + spawn)
 pub mod restart;
 

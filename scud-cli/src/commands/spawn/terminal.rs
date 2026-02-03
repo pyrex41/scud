@@ -671,12 +671,12 @@ pub fn tmux_pane_shows_prompt(session_name: &str, window_name: &str) -> bool {
     // Common shell prompt patterns
     // These indicate the agent process has exited and we're back at shell
     let prompt_patterns = [
-        "$ ",           // bash default
-        "% ",           // zsh default
-        "> ",           // fish, some custom prompts
-        "# ",           // root shell
-        "❯ ",           // starship, some modern prompts
-        "→ ",           // some custom prompts
+        "$ ", // bash default
+        "% ", // zsh default
+        "> ", // fish, some custom prompts
+        "# ", // root shell
+        "❯ ", // starship, some modern prompts
+        "→ ", // some custom prompts
     ];
 
     // Check if line ends with a prompt pattern
@@ -687,7 +687,9 @@ pub fn tmux_pane_shows_prompt(session_name: &str, window_name: &str) -> bool {
     }
 
     // Also check for common prompt formats: user@host, (env), etc followed by prompt
-    if last_line.contains('@') && (last_line.ends_with('$') || last_line.ends_with('%') || last_line.ends_with('>')) {
+    if last_line.contains('@')
+        && (last_line.ends_with('$') || last_line.ends_with('%') || last_line.ends_with('>'))
+    {
         return true;
     }
 

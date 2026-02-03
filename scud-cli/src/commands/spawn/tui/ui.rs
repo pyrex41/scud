@@ -207,7 +207,9 @@ fn render_agents_panel_v2(frame: &mut Frame, area: Rect, app: &mut App) {
     selector_state.adjust_scroll(inner_height);
 
     // Render using the AgentSelector component
-    let selector = AgentSelector::new(&agents).focused(is_focused).compact(false);
+    let selector = AgentSelector::new(&agents)
+        .focused(is_focused)
+        .compact(false);
 
     frame.render_stateful_widget(selector, area, &mut selector_state);
 
