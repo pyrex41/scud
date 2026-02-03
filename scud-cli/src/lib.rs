@@ -476,6 +476,8 @@ pub enum SwarmMode {
     /// Beads-style continuous execution (no wave batching)
     /// Tasks execute immediately when dependencies are met
     Beads,
+    /// Headless streaming mode (no tmux, captures JSON events)
+    Headless,
 }
 
 impl std::fmt::Display for SwarmMode {
@@ -485,6 +487,7 @@ impl std::fmt::Display for SwarmMode {
             SwarmMode::Extensions => write!(f, "extensions"),
             SwarmMode::Server => write!(f, "server"),
             SwarmMode::Beads => write!(f, "beads"),
+            SwarmMode::Headless => write!(f, "headless"),
         }
     }
 }

@@ -53,6 +53,7 @@ use std::time::Duration;
 
 use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
+use crate::commands::spawn::headless::{self, StreamStore};
 use crate::commands::spawn::hooks;
 use crate::commands::spawn::monitor::{self, SpawnSession};
 use crate::commands::spawn::terminal::{self, Harness};
@@ -213,6 +214,7 @@ pub async fn run(
             SwarmMode::Extensions => "extensions (waves)".green(),
             SwarmMode::Server => "server (opencode)".magenta(),
             SwarmMode::Beads => "beads (continuous)".yellow(),
+            SwarmMode::Headless => "headless (waves)".green(),
         }
     );
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().cyan());
@@ -270,6 +272,7 @@ pub async fn run(
         SwarmMode::Extensions => "extensions",
         SwarmMode::Beads => "beads",
         SwarmMode::Server => "server",
+        SwarmMode::Headless => "headless",
     };
     let mut swarm_session = SwarmSession::new(
         &session_name,
@@ -692,6 +695,17 @@ pub async fn run(
                         round_tasks,
                         &working_dir,
                         round_idx,
+                    )?
+                }
+                SwarmMode::Headless => {
+                    // Headless mode: use spawn's headless infrastructure for streaming JSON
+                    execute_round_headless(
+                        &storage,
+                        round_tasks,
+                        &working_dir,
+                        round_idx,
+                        harness,
+                        event_writer.as_ref(),
                     )?
                 }
                 SwarmMode::Beads => {
@@ -1441,6 +1455,169 @@ fn execute_round_server(
                     }
                 }
             }
+        }
+    }
+
+    Ok(round_state)
+}
+
+/// Execute a round using spawn's headless streaming infrastructure (no tmux)
+///
+/// Uses the headless runner from `spawn::headless` to capture streaming JSON
+/// events from Claude Code or OpenCode agents without requiring tmux.
+fn execute_round_headless(
+    storage: &Storage,
+    tasks: &[TaskInfo],
+    working_dir: &std::path::Path,
+    round_idx: usize,
+    default_harness: Harness,
+    event_writer: Option<&events::EventWriter>,
+) -> Result<RoundState> {
+    use crate::commands::attach::{save_session_metadata, SessionMetadata};
+
+    let mut round_state = RoundState::new(round_idx);
+
+    // Create stream store for this round
+    let store = StreamStore::new();
+
+    // Create the headless runner
+    let runner = headless::create_runner(default_harness)?;
+
+    // Mark tasks as in-progress and spawn agents
+    let handle = tokio::runtime::Handle::current();
+
+    for info in tasks {
+        // Resolve agent config (harness, model, prompt) from task's agent_type
+        let config =
+            agent::resolve_agent_config(info.task, &info.tag, default_harness, None, working_dir);
+
+        // Create session in store
+        store.create_session(&info.task.id, &info.tag);
+
+        // Spawn headless session
+        let spawn_result = handle.block_on(async {
+            runner
+                .start(
+                    &info.task.id,
+                    &config.prompt,
+                    working_dir,
+                    config.model.as_deref(),
+                )
+                .await
+        });
+
+        match spawn_result {
+            Ok(mut session_handle) => {
+                // Set PID in store
+                if let Some(pid) = session_handle.pid() {
+                    store.set_pid(&info.task.id, pid);
+                }
+
+                println!(
+                    "    {} Spawned (headless): {} | {} [{}]",
+                    "✓".green(),
+                    info.task.id.cyan(),
+                    info.task.title.dimmed(),
+                    config.display_info().dimmed(),
+                );
+
+                round_state.task_ids.push(info.task.id.clone());
+                round_state.tags.push(info.tag.clone());
+
+                // Emit spawn event
+                if let Some(writer) = event_writer {
+                    let _ = writer.log_spawned(&info.task.id);
+                }
+
+                // Mark task as in-progress
+                if let Ok(mut phase) = storage.load_group(&info.tag) {
+                    if let Some(task) = phase.get_task_mut(&info.task.id) {
+                        task.set_status(TaskStatus::InProgress);
+                        let _ = storage.update_group(&info.tag, &phase);
+                    }
+                }
+
+                // Spawn background task to collect events
+                let store_clone = store.clone();
+                let task_id = info.task.id.clone();
+                let tag = info.tag.clone();
+                let working_dir_clone = working_dir.to_path_buf();
+                let harness_name = default_harness.name().to_string();
+
+                tokio::spawn(async move {
+                    while let Some(event) = session_handle.events.recv().await {
+                        // Check for session ID assignment
+                        if let headless::StreamEventKind::SessionAssigned { ref session_id } =
+                            event.kind
+                        {
+                            store_clone.set_session_id(&task_id, session_id);
+
+                            // Save session metadata for `scud attach` continuation
+                            let metadata =
+                                SessionMetadata::new(&task_id, session_id, &tag, &harness_name);
+                            let _ = save_session_metadata(&working_dir_clone, &metadata);
+                        }
+
+                        store_clone.push_event(&task_id, event);
+                    }
+
+                    // Wait for process to complete
+                    let _ = session_handle.wait().await;
+                });
+            }
+            Err(e) => {
+                println!(
+                    "    {} Failed (headless): {} - {}",
+                    "✗".red(),
+                    info.task.id.red(),
+                    e
+                );
+                round_state.failures.push(info.task.id.clone());
+
+                // Record error in store
+                store.push_event(&info.task.id, headless::StreamEvent::error(e.to_string()));
+            }
+        }
+
+        // Small delay between spawns to avoid overwhelming the system
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    // Wait for all tasks to complete by polling the store
+    println!("    Waiting for headless round completion...");
+    let poll_interval = Duration::from_secs(5);
+    let max_wait = Duration::from_secs(3600); // 1 hour max
+    let start = std::time::Instant::now();
+
+    loop {
+        let active_count = store.active_tasks().len();
+        if active_count == 0 {
+            break;
+        }
+
+        if start.elapsed() > max_wait {
+            println!(
+                "    {} Timeout waiting for {} tasks",
+                "!".yellow(),
+                active_count
+            );
+            break;
+        }
+
+        // Print status periodically
+        println!(
+            "    ... {} tasks still running ({}s elapsed)",
+            active_count,
+            start.elapsed().as_secs()
+        );
+
+        std::thread::sleep(poll_interval);
+    }
+
+    // Emit completion events
+    for task_id in &round_state.task_ids {
+        if let Some(writer) = event_writer {
+            let _ = writer.log_completed(task_id, true, start.elapsed().as_millis() as u64);
         }
     }
 
