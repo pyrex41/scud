@@ -80,6 +80,12 @@ enum AgentsCommands {
         #[arg(long)]
         all: bool,
     },
+
+    /// Configure agent harness and model settings interactively
+    Configure {
+        /// Agent name (optional - prompts for selection if not provided)
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -109,12 +115,6 @@ enum SpawnAgentsCommands {
         /// Remove all spawn agents
         #[arg(long)]
         all: bool,
-    },
-
-    /// Configure agent harness and model settings interactively
-    Configure {
-        /// Agent name (optional - prompts for selection if not provided)
-        name: Option<String>,
     },
 }
 
@@ -1046,6 +1046,9 @@ async fn main() -> Result<()> {
                 AgentsCommands::Remove { name, all } => {
                     commands::config::agents_remove(cli.project, name, all)
                 }
+                AgentsCommands::Configure { name } => {
+                    commands::config::spawn_agents_configure(cli.project, name)
+                }
             },
             ConfigCommands::Backpressure {
                 commands,
@@ -1063,9 +1066,6 @@ async fn main() -> Result<()> {
                 } => commands::config::spawn_agents_add(cli.project, name, all, interactive),
                 SpawnAgentsCommands::Remove { name, all } => {
                     commands::config::spawn_agents_remove(cli.project, name, all)
-                }
-                SpawnAgentsCommands::Configure { name } => {
-                    commands::config::spawn_agents_configure(cli.project, name)
                 }
             },
         },
