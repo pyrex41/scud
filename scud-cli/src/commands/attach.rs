@@ -156,6 +156,11 @@ pub fn interactive_command(harness: Harness, session_id: &str) -> Result<Vec<Str
                 session_id.to_string(),
             ])
         }
+        Harness::Cursor => Ok(vec![
+            binary_path,
+            "--resume".to_string(),
+            session_id.to_string(),
+        ]),
     }
 }
 

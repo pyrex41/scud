@@ -422,6 +422,9 @@ impl AnyRunner {
         match harness {
             Harness::Claude => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
             Harness::OpenCode => Ok(AnyRunner::OpenCode(OpenCodeHeadless::new()?)),
+            // Cursor headless uses the same CLI pattern as Claude (prompt-based)
+            // For now, fall back to Claude runner as the interface is similar
+            Harness::Cursor => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
         }
     }
 

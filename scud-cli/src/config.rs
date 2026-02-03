@@ -149,6 +149,7 @@ impl Config {
             "openrouter" => "OPENROUTER_API_KEY",
             "claude-cli" => "NONE", // Claude CLI doesn't need API key
             "codex" => "NONE",      // Codex CLI doesn't need API key
+            "cursor" => "NONE",     // Cursor Agent CLI doesn't need API key
             _ => "API_KEY",
         }
     }
@@ -161,7 +162,7 @@ impl Config {
         ];
         providers
             .iter()
-            .any(|p| !matches!(p.as_str(), "claude-cli" | "codex"))
+            .any(|p| !matches!(p.as_str(), "claude-cli" | "codex" | "cursor"))
     }
 
     pub fn api_endpoint(&self) -> &str {
@@ -181,7 +182,8 @@ impl Config {
             "openai" => "o3-mini",
             "openrouter" => "anthropic/claude-sonnet-4.5",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
-            "codex" => "gpt-5.1",     // Codex CLI default model
+            "codex" => "gpt-5.1",         // Codex CLI default model
+            "cursor" => "claude-4-sonnet", // Cursor Agent default model
             _ => "xai/grok-code-fast-1",
         }
     }
@@ -228,6 +230,12 @@ impl Config {
                 "gpt-5.1-mini", // Fast model
                 "o3",           // Reasoning model
                 "o3-mini",      // Fast reasoning
+            ],
+            "cursor" => vec![
+                "claude-4-opus",   // Smart/reasoning
+                "claude-4-sonnet", // Balanced
+                "gpt-5",          // OpenAI model
+                "gpt-5.2-high",   // High-capability
             ],
             _ => vec![],
         }

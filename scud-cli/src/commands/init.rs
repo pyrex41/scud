@@ -14,6 +14,7 @@ use crate::storage::Storage;
 fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
     let providers = vec![
         "Claude Code (recommended - no API key needed)",
+        "Cursor Agent CLI (no API key needed)",
         "OpenAI Codex CLI (no API key needed)",
         "xAI (Grok)",
         "Anthropic (Claude API)",
@@ -23,16 +24,17 @@ fn configure_provider_and_model(tier: &str) -> Result<(String, String)> {
     let provider_selection = Select::new()
         .with_prompt(format!("Select {} LLM provider", tier))
         .items(&providers)
-        .default(if tier == "fast" { 2 } else { 0 }) // Default xAI for fast, Claude for smart
+        .default(if tier == "fast" { 3 } else { 0 }) // Default xAI for fast, Claude for smart
         .interact()?;
 
     let provider = match provider_selection {
         0 => "claude-cli",
-        1 => "codex",
-        2 => "xai",
-        3 => "anthropic",
-        4 => "openai",
-        5 => "openrouter",
+        1 => "cursor",
+        2 => "codex",
+        3 => "xai",
+        4 => "anthropic",
+        5 => "openai",
+        6 => "openrouter",
         _ => "claude-cli",
     };
 
@@ -276,10 +278,10 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         let provider = provider_name.to_lowercase();
         if !matches!(
             provider.as_str(),
-            "xai" | "anthropic" | "openai" | "openrouter" | "claude-cli" | "codex"
+            "xai" | "anthropic" | "openai" | "openrouter" | "claude-cli" | "codex" | "cursor"
         ) {
             anyhow::bail!(
-                "Invalid provider: {}. Valid options: claude-cli, codex, xai, anthropic, openai, openrouter",
+                "Invalid provider: {}. Valid options: claude-cli, cursor, codex, xai, anthropic, openai, openrouter",
                 provider
             );
         }

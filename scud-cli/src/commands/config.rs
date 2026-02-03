@@ -1370,7 +1370,7 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
     println!();
 
     // Select harness
-    let harnesses = ["claude", "opencode"];
+    let harnesses = ["claude", "opencode", "cursor"];
     let current_harness_idx = harnesses
         .iter()
         .position(|h| *h == current_harness)
@@ -1390,6 +1390,12 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
             "xai/grok-4-1-fast",
             "gpt-5.1",
             "o3-mini",
+            "custom...",
+        ],
+        "cursor" => vec![
+            "claude-4-opus",
+            "claude-4-sonnet",
+            "gpt-5",
             "custom...",
         ],
         _ => vec!["default", "custom..."],

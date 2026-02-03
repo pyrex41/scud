@@ -201,6 +201,15 @@ pub async fn spawn_agent(
             c.arg(&config.prompt);
             c
         }
+        Harness::Cursor => {
+            let mut c = Command::new(binary_path);
+            c.arg("-p");
+            if let Some(ref model) = config.model {
+                c.arg("--model").arg(model);
+            }
+            c.arg(&config.prompt);
+            c
+        }
     };
 
     // Set working directory and environment

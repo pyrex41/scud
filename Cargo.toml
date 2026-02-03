@@ -3,7 +3,7 @@ members = ["scud-cli", "scud-core", "descartes-gui"]
 resolver = "2"
 
 [workspace.package]
-version = "1.52.0"
+version = "1.53.0"
 edition = "2021"
 license = "MIT"
 authors = ["SCUD Team"]
@@ -12,4 +12,4 @@ authors = ["SCUD Team"]
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 iced = { version = "0.14", features = ["tokio", "advanced"] }
-scud-core = { version = "1.52.0", path = "scud-core" }
+scud-core = { version = "1.53.0", path = "scud-core" }

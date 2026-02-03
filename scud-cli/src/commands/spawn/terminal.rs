@@ -16,6 +16,8 @@ pub enum Harness {
     Claude,
     /// OpenCode CLI
     OpenCode,
+    /// Cursor Agent CLI
+    Cursor,
 }
 
 impl Harness {
@@ -24,7 +26,8 @@ impl Harness {
         match s.to_lowercase().as_str() {
             "claude" | "claude-code" => Ok(Harness::Claude),
             "opencode" | "open-code" => Ok(Harness::OpenCode),
-            other => anyhow::bail!("Unknown harness: '{}'. Supported: claude, opencode", other),
+            "cursor" | "cursor-agent" => Ok(Harness::Cursor),
+            other => anyhow::bail!("Unknown harness: '{}'. Supported: claude, opencode, cursor", other),
         }
     }
 
@@ -33,6 +36,7 @@ impl Harness {
         match self {
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
+            Harness::Cursor => "cursor",
         }
     }
 
@@ -41,6 +45,7 @@ impl Harness {
         match self {
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
+            Harness::Cursor => "agent",
         }
     }
 
@@ -67,6 +72,15 @@ impl Harness {
                     prompt_file.display()
                 )
             }
+            Harness::Cursor => {
+                let model_flag = model.map(|m| format!(" --model {}", m)).unwrap_or_default();
+                format!(
+                    r#"'{}' -p{} "$(cat '{}')""#,
+                    binary_path,
+                    model_flag,
+                    prompt_file.display()
+                )
+            }
         }
     }
 }
@@ -74,6 +88,7 @@ impl Harness {
 /// Cached paths to harness binaries
 static CLAUDE_PATH: OnceLock<String> = OnceLock::new();
 static OPENCODE_PATH: OnceLock<String> = OnceLock::new();
+static CURSOR_PATH: OnceLock<String> = OnceLock::new();
 
 /// Find the full path to a harness binary.
 /// Caches the result for subsequent calls.
@@ -81,6 +96,7 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
     let cache = match harness {
         Harness::Claude => &CLAUDE_PATH,
         Harness::OpenCode => &OPENCODE_PATH,
+        Harness::Cursor => &CURSOR_PATH,
     };
 
     // Check if already cached
@@ -117,6 +133,11 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
             "/usr/local/bin/opencode",
             "/usr/bin/opencode",
         ],
+        Harness::Cursor => &[
+            "/opt/homebrew/bin/agent",
+            "/usr/local/bin/agent",
+            "/usr/bin/agent",
+        ],
     };
 
     for path in common_paths {
@@ -137,6 +158,9 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
                 format!("{}/.local/bin/opencode", home),
                 format!("{}/.bun/bin/opencode", home),
             ],
+            Harness::Cursor => vec![
+                format!("{}/.local/bin/agent", home),
+            ],
         };
 
         for path in home_paths {
@@ -150,6 +174,7 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
     let install_hint = match harness {
         Harness::Claude => "Install with: npm install -g @anthropic-ai/claude-code",
         Harness::OpenCode => "Install with: curl -fsSL https://opencode.ai/install | bash",
+        Harness::Cursor => "Install with: curl https://cursor.com/install -fsSL | bash",
     };
 
     anyhow::bail!(
@@ -490,6 +515,11 @@ fn spawn_tmux_ralph(
         ),
         Harness::OpenCode => format!(
             "'{binary_path}' run --variant minimal \"$(cat '{prompt_file}')\"",
+            binary_path = binary_path,
+            prompt_file = prompt_file.display()
+        ),
+        Harness::Cursor => format!(
+            "'{binary_path}' -p \"$(cat '{prompt_file}')\"",
             binary_path = binary_path,
             prompt_file = prompt_file.display()
         ),
