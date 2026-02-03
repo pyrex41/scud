@@ -1297,3 +1297,140 @@ pub fn spawn_agents_remove(
 
     Ok(())
 }
+
+/// Interactively configure agent harness and model settings
+pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String>) -> Result<()> {
+    use dialoguer::{Input, Select};
+
+    let agents_dir = get_spawn_agents_dir(project_root);
+
+    // Get list of installed agents
+    let installed: Vec<String> = EMBEDDED_SPAWN_AGENTS
+        .iter()
+        .filter(|(n, _)| agents_dir.join(format!("{}.toml", n)).exists())
+        .map(|(n, _)| n.to_string())
+        .collect();
+
+    if installed.is_empty() {
+        println!(
+            "{}",
+            "No agents installed. Run: scud config spawn-agents add --all".yellow()
+        );
+        return Ok(());
+    }
+
+    // Select agent to configure (or use provided name)
+    let agent_name = match name {
+        Some(n) => {
+            if !installed.contains(&n) {
+                anyhow::bail!(
+                    "Agent '{}' not installed. Installed: {}",
+                    n,
+                    installed.join(", ")
+                );
+            }
+            n
+        }
+        None => {
+            let selection = Select::new()
+                .with_prompt("Select agent to configure")
+                .items(&installed)
+                .default(0)
+                .interact()?;
+            installed[selection].clone()
+        }
+    };
+
+    // Load current config
+    let agent_path = agents_dir.join(format!("{}.toml", agent_name));
+    let content = fs::read_to_string(&agent_path)?;
+
+    // Parse TOML manually to preserve structure
+    let mut doc: toml::Value = toml::from_str(&content)?;
+
+    // Extract current values
+    let current_harness = doc
+        .get("model")
+        .and_then(|m| m.get("harness"))
+        .and_then(|h| h.as_str())
+        .unwrap_or("opencode");
+    let current_model = doc
+        .get("model")
+        .and_then(|m| m.get("model"))
+        .and_then(|m| m.as_str())
+        .unwrap_or("default");
+
+    println!(
+        "\n{} {}",
+        "Configuring:".blue().bold(),
+        agent_name.cyan()
+    );
+    println!("  Current harness: {}", current_harness.yellow());
+    println!("  Current model: {}", current_model.yellow());
+    println!();
+
+    // Select harness
+    let harnesses = ["claude", "opencode"];
+    let current_harness_idx = harnesses
+        .iter()
+        .position(|h| *h == current_harness)
+        .unwrap_or(0);
+    let harness_selection = Select::new()
+        .with_prompt("Select harness")
+        .items(&harnesses)
+        .default(current_harness_idx)
+        .interact()?;
+    let new_harness = harnesses[harness_selection];
+
+    // Select model based on harness
+    let models: Vec<&str> = match new_harness {
+        "claude" => vec!["opus", "sonnet", "haiku", "custom..."],
+        "opencode" => vec![
+            "xai/grok-code-fast-1",
+            "xai/grok-4-1-fast",
+            "gpt-5.1",
+            "o3-mini",
+            "custom...",
+        ],
+        _ => vec!["default", "custom..."],
+    };
+
+    let current_model_idx = models
+        .iter()
+        .position(|m| *m == current_model)
+        .unwrap_or(0);
+    let model_selection = Select::new()
+        .with_prompt("Select model")
+        .items(&models)
+        .default(current_model_idx)
+        .interact()?;
+
+    let new_model = if models[model_selection] == "custom..." {
+        Input::<String>::new()
+            .with_prompt("Enter custom model name")
+            .default(current_model.to_string())
+            .interact_text()?
+    } else {
+        models[model_selection].to_string()
+    };
+
+    // Update TOML
+    if let Some(model_table) = doc.get_mut("model").and_then(|m| m.as_table_mut()) {
+        model_table.insert(
+            "harness".to_string(),
+            toml::Value::String(new_harness.to_string()),
+        );
+        model_table.insert("model".to_string(), toml::Value::String(new_model.clone()));
+    }
+
+    // Save updated config
+    let new_content = toml::to_string_pretty(&doc)?;
+    fs::write(&agent_path, new_content)?;
+
+    println!();
+    println!("{}", "✅ Agent configuration saved!".green().bold());
+    println!("  Harness: {}", new_harness.cyan());
+    println!("  Model: {}", new_model.cyan());
+
+    Ok(())
+}

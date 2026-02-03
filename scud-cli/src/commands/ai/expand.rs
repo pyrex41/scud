@@ -346,6 +346,8 @@ pub async fn run(
                     new_task.priority = priority;
                     new_task.complexity = 0;
                     new_task.parent_id = Some(parent_id.clone());
+                    // Deterministically assign agent_type based on complexity (0 = fast-builder)
+                    new_task.agent_type = Some("fast-builder".to_string());
 
                     // Map dependency references to actual subtask IDs
                     // LLM returns dependencies as 1-indexed references to other subtasks
@@ -358,6 +360,14 @@ pub async fn run(
                                 if dep_idx > 0 && dep_idx <= idx + 1 {
                                     Some(subtask_ids[dep_idx - 1].clone())
                                 } else {
+                                    // Invalid index (0 or out of range) - warn and skip
+                                    eprintln!(
+                                        "  {} Subtask {}: skipping invalid dependency '{}' (indices are 1-{})",
+                                        "⚠".yellow(),
+                                        new_id,
+                                        dep,
+                                        idx + 1
+                                    );
                                     None
                                 }
                             } else {

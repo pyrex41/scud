@@ -110,6 +110,12 @@ enum SpawnAgentsCommands {
         #[arg(long)]
         all: bool,
     },
+
+    /// Configure agent harness and model settings interactively
+    Configure {
+        /// Agent name (optional - prompts for selection if not provided)
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1057,6 +1063,9 @@ async fn main() -> Result<()> {
                 } => commands::config::spawn_agents_add(cli.project, name, all, interactive),
                 SpawnAgentsCommands::Remove { name, all } => {
                     commands::config::spawn_agents_remove(cli.project, name, all)
+                }
+                SpawnAgentsCommands::Configure { name } => {
+                    commands::config::spawn_agents_configure(cli.project, name)
                 }
             },
         },

@@ -175,7 +175,21 @@ pub async fn run(
         );
         task.complexity = parsed.complexity;
         task.priority = priority;
-        task.agent_type = parsed.agent_type.clone();
+        // Deterministically assign agent_type based on complexity
+        // Keep special types (reviewer, planner, tester) if LLM identified them
+        task.agent_type = Some(match parsed.agent_type.as_deref() {
+            Some("reviewer") => "reviewer".to_string(),
+            Some("planner") => "planner".to_string(),
+            Some("tester") => "tester".to_string(),
+            _ => {
+                // For implementation tasks, use complexity to determine agent
+                if parsed.complexity <= 2 {
+                    "fast-builder".to_string()
+                } else {
+                    "builder".to_string()
+                }
+            }
+        });
 
         // Map 1-indexed LLM dependency references to actual task IDs
         task.dependencies = parsed
@@ -187,7 +201,14 @@ pub async fn run(
                     if dep_idx > 0 && dep_idx <= task_ids.len() {
                         Some(task_ids[dep_idx - 1].clone())
                     } else {
-                        // Invalid index (0 or out of range) - skip
+                        // Invalid index (0 or out of range) - warn and skip
+                        eprintln!(
+                            "  {} Task {}: skipping invalid dependency '{}' (indices are 1-{})",
+                            "⚠".yellow(),
+                            task_id,
+                            dep,
+                            task_ids.len()
+                        );
                         None
                     }
                 } else {
