@@ -186,6 +186,7 @@ impl LLMClient {
         match provider {
             "claude-cli" => self.complete_claude_cli(prompt, model_override).await,
             "codex" => self.complete_codex_cli(prompt, model_override).await,
+            "cursor" => self.complete_cursor_cli(prompt, model_override).await,
             "anthropic" => {
                 self.complete_anthropic_with_model(prompt, model_override)
                     .await
@@ -544,5 +545,68 @@ impl LLMClient {
             serde_json::from_str(&stdout).context("Failed to parse Codex CLI JSON response")?;
 
         Ok(response.result)
+    }
+
+    async fn complete_cursor_cli(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
+        use std::process::Stdio;
+        use tokio::io::AsyncWriteExt;
+        use tokio::process::Command;
+
+        let model = model_override.unwrap_or(&self.config.llm.model);
+
+        // Build the cursor agent command
+        let mut cmd = Command::new("agent");
+        cmd.arg("-p") // Print mode (headless/non-interactive)
+            .arg("--model")
+            .arg(model)
+            .arg("--output-format")
+            .arg("json")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // Spawn the process
+        let mut child = cmd.spawn().context("Failed to spawn 'agent' command. Make sure Cursor Agent CLI is installed (curl https://cursor.com/install -fsSL | bash)")?;
+
+        // Write prompt to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(prompt.as_bytes())
+                .await
+                .context("Failed to write prompt to cursor agent stdin")?;
+            drop(stdin); // Close stdin
+        }
+
+        // Wait for completion
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for cursor agent command")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Cursor Agent CLI error: {}", stderr);
+        }
+
+        // Parse output - try JSON first, fall back to plain text
+        let stdout = String::from_utf8(output.stdout)
+            .context("Cursor Agent CLI output is not valid UTF-8")?;
+
+        #[derive(Deserialize)]
+        struct CursorCliResponse {
+            result: String,
+        }
+
+        // Try JSON parse first
+        if let Ok(response) = serde_json::from_str::<CursorCliResponse>(&stdout) {
+            return Ok(response.result);
+        }
+
+        // Fall back to raw text output
+        Ok(stdout.trim().to_string())
     }
 }

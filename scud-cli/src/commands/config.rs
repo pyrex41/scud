@@ -66,6 +66,10 @@ const EMBEDDED_SPAWN_AGENTS: &[(&str, &str)] = &[
         "repairer",
         include_str!("../assets/spawn-agents/repairer.toml"),
     ),
+    (
+        "tester",
+        include_str!("../assets/spawn-agents/tester.toml"),
+    ),
 ];
 
 /// SCUD agent definitions (legacy - keeping for compatibility)
