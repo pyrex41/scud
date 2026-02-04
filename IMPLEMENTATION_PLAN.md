@@ -17,6 +17,7 @@ Replace the static Agents view in descartes-gui with an editable configuration +
 - [x] Phase 6: Tests — Update and add tests (completed 2026-02-04)
 - [x] Resolve clippy failures in scud-core/scud-cli/descartes-gui (completed 2026-02-04)
 - [x] Review backlog and select next task (completed 2026-02-04)
+- [x] Verify gui-config-controls spec fully implemented (completed 2026-02-04)
 
 ## In Progress
 
