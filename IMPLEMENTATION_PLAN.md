@@ -16,10 +16,11 @@ Replace the static Agents view in descartes-gui with an editable configuration +
 - [x] Phase 4: Waves View — Spawn button per task in `views/waves.rs` (completed 2026-02-04)
 - [x] Phase 6: Tests — Update and add tests (completed 2026-02-04)
 - [x] Resolve clippy failures in scud-core/scud-cli/descartes-gui (completed 2026-02-04)
+- [x] Review backlog and select next task (completed 2026-02-04)
 
 ## In Progress
 
-- [ ] **[CURRENT]** Review backlog and select next task
+- [ ] **[CURRENT]** Await next prioritized task (backlog empty)
 
 ## Backlog (Prioritized)
 

@@ -18,10 +18,11 @@ pub fn view<'a>(
 ) -> Element<'a, Message> {
     if sessions.is_empty() {
         return container(
-            text("No headless sessions. Start a swarm or run a task in headless mode.")
-                .style(|_| text::Style {
+            text("No headless sessions. Start a swarm or run a task in headless mode.").style(
+                |_| text::Style {
                     color: Some(theme::text::SECONDARY),
-                }),
+                },
+            ),
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -33,9 +34,17 @@ pub fn view<'a>(
     // Sort sessions: active (Starting/Running) first, then by task_id
     let mut sorted_sessions: Vec<&HeadlessSessionInfo> = sessions.values().collect();
     sorted_sessions.sort_by(|a, b| {
-        let a_active = matches!(a.status, HeadlessSessionStatus::Starting | HeadlessSessionStatus::Running);
-        let b_active = matches!(b.status, HeadlessSessionStatus::Starting | HeadlessSessionStatus::Running);
-        b_active.cmp(&a_active).then_with(|| a.task_id.cmp(&b.task_id))
+        let a_active = matches!(
+            a.status,
+            HeadlessSessionStatus::Starting | HeadlessSessionStatus::Running
+        );
+        let b_active = matches!(
+            b.status,
+            HeadlessSessionStatus::Starting | HeadlessSessionStatus::Running
+        );
+        b_active
+            .cmp(&a_active)
+            .then_with(|| a.task_id.cmp(&b.task_id))
     });
 
     // Left panel: scrollable task list
@@ -65,20 +74,23 @@ fn build_task_list<'a>(
 
         let status_indicator = status_indicator_text(&session.status);
 
-        let title = text(&session.task_title)
-            .size(14)
-            .style(|_| text::Style {
-                color: Some(theme::text::PRIMARY),
-            });
+        let title = text(&session.task_title).size(14).style(|_| text::Style {
+            color: Some(theme::text::PRIMARY),
+        });
 
-        let stats = text(format!("{} events / {} lines", session.event_count, session.line_count))
-            .size(11)
-            .style(|_| text::Style {
-                color: Some(theme::text::MUTED),
-            });
+        let stats = text(format!(
+            "{} events / {} lines",
+            session.event_count, session.line_count
+        ))
+        .size(11)
+        .style(|_| text::Style {
+            color: Some(theme::text::MUTED),
+        });
 
         let task_content = column![
-            row![status_indicator, title].spacing(6).align_y(Alignment::Center),
+            row![status_indicator, title]
+                .spacing(6)
+                .align_y(Alignment::Center),
             stats,
         ]
         .spacing(2);
@@ -110,11 +122,9 @@ fn build_task_list<'a>(
 
     let task_list = scrollable(task_column).height(Length::Fill);
 
-    let clear_button = button(
-        text("Clear Completed").size(13).style(|_| text::Style {
-            color: Some(theme::text::SECONDARY),
-        }),
-    )
+    let clear_button = button(text("Clear Completed").size(13).style(|_| text::Style {
+        color: Some(theme::text::SECONDARY),
+    }))
     .on_press(Message::MonitorClearCompleted);
 
     let panel = column![task_list, clear_button]
@@ -157,11 +167,10 @@ fn build_output_panel<'a>(
 
                 let mut output_column = Column::new().spacing(1);
                 for line in &session.output_lines {
-                    output_column = output_column.push(
-                        text(line).size(13).style(|_| text::Style {
+                    output_column =
+                        output_column.push(text(line).size(13).style(|_| text::Style {
                             color: Some(theme::text::PRIMARY),
-                        }),
-                    );
+                        }));
                 }
 
                 let output_scroll = scrollable(
@@ -169,9 +178,7 @@ fn build_output_panel<'a>(
                         .padding(10)
                         .width(Length::Fill)
                         .style(|_| container::Style {
-                            background: Some(iced::Background::Color(
-                                theme::background::TERTIARY,
-                            )),
+                            background: Some(iced::Background::Color(theme::background::TERTIARY)),
                             ..Default::default()
                         }),
                 )
@@ -202,9 +209,7 @@ fn status_indicator_text(status: &HeadlessSessionStatus) -> Element<'_, Message>
 
     text("\u{25cf}")
         .size(14)
-        .style(move |_| text::Style {
-            color: Some(color),
-        })
+        .style(move |_| text::Style { color: Some(color) })
         .into()
 }
 

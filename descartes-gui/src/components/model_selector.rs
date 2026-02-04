@@ -23,7 +23,11 @@ pub struct ModelOption {
 
 impl ModelOption {
     /// Create a new model option
-    pub fn new(id: impl Into<String>, name: impl Into<String>, description: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -48,7 +52,8 @@ pub fn default_models() -> Vec<ModelOption> {
             "Anthropic's Claude with code tools",
         ),
         ModelOption::new("opencode", "OpenCode", "OpenAI-based code assistant"),
-        ModelOption::new("codex", "Codex", "OpenAI Codex for code completion").with_available(false),
+        ModelOption::new("codex", "Codex", "OpenAI Codex for code completion")
+            .with_available(false),
     ]
 }
 
@@ -67,10 +72,7 @@ impl ModelSelectorState {
 
     /// Create new state with the first available model selected
     pub fn with_default_selection(models: &[ModelOption]) -> Self {
-        let selected = models
-            .iter()
-            .find(|m| m.available)
-            .map(|m| m.id.clone());
+        let selected = models.iter().find(|m| m.available).map(|m| m.id.clone());
         Self { selected }
     }
 
@@ -110,7 +112,11 @@ where
         let is_selected = state.selected.as_ref() == Some(&model.id);
 
         // Create status indicator
-        let status_text = if model.available { "Available" } else { "Unavailable" };
+        let status_text = if model.available {
+            "Available"
+        } else {
+            "Unavailable"
+        };
         let status = text(status_text).style(move |_| text::Style {
             color: Some(if model.available {
                 theme::SUCCESS
@@ -122,8 +128,8 @@ where
         // Create selection indicator
         let selection_icon = if is_selected { "◉" } else { "○" };
 
-        let name_text = text(format!("{} {}", selection_icon, model.name)).style(move |_| {
-            text::Style {
+        let name_text =
+            text(format!("{} {}", selection_icon, model.name)).style(move |_| text::Style {
                 color: Some(if model.available {
                     if is_selected {
                         theme::ACCENT
@@ -133,37 +139,35 @@ where
                 } else {
                     theme::text::MUTED
                 }),
-            }
-        });
-
-        let description_text = text(&model.description)
-            .size(14)
-            .style(|_| text::Style {
-                color: Some(theme::text::SECONDARY),
             });
+
+        let description_text = text(&model.description).size(14).style(|_| text::Style {
+            color: Some(theme::text::SECONDARY),
+        });
 
         let row_content = column![name_text, description_text, status].spacing(2);
 
-        let row_container = container(row_content)
-            .padding(8)
-            .width(Length::Fill)
-            .style(move |_| container::Style {
-                background: if is_selected {
-                    Some(iced::Background::Color(theme::background::SECONDARY))
-                } else {
-                    None
-                },
-                border: iced::Border {
-                    color: if is_selected {
-                        theme::ACCENT
+        let row_container =
+            container(row_content)
+                .padding(8)
+                .width(Length::Fill)
+                .style(move |_| container::Style {
+                    background: if is_selected {
+                        Some(iced::Background::Color(theme::background::SECONDARY))
                     } else {
-                        iced::Color::TRANSPARENT
+                        None
                     },
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                ..Default::default()
-            });
+                    border: iced::Border {
+                        color: if is_selected {
+                            theme::ACCENT
+                        } else {
+                            iced::Color::TRANSPARENT
+                        },
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                });
 
         // Wrap in button for selection (only if available)
         let row_element: Element<'a, Message> = if model.available {

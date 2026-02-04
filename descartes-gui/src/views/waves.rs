@@ -23,24 +23,27 @@ pub fn view<'a>(waves: &'a [Vec<TaskInfo>], active_tag: &Option<String>) -> Elem
                 // Build task action buttons based on status
                 let mut task_actions = row![].spacing(5);
 
-                // Only show Start for non-completed tasks
+                // Only show Start/Spawn for non-completed tasks
                 if task.status != "Done" && task.status != "done" {
                     task_actions = task_actions
+                        .push(button("Spawn").on_press(Message::SpawnTask {
+                            task_id: task.id.clone(),
+                        }))
                         .push(button("Start").on_press(Message::StartAgent(task.id.clone())));
                 }
 
                 // Show status management buttons
                 if task.status != "Done" && task.status != "done" {
-                    task_actions = task_actions.push(
-                        button("Done")
-                            .on_press(Message::MarkTaskComplete { task_id: task.id.clone() }),
-                    );
+                    task_actions =
+                        task_actions.push(button("Done").on_press(Message::MarkTaskComplete {
+                            task_id: task.id.clone(),
+                        }));
                 }
                 if task.status != "Blocked" && task.status != "blocked" {
-                    task_actions = task_actions.push(
-                        button("Block")
-                            .on_press(Message::MarkTaskBlocked { task_id: task.id.clone() }),
-                    );
+                    task_actions =
+                        task_actions.push(button("Block").on_press(Message::MarkTaskBlocked {
+                            task_id: task.id.clone(),
+                        }));
                 }
 
                 let task_row = row![

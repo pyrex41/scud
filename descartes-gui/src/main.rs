@@ -764,8 +764,10 @@ impl DescartesGui {
                 ViewMode::Agents => views::agents::view(
                     self.state.agent_status,
                     &self.state.current_task,
-                    &self.state.active_tag,
-                    &self.state.swarm_defaults,
+                    &self.state.launch_config,
+                    &self.state.available_harnesses,
+                    &self.state.available_tags,
+                    &self.state.available_agents,
                 ),
                 ViewMode::Output => views::output::view(
                     &self.state.current_task,
@@ -786,8 +788,10 @@ impl DescartesGui {
                 ViewMode::Agents => views::agents::view(
                     self.state.agent_status,
                     &self.state.current_task,
-                    &self.state.active_tag,
-                    &self.state.swarm_defaults,
+                    &self.state.launch_config,
+                    &self.state.available_harnesses,
+                    &self.state.available_tags,
+                    &self.state.available_agents,
                 ),
                 ViewMode::Output => views::output::view(
                     &self.state.current_task,
@@ -882,9 +886,16 @@ mod tests {
 
     /// Create a test instance without the Task
     fn test_app() -> DescartesGui {
+        let swarm_defaults = SwarmDefaults::default();
+        let launch_config = LaunchConfig::from_defaults(&swarm_defaults);
+        let mut state = AppState::default();
+        state.swarm_defaults = swarm_defaults;
+        state.launch_config = launch_config;
+        state.available_tags = vec!["feature".into(), "bugfix".into()];
+        state.available_agents = vec!["fast-builder".into(), "planner".into()];
         DescartesGui {
             view: ViewMode::Waves,
-            state: AppState::default(),
+            state,
             scud_command_tx: None,
             scud_event_rx: Arc::new(TokioMutex::new(None)),
             error: None,
@@ -1574,11 +1585,52 @@ mod tests {
         assert_eq!(app.state.active_tag, Some("bugfix".into()));
     }
 
+    /// Test launch configuration message handlers
+    #[test]
+    fn test_launch_config_updates() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::SetHarness("opencode".into()));
+        assert_eq!(app.state.launch_config.harness, "opencode");
+
+        let _ = app.update(Message::SetModel("gpt-4o".into()));
+        assert_eq!(app.state.launch_config.model, "gpt-4o");
+
+        let _ = app.update(Message::SetRoundSize(5));
+        assert_eq!(app.state.launch_config.round_size, 5);
+
+        let _ = app.update(Message::SetLaunchTag("feature".into()));
+        assert_eq!(app.state.launch_config.tag, "feature");
+
+        let _ = app.update(Message::SetAgentType(Some("planner".into())));
+        assert_eq!(app.state.launch_config.agent_type, Some("planner".into()));
+
+        let _ = app.update(Message::SetAgentType(None));
+        assert_eq!(app.state.launch_config.agent_type, None);
+    }
+
+    /// Test available tags/agents update messages
+    #[test]
+    fn test_available_lists_loaded() {
+        let mut app = test_app();
+
+        let tags = vec!["alpha".into(), "beta".into()];
+        let agents = vec!["fast-builder".into(), "planner".into()];
+
+        let _ = app.update(Message::TagsLoaded(tags.clone()));
+        assert_eq!(app.state.available_tags, tags);
+
+        let _ = app.update(Message::AgentsLoaded(agents.clone()));
+        assert_eq!(app.state.available_agents, agents);
+    }
+
     /// Test Start Swarm button appears when idle
     #[test]
     fn test_ui_swarm_controls() {
         let mut app = test_app();
-        app.state.active_tag = Some("feature".into());
+        app.state.launch_config.tag = "feature".into();
+        app.state.launch_config.harness = "opencode".into();
+        app.state.launch_config.round_size = 5;
 
         // Switch to agents view
         let _ = app.update(Message::SwitchView(ViewMode::Agents));
@@ -1593,11 +1645,46 @@ mod tests {
         );
 
         // Process the message
+        let mut saw_start_swarm = false;
         for msg in ui.into_messages() {
-            if let Message::StartSwarm { tag, .. } = &msg {
-                assert_eq!(tag, "feature", "Should use active tag");
+            if let Message::StartSwarm {
+                tag,
+                harness,
+                round_size,
+            } = &msg
+            {
+                saw_start_swarm = true;
+                assert_eq!(tag, "feature", "Should use launch_config tag");
+                assert_eq!(harness, "opencode", "Should use launch_config harness");
+                assert_eq!(*round_size, 5, "Should use launch_config round size");
             }
             let _ = app.update(msg);
         }
+        assert!(saw_start_swarm, "Should emit StartSwarm message");
+
+        // Start Headless should also use launch_config values
+        let mut ui = simulator(app.view());
+        let click_result = ui.click("Start Headless");
+        assert!(
+            click_result.is_ok(),
+            "Start Headless button should exist when idle"
+        );
+
+        let mut saw_start_headless = false;
+        for msg in ui.into_messages() {
+            if let Message::StartSwarmHeadless {
+                tag,
+                harness,
+                round_size,
+            } = &msg
+            {
+                saw_start_headless = true;
+                assert_eq!(tag, "feature", "Should use launch_config tag");
+                assert_eq!(harness, "opencode", "Should use launch_config harness");
+                assert_eq!(*round_size, 5, "Should use launch_config round size");
+            }
+            let _ = app.update(msg);
+        }
+        assert!(saw_start_headless, "Should emit StartSwarmHeadless message");
     }
 }

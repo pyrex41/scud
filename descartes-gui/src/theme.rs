@@ -11,6 +11,7 @@ pub const ACCENT: Color = Color::from_rgb(0.3, 0.5, 0.9);
 pub const SUCCESS: Color = Color::from_rgb(0.3, 0.8, 0.4);
 
 /// Warning color (yellow)
+#[allow(dead_code)]
 pub const WARNING: Color = Color::from_rgb(0.9, 0.7, 0.2);
 
 /// Error color (red)

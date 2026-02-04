@@ -170,20 +170,15 @@ where
     let mut output_column = Column::new().spacing(0);
 
     if lines.is_empty() {
-        output_column = output_column.push(
-            text("No output yet...")
-                .size(14)
-                .style(|_| text::Style {
-                    color: Some(theme::text::MUTED),
-                }),
-        );
+        output_column =
+            output_column.push(text("No output yet...").size(14).style(|_| text::Style {
+                color: Some(theme::text::MUTED),
+            }));
     } else {
         for line in lines {
-            let line_text = text(&line.text)
-                .size(14)
-                .style(move |_| text::Style {
-                    color: Some(line.line_type.color()),
-                });
+            let line_text = text(&line.text).size(14).style(move |_| text::Style {
+                color: Some(line.line_type.color()),
+            });
             output_column = output_column.push(line_text);
         }
     }
@@ -261,20 +256,15 @@ where
     let mut output_column = Column::new().spacing(0);
 
     if lines.is_empty() {
-        output_column = output_column.push(
-            text("No output yet...")
-                .size(14)
-                .style(|_| text::Style {
-                    color: Some(theme::text::MUTED),
-                }),
-        );
+        output_column =
+            output_column.push(text("No output yet...").size(14).style(|_| text::Style {
+                color: Some(theme::text::MUTED),
+            }));
     } else {
         for line in lines {
-            let line_text = text(line)
-                .size(14)
-                .style(|_| text::Style {
-                    color: Some(theme::text::PRIMARY),
-                });
+            let line_text = text(line).size(14).style(|_| text::Style {
+                color: Some(theme::text::PRIMARY),
+            });
             output_column = output_column.push(line_text);
         }
     }
@@ -314,17 +304,13 @@ pub fn output_display<'a>(text_content: &'a str, title: Option<&'a str>) -> Elem
     let header = text(title_str.to_string()).size(18);
 
     let content_text = if text_content.is_empty() {
-        text("No output")
-            .size(14)
-            .style(|_| text::Style {
-                color: Some(theme::text::MUTED),
-            })
+        text("No output").size(14).style(|_| text::Style {
+            color: Some(theme::text::MUTED),
+        })
     } else {
-        text(text_content)
-            .size(14)
-            .style(|_| text::Style {
-                color: Some(theme::text::PRIMARY),
-            })
+        text(text_content).size(14).style(|_| text::Style {
+            color: Some(theme::text::PRIMARY),
+        })
     };
 
     let output_container = container(content_text)
@@ -337,9 +323,7 @@ pub fn output_display<'a>(text_content: &'a str, title: Option<&'a str>) -> Elem
 
     let scrollable_output = scrollable(output_container).height(Length::Fill);
 
-    let content = column![header, scrollable_output]
-        .spacing(10)
-        .padding(10);
+    let content = column![header, scrollable_output].spacing(10).padding(10);
 
     container(content)
         .width(Length::Fill)

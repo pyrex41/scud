@@ -219,7 +219,11 @@ where
         t
     } else {
         generated_title = if let Some(filter) = state.status_filter {
-            format!("Agents ({} {})", filtered.len(), filter.label().to_lowercase())
+            format!(
+                "Agents ({} {})",
+                filtered.len(),
+                filter.label().to_lowercase()
+            )
         } else {
             format!("Agents ({} running / {} total)", running, total)
         };
@@ -238,11 +242,9 @@ where
         } else {
             "No agents spawned"
         };
-        agents_column = agents_column.push(
-            text(msg).style(|_| text::Style {
-                color: Some(theme::text::MUTED),
-            }),
-        );
+        agents_column = agents_column.push(text(msg).style(|_| text::Style {
+            color: Some(theme::text::MUTED),
+        }));
     } else {
         for agent in filtered {
             let is_selected = state.selected.as_ref() == Some(&agent.id);
@@ -284,26 +286,27 @@ where
                 row![icon, name_text, text(": "), title_text].spacing(4)
             };
 
-            let row_container = container(row_content)
-                .padding(6)
-                .width(Length::Fill)
-                .style(move |_| container::Style {
-                    background: if is_selected {
-                        Some(iced::Background::Color(theme::background::SECONDARY))
-                    } else {
-                        None
-                    },
-                    border: iced::Border {
-                        color: if is_selected {
-                            theme::ACCENT
+            let row_container =
+                container(row_content)
+                    .padding(6)
+                    .width(Length::Fill)
+                    .style(move |_| container::Style {
+                        background: if is_selected {
+                            Some(iced::Background::Color(theme::background::SECONDARY))
                         } else {
-                            iced::Color::TRANSPARENT
+                            None
                         },
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    ..Default::default()
-                });
+                        border: iced::Border {
+                            color: if is_selected {
+                                theme::ACCENT
+                            } else {
+                                iced::Color::TRANSPARENT
+                            },
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    });
 
             // Wrap in button for selection
             let agent_id = agent.id.clone();
