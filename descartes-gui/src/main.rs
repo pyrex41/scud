@@ -20,7 +20,7 @@ mod theme;
 mod views;
 
 use scud_bridge::{ScudBridge, ScudCommand, ScudEvent};
-use state::{AgentStatus, AppState, SwarmDefaults, TaskInfo};
+use state::{AgentStatus, AppState, HeadlessSessionInfo, HeadlessSessionStatus, SwarmDefaults, TaskInfo};
 use views::ViewMode;
 
 /// Wrapper for ScudEvent receiver that implements Hash for Iced subscriptions
@@ -99,6 +99,14 @@ pub enum Message {
     // UI
     DismissError,
     ClearOutput,
+
+    // Monitor view
+    MonitorSelectTask(String),
+    MonitorClearCompleted,
+
+    // Headless swarm
+    StartSwarmHeadless { tag: String, harness: String, round_size: usize },
+
     Tick,
 }
 
@@ -272,6 +280,30 @@ impl DescartesGui {
                 Task::none()
             }
 
+            Message::StartSwarmHeadless { tag, harness, round_size } => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    self.state.agent_status = AgentStatus::Running;
+                    self.state.output_buffer.clear();
+                    self.state
+                        .output_buffer
+                        .push_str(&format!("Starting headless swarm for tag '{}'...\n", tag));
+                    return Task::perform(
+                        async move {
+                            let _ = tx
+                                .send(ScudCommand::StartSwarmHeadless {
+                                    tag,
+                                    harness,
+                                    round_size,
+                                })
+                                .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
             Message::StartAgent(task_id) => {
                 self.state.agent_status = AgentStatus::Running;
                 self.state.current_task = Some(task_id.clone());
@@ -408,12 +440,27 @@ impl DescartesGui {
                         self.state
                             .output_buffer
                             .push_str(&format!("[{}] {}\n", task_id, text));
+                        if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            session.output_lines.push(text);
+                            session.line_count = session.output_lines.len();
+                            session.event_count += 1;
+                            if session.status == HeadlessSessionStatus::Starting {
+                                session.status = HeadlessSessionStatus::Running;
+                            }
+                        }
                     }
                     ScudEvent::TaskCompleted { task_id, success } => {
                         let status = if success { "completed" } else { "failed" };
                         self.state
                             .output_buffer
                             .push_str(&format!("Task {} {}\n", task_id, status));
+                        if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            session.status = if success {
+                                HeadlessSessionStatus::Completed
+                            } else {
+                                HeadlessSessionStatus::Failed
+                            };
+                        }
                     }
                     ScudEvent::ValidationStarted => {
                         self.state
@@ -457,6 +504,23 @@ impl DescartesGui {
                         self.state
                             .output_buffer
                             .push_str(&format!("Headless session started for task {} ({})\n", task_id, harness));
+                        // Populate headless session for monitor view
+                        let title = self.state.tasks.iter()
+                            .find(|t| t.id == task_id)
+                            .map(|t| t.title.clone())
+                            .unwrap_or_else(|| task_id.clone());
+                        self.state.headless_sessions.insert(task_id.clone(), HeadlessSessionInfo {
+                            task_id: task_id.clone(),
+                            task_title: title,
+                            harness: harness.clone(),
+                            status: HeadlessSessionStatus::Starting,
+                            event_count: 0,
+                            line_count: 0,
+                            output_lines: Vec::new(),
+                        });
+                        if self.state.monitor_selected_task.is_none() {
+                            self.state.monitor_selected_task = Some(task_id);
+                        }
                     }
                     ScudEvent::ToolStart {
                         task_id,
@@ -467,6 +531,14 @@ impl DescartesGui {
                         self.state
                             .output_buffer
                             .push_str(&format!("[{}] >> {} {}\n", task_id, tool_name, input_summary));
+                        if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            session.output_lines.push(format!(">> {} {}", tool_name, input_summary));
+                            session.line_count = session.output_lines.len();
+                            session.event_count += 1;
+                            if session.status == HeadlessSessionStatus::Starting {
+                                session.status = HeadlessSessionStatus::Running;
+                            }
+                        }
                     }
                     ScudEvent::ToolResult {
                         task_id,
@@ -478,11 +550,19 @@ impl DescartesGui {
                         self.state
                             .output_buffer
                             .push_str(&format!("[{}] << {} {}\n", task_id, tool_name, status));
+                        if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            session.output_lines.push(format!("<< {} {}", tool_name, status));
+                            session.line_count = session.output_lines.len();
+                            session.event_count += 1;
+                        }
                     }
                     ScudEvent::SessionAssigned { task_id, session_id } => {
                         self.state
                             .output_buffer
                             .push_str(&format!("[{}] Session assigned: {}\n", task_id, session_id));
+                        if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            session.status = HeadlessSessionStatus::Running;
+                        }
                     }
                 }
                 Task::none()
@@ -495,6 +575,25 @@ impl DescartesGui {
 
             Message::ClearOutput => {
                 self.state.output_buffer.clear();
+                Task::none()
+            }
+
+            Message::MonitorSelectTask(task_id) => {
+                self.state.monitor_selected_task = Some(task_id);
+                Task::none()
+            }
+
+            Message::MonitorClearCompleted => {
+                self.state.headless_sessions.retain(|_, s| {
+                    s.status != HeadlessSessionStatus::Completed
+                        && s.status != HeadlessSessionStatus::Failed
+                });
+                // If selected task was cleared, deselect
+                if let Some(ref selected) = self.state.monitor_selected_task {
+                    if !self.state.headless_sessions.contains_key(selected) {
+                        self.state.monitor_selected_task = None;
+                    }
+                }
                 Task::none()
             }
 
@@ -534,6 +633,10 @@ impl DescartesGui {
                     self.state.agent_status,
                     &self.state.output_buffer,
                 ),
+                ViewMode::Monitor => views::monitor::view(
+                    &self.state.headless_sessions,
+                    &self.state.monitor_selected_task,
+                ),
             };
 
             column![error_banner, header, content].spacing(10).into()
@@ -551,6 +654,10 @@ impl DescartesGui {
                     &self.state.current_task,
                     self.state.agent_status,
                     &self.state.output_buffer,
+                ),
+                ViewMode::Monitor => views::monitor::view(
+                    &self.state.headless_sessions,
+                    &self.state.monitor_selected_task,
                 ),
             };
 

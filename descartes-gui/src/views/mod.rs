@@ -4,6 +4,7 @@
 
 pub mod agents;
 pub mod header;
+pub mod monitor;
 pub mod output;
 pub mod waves;
 

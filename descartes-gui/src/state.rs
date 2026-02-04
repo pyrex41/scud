@@ -1,5 +1,7 @@
 //! Application state types
 
+use std::collections::HashMap;
+
 /// Agent execution status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AgentStatus {
@@ -7,6 +9,27 @@ pub enum AgentStatus {
     Idle,
     Running,
     Paused,
+}
+
+/// Status of a headless session (mirrors StreamStore's SessionStatus)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeadlessSessionStatus {
+    Starting,
+    Running,
+    Completed,
+    Failed,
+}
+
+/// Per-task headless session info for the GUI monitor
+#[derive(Debug, Clone)]
+pub struct HeadlessSessionInfo {
+    pub task_id: String,
+    pub task_title: String,
+    pub harness: String,
+    pub status: HeadlessSessionStatus,
+    pub event_count: usize,
+    pub line_count: usize,
+    pub output_lines: Vec<String>,
 }
 
 /// Task information for display
@@ -75,4 +98,8 @@ pub struct AppState {
     pub output_buffer: String,
     /// Swarm execution defaults
     pub swarm_defaults: SwarmDefaults,
+    /// Headless sessions for monitoring (task_id -> session info)
+    pub headless_sessions: HashMap<String, HeadlessSessionInfo>,
+    /// Currently selected task in the monitor view
+    pub monitor_selected_task: Option<String>,
 }

@@ -15,6 +15,7 @@ pub enum ViewMode {
     Waves,
     Agents,
     Output,
+    Monitor,
 }
 
 /// Render the header with navigation and status
@@ -37,6 +38,13 @@ pub fn view<'a>(current_view: ViewMode, agent_status: AgentStatus) -> Element<'a
         button(text("Output"))
             .on_press(Message::SwitchView(ViewMode::Output))
             .style(if current_view == ViewMode::Output {
+                button::primary
+            } else {
+                button::secondary
+            }),
+        button(text("Monitor"))
+            .on_press(Message::SwitchView(ViewMode::Monitor))
+            .style(if current_view == ViewMode::Monitor {
                 button::primary
             } else {
                 button::secondary

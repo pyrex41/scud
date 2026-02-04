@@ -131,6 +131,13 @@ pub enum ScudCommand {
     /// Mark a task as blocked
     BlockTask { task_id: String },
 
+    /// Start swarm execution using headless runners (for monitoring)
+    StartSwarmHeadless {
+        tag: String,
+        harness: String,
+        round_size: usize,
+    },
+
     /// Run a single task in headless mode with streaming output
     RunTaskHeadless { task_id: String, harness: String },
 }
@@ -343,6 +350,13 @@ impl ScudBridge {
                 }
                 ScudCommand::BlockTask { task_id } => {
                     self.block_task(&task_id).await;
+                }
+                ScudCommand::StartSwarmHeadless {
+                    tag,
+                    harness,
+                    round_size,
+                } => {
+                    self.run_swarm_headless(&tag, &harness, round_size).await;
                 }
                 ScudCommand::RunTaskHeadless { task_id, harness } => {
                     self.run_task_headless(&task_id, &harness).await;
@@ -861,6 +875,238 @@ impl ScudBridge {
                     .await;
             }
         }
+    }
+
+    /// Run swarm execution using headless runners for each task
+    ///
+    /// Instead of shelling out to `scud swarm`, this spawns headless runners
+    /// per-task so each task gets its own StreamStore session visible in the
+    /// Monitor view.
+    async fn run_swarm_headless(&mut self, tag: &str, harness_name: &str, round_size: usize) {
+        info!("Starting headless swarm for tag '{}' with harness '{}' (round_size={})", tag, harness_name, round_size);
+
+        // Parse harness type
+        let harness = match Harness::parse(harness_name) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("Invalid harness: {}", e);
+                let _ = self.event_tx.send(ScudEvent::Error(format!("Invalid harness: {}", e))).await;
+                return;
+            }
+        };
+
+        // Load tasks and compute waves
+        let tag_owned = tag.to_string();
+        let wave_result = tokio::task::spawn_blocking(move || -> Result<(Vec<Vec<Task>>, Phase), String> {
+            let storage = Storage::new(None);
+            let phase = storage.load_group(&tag_owned).map_err(|e| e.to_string())?;
+
+            let actionable: Vec<&Task> = phase.get_actionable_tasks();
+            let pending_tasks: Vec<&Task> = actionable
+                .into_iter()
+                .filter(|t| matches!(t.status, TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::Failed))
+                .collect();
+
+            let wave_result = compute_waves(&pending_tasks);
+
+            // Convert wave IDs to full Task objects
+            let waves: Vec<Vec<Task>> = wave_result.waves
+                .into_iter()
+                .map(|wave| {
+                    wave.tasks
+                        .into_iter()
+                        .filter_map(|task_id| phase.get_task(&task_id).cloned())
+                        .collect()
+                })
+                .filter(|wave: &Vec<Task>| !wave.is_empty())
+                .collect();
+
+            Ok((waves, phase))
+        }).await;
+
+        let (waves, _phase) = match wave_result {
+            Ok(Ok((waves, phase))) => (waves, phase),
+            Ok(Err(e)) => {
+                error!("Failed to compute waves: {}", e);
+                let _ = self.event_tx.send(ScudEvent::Error(format!("Failed to compute waves: {}", e))).await;
+                return;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self.event_tx.send(ScudEvent::Error(format!("Task spawn error: {}", e))).await;
+                return;
+            }
+        };
+
+        let total_waves = waves.len();
+        let _ = self.event_tx.send(ScudEvent::SwarmStarted {
+            tag: tag.to_string(),
+            total_waves,
+        }).await;
+
+        let mut all_success = true;
+
+        for (wave_idx, wave_tasks) in waves.into_iter().enumerate() {
+            let task_ids: Vec<String> = wave_tasks.iter().map(|t| t.id.clone()).collect();
+            let _ = self.event_tx.send(ScudEvent::WaveStarted {
+                wave: wave_idx,
+                tasks: task_ids.clone(),
+            }).await;
+
+            // Process tasks in chunks of round_size
+            for chunk in wave_tasks.chunks(round_size) {
+                let mut handles = Vec::new();
+
+                for task in chunk {
+                    let task_id = task.id.clone();
+                    let task_title = task.title.clone();
+                    let task_description = task.description.clone();
+                    let harness_clone = harness.clone();
+                    let harness_name_str = harness_name.to_string();
+                    let event_tx = self.event_tx.clone();
+                    let working_dir = self.working_dir.clone();
+                    let stream_store = self.stream_store.clone();
+                    let tag_str = tag.to_string();
+
+                    let handle = tokio::spawn(async move {
+                        // Create stream session
+                        stream_store.create_session(&task_id, &tag_str);
+
+                        // Emit headless started
+                        let _ = event_tx.send(ScudEvent::HeadlessStarted {
+                            task_id: task_id.clone(),
+                            harness: harness_name_str.clone(),
+                        }).await;
+
+                        let _ = event_tx.send(ScudEvent::TaskStarted {
+                            task_id: task_id.clone(),
+                        }).await;
+
+                        // Build prompt
+                        let prompt = format!(
+                            "Complete the following task:\n\n## Task: {}\n\n{}\n\nWhen done, run: scud set-status {} done",
+                            task_title, task_description, task_id
+                        );
+
+                        // Create runner
+                        let runner: AnyRunner = match create_runner(harness_clone) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("Failed to create runner for task {}: {}", task_id, e);
+                                let _ = event_tx.send(ScudEvent::TaskCompleted {
+                                    task_id: task_id.clone(),
+                                    success: false,
+                                }).await;
+                                return false;
+                            }
+                        };
+
+                        // Start session
+                        let mut session: SessionHandle = match runner
+                            .start(&task_id, &prompt, &working_dir, None)
+                            .await
+                        {
+                            Ok(s) => s,
+                            Err(e) => {
+                                error!("Failed to start headless session for task {}: {}", task_id, e);
+                                let _ = event_tx.send(ScudEvent::TaskCompleted {
+                                    task_id: task_id.clone(),
+                                    success: false,
+                                }).await;
+                                return false;
+                            }
+                        };
+
+                        // Store PID
+                        if let Some(pid) = session.pid() {
+                            stream_store.set_pid(&task_id, pid);
+                        }
+
+                        // Stream events
+                        let mut task_success = false;
+                        while let Some(stream_event) = session.events.recv().await {
+                            stream_store.push_event(&task_id, stream_event.clone());
+
+                            match stream_event.kind {
+                                StreamEventKind::TextDelta { text } => {
+                                    let _ = event_tx.send(ScudEvent::TaskOutput {
+                                        task_id: task_id.clone(),
+                                        text,
+                                    }).await;
+                                }
+                                StreamEventKind::ToolStart { tool_name, tool_id, input_summary } => {
+                                    let _ = event_tx.send(ScudEvent::ToolStart {
+                                        task_id: task_id.clone(),
+                                        tool_name,
+                                        tool_id,
+                                        input_summary,
+                                    }).await;
+                                }
+                                StreamEventKind::ToolResult { tool_name, tool_id, success } => {
+                                    let _ = event_tx.send(ScudEvent::ToolResult {
+                                        task_id: task_id.clone(),
+                                        tool_name,
+                                        tool_id,
+                                        success,
+                                    }).await;
+                                }
+                                StreamEventKind::SessionAssigned { session_id } => {
+                                    stream_store.set_session_id(&task_id, &session_id);
+                                    let _ = event_tx.send(ScudEvent::SessionAssigned {
+                                        task_id: task_id.clone(),
+                                        session_id,
+                                    }).await;
+                                }
+                                StreamEventKind::Complete { success } => {
+                                    task_success = success;
+                                    let _ = event_tx.send(ScudEvent::TaskCompleted {
+                                        task_id: task_id.clone(),
+                                        success,
+                                    }).await;
+                                    break;
+                                }
+                                StreamEventKind::Error { message } => {
+                                    let _ = event_tx.send(ScudEvent::Error(format!(
+                                        "Task {} error: {}", task_id, message
+                                    ))).await;
+                                    let _ = event_tx.send(ScudEvent::TaskCompleted {
+                                        task_id: task_id.clone(),
+                                        success: false,
+                                    }).await;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Wait for session to finish
+                        let _ = session.wait().await;
+                        task_success
+                    });
+
+                    handles.push(handle);
+                }
+
+                // Wait for this chunk to complete
+                for handle in handles {
+                    match handle.await {
+                        Ok(success) => {
+                            if !success {
+                                all_success = false;
+                            }
+                        }
+                        Err(e) => {
+                            error!("Task join error: {}", e);
+                            all_success = false;
+                        }
+                    }
+                }
+            }
+
+            let _ = self.event_tx.send(ScudEvent::WaveCompleted { wave: wave_idx }).await;
+        }
+
+        let _ = self.event_tx.send(ScudEvent::SwarmCompleted { success: all_success }).await;
+        info!("Headless swarm completed with success={}", all_success);
     }
 
     /// Run a task in headless mode with direct streaming output

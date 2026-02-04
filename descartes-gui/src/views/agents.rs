@@ -30,6 +30,11 @@ pub fn view<'a>(
                 .clone()
                 .unwrap_or_else(|| swarm_defaults.default_tag.clone());
             controls = controls.push(button("Start Swarm").on_press(Message::StartSwarm {
+                tag: tag.clone(),
+                harness: swarm_defaults.harness.clone(),
+                round_size: swarm_defaults.round_size,
+            }));
+            controls = controls.push(button("Start Headless").on_press(Message::StartSwarmHeadless {
                 tag,
                 harness: swarm_defaults.harness.clone(),
                 round_size: swarm_defaults.round_size,
