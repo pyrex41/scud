@@ -1585,12 +1585,14 @@ fn execute_round_headless(
 
     // Wait for all tasks to complete by polling the store
     println!("    Waiting for headless round completion...");
-    let poll_interval = Duration::from_secs(5);
+    let poll_interval = Duration::from_secs(10);
     let max_wait = Duration::from_secs(3600); // 1 hour max
     let start = std::time::Instant::now();
+    let total_tasks = round_state.task_ids.len();
 
     loop {
-        let active_count = store.active_tasks().len();
+        let active_tasks = store.active_tasks();
+        let active_count = active_tasks.len();
         if active_count == 0 {
             break;
         }
@@ -1604,12 +1606,47 @@ fn execute_round_headless(
             break;
         }
 
-        // Print status periodically
+        // Show rich status: per-task info from the stream store
+        let completed = total_tasks - active_count;
+        let elapsed = start.elapsed().as_secs();
         println!(
-            "    ... {} tasks still running ({}s elapsed)",
+            "\n    ─── {} {}/{} done ({} active) · {}s elapsed ───",
+            "▶".blue(),
+            completed,
+            total_tasks,
             active_count,
-            start.elapsed().as_secs()
+            elapsed,
         );
+        for task_id in &active_tasks {
+            let status = store
+                .get_status(task_id)
+                .map(|s| format!("{:?}", s))
+                .unwrap_or_else(|| "?".to_string());
+            let stats = store
+                .session_stats(task_id)
+                .map(|(events, lines)| format!("{} events, {} lines", events, lines))
+                .unwrap_or_else(|| "starting...".to_string());
+            let last_line = store
+                .get_output(task_id, 1)
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let last_line_trimmed = if last_line.len() > 80 {
+                format!("{}…", &last_line[..79])
+            } else {
+                last_line
+            };
+            println!(
+                "      {} {} [{}] ({})",
+                "·".dimmed(),
+                task_id.cyan(),
+                status.yellow(),
+                stats.dimmed(),
+            );
+            if !last_line_trimmed.is_empty() {
+                println!("        {}", last_line_trimmed.dimmed());
+            }
+        }
 
         std::thread::sleep(poll_interval);
     }

@@ -736,9 +736,13 @@ enum Commands {
         #[arg(short = 'H', long, default_value = "claude")]
         harness: String,
 
-        /// Execution mode: tmux (default) or extensions (no tmux dependency)
+        /// Execution mode: tmux (default), headless, extensions, server, beads
         #[arg(long, value_enum, default_value_t = SwarmMode::Tmux)]
         swarm_mode: SwarmMode,
+
+        /// Run in headless mode (shorthand for --swarm-mode headless)
+        #[arg(long)]
+        headless: bool,
 
         /// Show execution plan without spawning
         #[arg(long)]
@@ -1296,6 +1300,7 @@ async fn main() -> Result<()> {
             all_tags,
             harness,
             swarm_mode,
+            headless,
             dry_run,
             session,
             no_research,
@@ -1315,7 +1320,7 @@ async fn main() -> Result<()> {
             round_size,
             all_tags,
             &harness,
-            swarm_mode,
+            if headless { SwarmMode::Headless } else { swarm_mode },
             dry_run,
             session,
             no_research,
