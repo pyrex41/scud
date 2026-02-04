@@ -1,6 +1,7 @@
 ---
 description: Document codebase as-is with thoughts directory for historical context
 model: opus
+alwaysApply: false
 ---
 
 # Research Codebase

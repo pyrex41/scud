@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "bash -c 'scud sync-from-claude 2>/dev/null || true'",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "TaskUpdate|TaskCreate"
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -12,12 +24,5 @@
         "matcher": ""
       }
     ]
-  },
-  "permissions": {
-    "allow": [
-      "Bash(find:*)"
-    ],
-    "ask": [],
-    "deny": []
   }
 }

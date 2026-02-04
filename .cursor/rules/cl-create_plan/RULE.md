@@ -1,6 +1,7 @@
 ---
 description: Create detailed implementation plans through interactive research and iteration
 model: opus
+alwaysApply: false
 ---
 
 # Implementation Plan
