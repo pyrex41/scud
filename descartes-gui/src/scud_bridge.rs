@@ -4,6 +4,7 @@
 //! for task operations and subprocess calls for swarm execution.
 
 use serde::Deserialize;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -28,6 +29,12 @@ use crate::state::TaskInfo;
 pub enum ScudEvent {
     /// Tasks loaded from SCUD storage
     TasksLoaded(Vec<TaskInfo>),
+
+    /// Available tags loaded from storage
+    TagsLoaded(Vec<String>),
+
+    /// Available agent types loaded from .scud/agents
+    AgentsLoaded(Vec<String>),
 
     /// Waves computed from task dependencies
     /// Contains full TaskInfo for each task, avoiding fragile ID lookups in the GUI
@@ -67,7 +74,6 @@ pub enum ScudEvent {
     Error(String),
 
     // Headless streaming events (for direct agent output visibility)
-
     /// Headless session started
     HeadlessStarted { task_id: String, harness: String },
 
@@ -103,17 +109,25 @@ pub enum ScudCommand {
     /// Compute execution waves for a tag
     ComputeWaves { tag: String },
 
+    /// Load available tags from storage
+    LoadAvailableTags,
+
+    /// Load available agent types from .scud/agents
+    LoadAvailableAgents,
+
     /// Start swarm execution
     StartSwarm {
         tag: String,
         harness: String,
         round_size: usize,
+        model: String,
     },
 
     /// Run a single task with an agent
     RunTask {
         task_id: String,
         harness: String,
+        model: String,
     },
 
     /// Pause the currently running swarm
@@ -136,10 +150,15 @@ pub enum ScudCommand {
         tag: String,
         harness: String,
         round_size: usize,
+        model: String,
     },
 
     /// Run a single task in headless mode with streaming output
-    RunTaskHeadless { task_id: String, harness: String },
+    RunTaskHeadless {
+        task_id: String,
+        harness: String,
+        model: String,
+    },
 }
 
 /// JSON event format from SCUD CLI when running with --json-events
@@ -252,10 +271,7 @@ pub struct ScudBridge {
 
 impl ScudBridge {
     /// Create a new ScudBridge with the given channel endpoints
-    pub fn new(
-        event_tx: mpsc::Sender<ScudEvent>,
-        command_rx: mpsc::Receiver<ScudCommand>,
-    ) -> Self {
+    pub fn new(event_tx: mpsc::Sender<ScudEvent>, command_rx: mpsc::Receiver<ScudCommand>) -> Self {
         Self {
             event_tx,
             command_rx,
@@ -285,11 +301,7 @@ impl ScudBridge {
     /// Create a new ScudBridge and return the channel handles for the GUI
     ///
     /// Returns (bridge, command_sender, event_receiver)
-    pub fn create() -> (
-        Self,
-        mpsc::Sender<ScudCommand>,
-        mpsc::Receiver<ScudEvent>,
-    ) {
+    pub fn create() -> (Self, mpsc::Sender<ScudCommand>, mpsc::Receiver<ScudEvent>) {
         let (event_tx, event_rx) = mpsc::channel(100);
         let (command_tx, command_rx) = mpsc::channel(100);
 
@@ -300,11 +312,7 @@ impl ScudBridge {
     /// Create a new ScudBridge with specific working directory and return channel handles
     pub fn create_with_working_dir(
         working_dir: PathBuf,
-    ) -> (
-        Self,
-        mpsc::Sender<ScudCommand>,
-        mpsc::Receiver<ScudEvent>,
-    ) {
+    ) -> (Self, mpsc::Sender<ScudCommand>, mpsc::Receiver<ScudEvent>) {
         let (event_tx, event_rx) = mpsc::channel(100);
         let (command_tx, command_rx) = mpsc::channel(100);
 
@@ -326,12 +334,25 @@ impl ScudBridge {
                 ScudCommand::ComputeWaves { tag } => {
                     self.compute_waves_impl(&tag).await;
                 }
+                ScudCommand::LoadAvailableTags => {
+                    self.load_available_tags().await;
+                }
+                ScudCommand::LoadAvailableAgents => {
+                    self.load_available_agents().await;
+                }
                 ScudCommand::StartSwarm {
                     tag,
                     harness,
                     round_size,
+                    model,
                 } => {
-                    self.run_swarm(&tag, &harness, round_size).await;
+                    let model_override = if model.trim().is_empty() {
+                        None
+                    } else {
+                        Some(model)
+                    };
+                    self.run_swarm(&tag, &harness, round_size, model_override)
+                        .await;
                 }
                 ScudCommand::PauseSwarm => {
                     self.pause_swarm().await;
@@ -342,8 +363,18 @@ impl ScudBridge {
                 ScudCommand::StopSwarm => {
                     self.stop_swarm().await;
                 }
-                ScudCommand::RunTask { task_id, harness } => {
-                    self.run_single_task(&task_id, &harness).await;
+                ScudCommand::RunTask {
+                    task_id,
+                    harness,
+                    model,
+                } => {
+                    let model_override = if model.trim().is_empty() {
+                        None
+                    } else {
+                        Some(model)
+                    };
+                    self.run_single_task(&task_id, &harness, model_override)
+                        .await;
                 }
                 ScudCommand::CompleteTask { task_id } => {
                     self.complete_task(&task_id).await;
@@ -355,11 +386,28 @@ impl ScudBridge {
                     tag,
                     harness,
                     round_size,
+                    model,
                 } => {
-                    self.run_swarm_headless(&tag, &harness, round_size).await;
+                    let model_override = if model.trim().is_empty() {
+                        None
+                    } else {
+                        Some(model)
+                    };
+                    self.run_swarm_headless(&tag, &harness, round_size, model_override)
+                        .await;
                 }
-                ScudCommand::RunTaskHeadless { task_id, harness } => {
-                    self.run_task_headless(&task_id, &harness).await;
+                ScudCommand::RunTaskHeadless {
+                    task_id,
+                    harness,
+                    model,
+                } => {
+                    let model_override = if model.trim().is_empty() {
+                        None
+                    } else {
+                        Some(model)
+                    };
+                    self.run_task_headless(&task_id, &harness, model_override)
+                        .await;
                 }
             }
         }
@@ -369,27 +417,63 @@ impl ScudBridge {
 
     /// Load tasks from SCUD storage using direct library calls
     ///
-    /// Uses Storage to load the active Phase and converts tasks to TaskInfo
+    /// Uses Storage to load the active Phase, converts tasks to TaskInfo,
+    /// and also computes waves so the Waves view shows proper groupings.
     async fn load_tasks(&self, tag: Option<String>) {
         debug!("Loading tasks via scud-core (tag: {:?})", tag);
 
         // Run blocking storage operations in a spawn_blocking task
-        let result = tokio::task::spawn_blocking(move || -> Result<Vec<TaskInfo>, String> {
-            let storage = Storage::new(None);
+        // Returns (flat task list, computed waves)
+        let result = tokio::task::spawn_blocking(
+            move || -> Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>), String> {
+                let storage = Storage::new(None);
 
-            let phase = if let Some(tag) = tag {
-                storage.load_group(&tag).map_err(|e| e.to_string())?
-            } else {
-                storage.load_active_group().map_err(|e| e.to_string())?
-            };
+                let phase = if let Some(ref tag) = tag {
+                    storage.load_group(tag).map_err(|e| e.to_string())?
+                } else {
+                    storage.load_active_group().map_err(|e| e.to_string())?
+                };
 
-            Ok(Self::phase_to_task_infos(&phase))
-        })
+                let all_tasks = Self::phase_to_task_infos(&phase);
+
+                // Also compute waves for proper display
+                let actionable: Vec<&Task> = phase.get_actionable_tasks();
+                let pending_tasks: Vec<&Task> = actionable
+                    .into_iter()
+                    .filter(|t| {
+                        matches!(
+                            t.status,
+                            TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::Failed
+                        )
+                    })
+                    .collect();
+
+                let wave_result = compute_waves(&pending_tasks);
+                let waves: Vec<Vec<TaskInfo>> = wave_result
+                    .waves
+                    .into_iter()
+                    .map(|wave| {
+                        wave.tasks
+                            .into_iter()
+                            .filter_map(|task_id| {
+                                phase.get_task(&task_id).map(Self::task_to_task_info)
+                            })
+                            .collect()
+                    })
+                    .filter(|wave: &Vec<TaskInfo>| !wave.is_empty())
+                    .collect();
+
+                Ok((all_tasks, waves))
+            },
+        )
         .await;
 
         match result {
-            Ok(Ok(task_infos)) => {
+            Ok(Ok((task_infos, waves))) => {
                 let _ = self.event_tx.send(ScudEvent::TasksLoaded(task_infos)).await;
+                if !waves.is_empty() {
+                    let _ = self.event_tx.send(ScudEvent::WavesComputed(waves)).await;
+                }
             }
             Ok(Err(e)) => {
                 error!("Failed to load tasks: {}", e);
@@ -467,11 +551,7 @@ impl ScudBridge {
                 .map(|wave| {
                     wave.tasks
                         .into_iter()
-                        .filter_map(|task_id| {
-                            phase
-                                .get_task(&task_id)
-                                .map(Self::task_to_task_info)
-                        })
+                        .filter_map(|task_id| phase.get_task(&task_id).map(Self::task_to_task_info))
                         .collect()
                 })
                 .filter(|wave: &Vec<TaskInfo>| !wave.is_empty())
@@ -502,11 +582,102 @@ impl ScudBridge {
         }
     }
 
+    /// Load available tags from storage
+    async fn load_available_tags(&self) {
+        let result = tokio::task::spawn_blocking(move || -> Result<Vec<String>, String> {
+            let storage = Storage::new(None);
+            let tasks = storage.load_tasks().map_err(|e| e.to_string())?;
+            let mut tags: Vec<String> = tasks.keys().cloned().collect();
+            tags.sort();
+            Ok(tags)
+        })
+        .await;
+
+        match result {
+            Ok(Ok(tags)) => {
+                let _ = self.event_tx.send(ScudEvent::TagsLoaded(tags)).await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to load tags: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to load tags: {}", e)))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Task spawn error: {}", e)))
+                    .await;
+            }
+        }
+    }
+
+    /// Load available agent types from .scud/agents
+    async fn load_available_agents(&self) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || -> Result<Vec<String>, String> {
+            let agents_dir = working_dir.join(".scud").join("agents");
+            if !agents_dir.exists() {
+                return Ok(Vec::new());
+            }
+
+            let mut agents = Vec::new();
+            let entries = fs::read_dir(&agents_dir).map_err(|e| e.to_string())?;
+            for entry in entries {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let path = entry.path();
+                if path.is_file()
+                    && path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("toml"))
+                        .unwrap_or(false)
+                {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        agents.push(stem.to_string());
+                    }
+                }
+            }
+
+            agents.sort();
+            Ok(agents)
+        })
+        .await;
+
+        match result {
+            Ok(Ok(agents)) => {
+                let _ = self.event_tx.send(ScudEvent::AgentsLoaded(agents)).await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to load agents: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to load agents: {}", e)))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Task spawn error: {}", e)))
+                    .await;
+            }
+        }
+    }
+
     /// Run swarm execution with event streaming
     ///
     /// Spawns `scud swarm --tag <tag> --harness <harness> --json-events`
     /// and streams events as they occur
-    async fn run_swarm(&mut self, tag: &str, harness: &str, round_size: usize) {
+    async fn run_swarm(
+        &mut self,
+        tag: &str,
+        harness: &str,
+        round_size: usize,
+        model: Option<String>,
+    ) {
         let round_size_str = round_size.to_string();
         let args = vec![
             "swarm",
@@ -521,12 +692,18 @@ impl ScudBridge {
 
         info!("Starting swarm: scud {}", args.join(" "));
 
-        match Command::new("scud")
+        let mut command = Command::new("scud");
+        command
             .args(&args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
+            .stderr(Stdio::piped());
+        if let Some(model) = model.as_deref() {
+            command.env("SCUD_MODEL", model);
+            command.env("SCUD_FAST_MODEL", model);
+            command.env("SCUD_SMART_MODEL", model);
+        }
+
+        match command.spawn() {
             Ok(mut child) => {
                 // Take stdout for event streaming
                 if let Some(stdout) = child.stdout.take() {
@@ -583,7 +760,7 @@ impl ScudBridge {
     /// Run a single task with an agent
     ///
     /// Uses `scud run` to execute the task with the specified harness
-    async fn run_single_task(&mut self, task_id: &str, harness: &str) {
+    async fn run_single_task(&mut self, task_id: &str, harness: &str, model: Option<String>) {
         info!("Running single task {} with harness {}", task_id, harness);
 
         // First, load the task details to get the prompt
@@ -637,7 +814,12 @@ impl ScudBridge {
             .await;
 
         // Run the agent using scud run
-        let args = vec!["run", "-H", harness, &prompt];
+        let mut args = vec!["run".to_string(), "-H".to_string(), harness.to_string()];
+        if let Some(model) = model.as_deref() {
+            args.push("-M".to_string());
+            args.push(model.to_string());
+        }
+        args.push(prompt);
         info!("Running: scud {}", args.join(" "));
 
         match Command::new("scud")
@@ -882,76 +1064,108 @@ impl ScudBridge {
     /// Instead of shelling out to `scud swarm`, this spawns headless runners
     /// per-task so each task gets its own StreamStore session visible in the
     /// Monitor view.
-    async fn run_swarm_headless(&mut self, tag: &str, harness_name: &str, round_size: usize) {
-        info!("Starting headless swarm for tag '{}' with harness '{}' (round_size={})", tag, harness_name, round_size);
+    async fn run_swarm_headless(
+        &mut self,
+        tag: &str,
+        harness_name: &str,
+        round_size: usize,
+        model: Option<String>,
+    ) {
+        info!(
+            "Starting headless swarm for tag '{}' with harness '{}' (round_size={})",
+            tag, harness_name, round_size
+        );
 
         // Parse harness type
         let harness = match Harness::parse(harness_name) {
             Ok(h) => h,
             Err(e) => {
                 error!("Invalid harness: {}", e);
-                let _ = self.event_tx.send(ScudEvent::Error(format!("Invalid harness: {}", e))).await;
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Invalid harness: {}", e)))
+                    .await;
                 return;
             }
         };
 
         // Load tasks and compute waves
         let tag_owned = tag.to_string();
-        let wave_result = tokio::task::spawn_blocking(move || -> Result<(Vec<Vec<Task>>, Phase), String> {
-            let storage = Storage::new(None);
-            let phase = storage.load_group(&tag_owned).map_err(|e| e.to_string())?;
+        let wave_result =
+            tokio::task::spawn_blocking(move || -> Result<(Vec<Vec<Task>>, Phase), String> {
+                let storage = Storage::new(None);
+                let phase = storage.load_group(&tag_owned).map_err(|e| e.to_string())?;
 
-            let actionable: Vec<&Task> = phase.get_actionable_tasks();
-            let pending_tasks: Vec<&Task> = actionable
-                .into_iter()
-                .filter(|t| matches!(t.status, TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::Failed))
-                .collect();
+                let actionable: Vec<&Task> = phase.get_actionable_tasks();
+                let pending_tasks: Vec<&Task> = actionable
+                    .into_iter()
+                    .filter(|t| {
+                        matches!(
+                            t.status,
+                            TaskStatus::Pending | TaskStatus::InProgress | TaskStatus::Failed
+                        )
+                    })
+                    .collect();
 
-            let wave_result = compute_waves(&pending_tasks);
+                let wave_result = compute_waves(&pending_tasks);
 
-            // Convert wave IDs to full Task objects
-            let waves: Vec<Vec<Task>> = wave_result.waves
-                .into_iter()
-                .map(|wave| {
-                    wave.tasks
-                        .into_iter()
-                        .filter_map(|task_id| phase.get_task(&task_id).cloned())
-                        .collect()
-                })
-                .filter(|wave: &Vec<Task>| !wave.is_empty())
-                .collect();
+                // Convert wave IDs to full Task objects
+                let waves: Vec<Vec<Task>> = wave_result
+                    .waves
+                    .into_iter()
+                    .map(|wave| {
+                        wave.tasks
+                            .into_iter()
+                            .filter_map(|task_id| phase.get_task(&task_id).cloned())
+                            .collect()
+                    })
+                    .filter(|wave: &Vec<Task>| !wave.is_empty())
+                    .collect();
 
-            Ok((waves, phase))
-        }).await;
+                Ok((waves, phase))
+            })
+            .await;
 
         let (waves, _phase) = match wave_result {
             Ok(Ok((waves, phase))) => (waves, phase),
             Ok(Err(e)) => {
                 error!("Failed to compute waves: {}", e);
-                let _ = self.event_tx.send(ScudEvent::Error(format!("Failed to compute waves: {}", e))).await;
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to compute waves: {}", e)))
+                    .await;
                 return;
             }
             Err(e) => {
                 error!("Task spawn error: {}", e);
-                let _ = self.event_tx.send(ScudEvent::Error(format!("Task spawn error: {}", e))).await;
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Task spawn error: {}", e)))
+                    .await;
                 return;
             }
         };
 
         let total_waves = waves.len();
-        let _ = self.event_tx.send(ScudEvent::SwarmStarted {
-            tag: tag.to_string(),
-            total_waves,
-        }).await;
+        let _ = self
+            .event_tx
+            .send(ScudEvent::SwarmStarted {
+                tag: tag.to_string(),
+                total_waves,
+            })
+            .await;
 
         let mut all_success = true;
 
         for (wave_idx, wave_tasks) in waves.into_iter().enumerate() {
             let task_ids: Vec<String> = wave_tasks.iter().map(|t| t.id.clone()).collect();
-            let _ = self.event_tx.send(ScudEvent::WaveStarted {
-                wave: wave_idx,
-                tasks: task_ids.clone(),
-            }).await;
+            let _ = self
+                .event_tx
+                .send(ScudEvent::WaveStarted {
+                    wave: wave_idx,
+                    tasks: task_ids.clone(),
+                })
+                .await;
 
             // Process tasks in chunks of round_size
             for chunk in wave_tasks.chunks(round_size) {
@@ -967,20 +1181,25 @@ impl ScudBridge {
                     let working_dir = self.working_dir.clone();
                     let stream_store = self.stream_store.clone();
                     let tag_str = tag.to_string();
+                    let model_override = model.clone();
 
                     let handle = tokio::spawn(async move {
                         // Create stream session
                         stream_store.create_session(&task_id, &tag_str);
 
                         // Emit headless started
-                        let _ = event_tx.send(ScudEvent::HeadlessStarted {
-                            task_id: task_id.clone(),
-                            harness: harness_name_str.clone(),
-                        }).await;
+                        let _ = event_tx
+                            .send(ScudEvent::HeadlessStarted {
+                                task_id: task_id.clone(),
+                                harness: harness_name_str.clone(),
+                            })
+                            .await;
 
-                        let _ = event_tx.send(ScudEvent::TaskStarted {
-                            task_id: task_id.clone(),
-                        }).await;
+                        let _ = event_tx
+                            .send(ScudEvent::TaskStarted {
+                                task_id: task_id.clone(),
+                            })
+                            .await;
 
                         // Build prompt
                         let prompt = format!(
@@ -993,26 +1212,34 @@ impl ScudBridge {
                             Ok(r) => r,
                             Err(e) => {
                                 error!("Failed to create runner for task {}: {}", task_id, e);
-                                let _ = event_tx.send(ScudEvent::TaskCompleted {
-                                    task_id: task_id.clone(),
-                                    success: false,
-                                }).await;
+                                let _ = event_tx
+                                    .send(ScudEvent::TaskCompleted {
+                                        task_id: task_id.clone(),
+                                        success: false,
+                                    })
+                                    .await;
                                 return false;
                             }
                         };
 
                         // Start session
+                        let model_ref = model_override.as_deref();
                         let mut session: SessionHandle = match runner
-                            .start(&task_id, &prompt, &working_dir, None)
+                            .start(&task_id, &prompt, &working_dir, model_ref)
                             .await
                         {
                             Ok(s) => s,
                             Err(e) => {
-                                error!("Failed to start headless session for task {}: {}", task_id, e);
-                                let _ = event_tx.send(ScudEvent::TaskCompleted {
-                                    task_id: task_id.clone(),
-                                    success: false,
-                                }).await;
+                                error!(
+                                    "Failed to start headless session for task {}: {}",
+                                    task_id, e
+                                );
+                                let _ = event_tx
+                                    .send(ScudEvent::TaskCompleted {
+                                        task_id: task_id.clone(),
+                                        success: false,
+                                    })
+                                    .await;
                                 return false;
                             }
                         };
@@ -1029,50 +1256,73 @@ impl ScudBridge {
 
                             match stream_event.kind {
                                 StreamEventKind::TextDelta { text } => {
-                                    let _ = event_tx.send(ScudEvent::TaskOutput {
-                                        task_id: task_id.clone(),
-                                        text,
-                                    }).await;
+                                    let _ = event_tx
+                                        .send(ScudEvent::TaskOutput {
+                                            task_id: task_id.clone(),
+                                            text,
+                                        })
+                                        .await;
                                 }
-                                StreamEventKind::ToolStart { tool_name, tool_id, input_summary } => {
-                                    let _ = event_tx.send(ScudEvent::ToolStart {
-                                        task_id: task_id.clone(),
-                                        tool_name,
-                                        tool_id,
-                                        input_summary,
-                                    }).await;
+                                StreamEventKind::ToolStart {
+                                    tool_name,
+                                    tool_id,
+                                    input_summary,
+                                } => {
+                                    let _ = event_tx
+                                        .send(ScudEvent::ToolStart {
+                                            task_id: task_id.clone(),
+                                            tool_name,
+                                            tool_id,
+                                            input_summary,
+                                        })
+                                        .await;
                                 }
-                                StreamEventKind::ToolResult { tool_name, tool_id, success } => {
-                                    let _ = event_tx.send(ScudEvent::ToolResult {
-                                        task_id: task_id.clone(),
-                                        tool_name,
-                                        tool_id,
-                                        success,
-                                    }).await;
+                                StreamEventKind::ToolResult {
+                                    tool_name,
+                                    tool_id,
+                                    success,
+                                } => {
+                                    let _ = event_tx
+                                        .send(ScudEvent::ToolResult {
+                                            task_id: task_id.clone(),
+                                            tool_name,
+                                            tool_id,
+                                            success,
+                                        })
+                                        .await;
                                 }
                                 StreamEventKind::SessionAssigned { session_id } => {
                                     stream_store.set_session_id(&task_id, &session_id);
-                                    let _ = event_tx.send(ScudEvent::SessionAssigned {
-                                        task_id: task_id.clone(),
-                                        session_id,
-                                    }).await;
+                                    let _ = event_tx
+                                        .send(ScudEvent::SessionAssigned {
+                                            task_id: task_id.clone(),
+                                            session_id,
+                                        })
+                                        .await;
                                 }
                                 StreamEventKind::Complete { success } => {
                                     task_success = success;
-                                    let _ = event_tx.send(ScudEvent::TaskCompleted {
-                                        task_id: task_id.clone(),
-                                        success,
-                                    }).await;
+                                    let _ = event_tx
+                                        .send(ScudEvent::TaskCompleted {
+                                            task_id: task_id.clone(),
+                                            success,
+                                        })
+                                        .await;
                                     break;
                                 }
                                 StreamEventKind::Error { message } => {
-                                    let _ = event_tx.send(ScudEvent::Error(format!(
-                                        "Task {} error: {}", task_id, message
-                                    ))).await;
-                                    let _ = event_tx.send(ScudEvent::TaskCompleted {
-                                        task_id: task_id.clone(),
-                                        success: false,
-                                    }).await;
+                                    let _ = event_tx
+                                        .send(ScudEvent::Error(format!(
+                                            "Task {} error: {}",
+                                            task_id, message
+                                        )))
+                                        .await;
+                                    let _ = event_tx
+                                        .send(ScudEvent::TaskCompleted {
+                                            task_id: task_id.clone(),
+                                            success: false,
+                                        })
+                                        .await;
                                     break;
                                 }
                             }
@@ -1102,10 +1352,18 @@ impl ScudBridge {
                 }
             }
 
-            let _ = self.event_tx.send(ScudEvent::WaveCompleted { wave: wave_idx }).await;
+            let _ = self
+                .event_tx
+                .send(ScudEvent::WaveCompleted { wave: wave_idx })
+                .await;
         }
 
-        let _ = self.event_tx.send(ScudEvent::SwarmCompleted { success: all_success }).await;
+        let _ = self
+            .event_tx
+            .send(ScudEvent::SwarmCompleted {
+                success: all_success,
+            })
+            .await;
         info!("Headless swarm completed with success={}", all_success);
     }
 
@@ -1114,7 +1372,12 @@ impl ScudBridge {
     /// Uses the scud-cli headless infrastructure for proper event parsing.
     /// Spawns the appropriate harness (Claude/OpenCode) and streams structured
     /// events (text deltas, tool calls, completion) back to the GUI.
-    async fn run_task_headless(&mut self, task_id: &str, harness_name: &str) {
+    async fn run_task_headless(
+        &mut self,
+        task_id: &str,
+        harness_name: &str,
+        model: Option<String>,
+    ) {
         info!(
             "Running task {} in headless mode with harness {}",
             task_id, harness_name
@@ -1213,7 +1476,7 @@ impl ScudBridge {
 
         // Start the session
         let mut session: SessionHandle = match runner
-            .start(task_id, &prompt, &self.working_dir, None)
+            .start(task_id, &prompt, &self.working_dir, model.as_deref())
             .await
         {
             Ok(s) => s,
@@ -1241,7 +1504,8 @@ impl ScudBridge {
 
         while let Some(stream_event) = session.events.recv().await {
             // Store event in stream store for persistence/replay
-            self.stream_store.push_event(&task_id_owned, stream_event.clone());
+            self.stream_store
+                .push_event(&task_id_owned, stream_event.clone());
 
             // Convert StreamEvent to ScudEvent and send to GUI
             match stream_event.kind {
@@ -1282,7 +1546,8 @@ impl ScudBridge {
                         .await;
                 }
                 StreamEventKind::SessionAssigned { session_id } => {
-                    self.stream_store.set_session_id(&task_id_owned, &session_id);
+                    self.stream_store
+                        .set_session_id(&task_id_owned, &session_id);
                     let _ = event_tx
                         .send(ScudEvent::SessionAssigned {
                             task_id: task_id_owned.clone(),
@@ -1332,15 +1597,15 @@ impl ScudBridge {
                 );
             }
             Err(e) => {
-                warn!(
-                    "Error waiting for headless session to complete: {}",
-                    e
-                );
+                warn!("Error waiting for headless session to complete: {}", e);
             }
         }
 
         // Save session metadata for potential continuation
-        if let Err(e) = self.stream_store.save_session_metadata(task_id, &self.working_dir) {
+        if let Err(e) = self
+            .stream_store
+            .save_session_metadata(task_id, &self.working_dir)
+        {
             debug!("Failed to save session metadata: {}", e);
         }
     }
@@ -1560,8 +1825,7 @@ mod tests {
     #[test]
     fn test_bridge_creation_with_working_dir() {
         let temp_dir = std::env::temp_dir();
-        let (bridge, _cmd_tx, _event_rx) =
-            ScudBridge::create_with_working_dir(temp_dir.clone());
+        let (bridge, _cmd_tx, _event_rx) = ScudBridge::create_with_working_dir(temp_dir.clone());
         assert_eq!(bridge.working_dir, temp_dir);
     }
 

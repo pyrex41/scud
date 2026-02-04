@@ -90,6 +90,18 @@ pub enum Message {
     SelectTag(Option<String>),
     RefreshTasks,
 
+    // Launch configuration
+    SetHarness(String),
+    SetModel(String),
+    SetRoundSize(usize),
+    SetLaunchTag(String),
+    SetAgentType(Option<String>),
+    TagsLoaded(Vec<String>),
+    AgentsLoaded(Vec<String>),
+    SpawnTask {
+        task_id: String,
+    },
+
     // Swarm management
     StartSwarm {
         tag: String,
@@ -148,6 +160,16 @@ impl DescartesGui {
         // Create ScudBridge and get channel handles
         let (bridge, scud_command_tx, scud_event_rx) = ScudBridge::create();
 
+        let init_tx = scud_command_tx.clone();
+        let init_task = Task::perform(
+            async move {
+                let _ = init_tx.send(ScudCommand::LoadTasks { tag: None }).await;
+                let _ = init_tx.send(ScudCommand::LoadAvailableTags).await;
+                let _ = init_tx.send(ScudCommand::LoadAvailableAgents).await;
+            },
+            |_| Message::Tick,
+        );
+
         // Wrap receiver in Arc<Mutex> for subscription access
         let scud_event_rx = Arc::new(TokioMutex::new(Some(scud_event_rx)));
 
@@ -169,8 +191,7 @@ impl DescartesGui {
                 scud_event_rx,
                 error: None,
             },
-            // Use ScudBridge for initial task loading
-            Task::done(Message::LoadTasksViaScud { tag: None }),
+            init_task,
         )
     }
 
@@ -266,6 +287,62 @@ impl DescartesGui {
                 })
             }
 
+            Message::SetHarness(harness) => {
+                self.state.launch_config.harness = harness;
+                Task::none()
+            }
+
+            Message::SetModel(model) => {
+                self.state.launch_config.model = model;
+                Task::none()
+            }
+
+            Message::SetRoundSize(round_size) => {
+                self.state.launch_config.round_size = round_size;
+                Task::none()
+            }
+
+            Message::SetLaunchTag(tag) => {
+                self.state.launch_config.tag = tag;
+                Task::none()
+            }
+
+            Message::SetAgentType(agent_type) => {
+                self.state.launch_config.agent_type = agent_type;
+                Task::none()
+            }
+
+            Message::TagsLoaded(tags) => {
+                self.state.available_tags = tags;
+                Task::none()
+            }
+
+            Message::AgentsLoaded(agents) => {
+                self.state.available_agents = agents;
+                Task::none()
+            }
+
+            Message::SpawnTask { task_id } => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    let harness = self.state.launch_config.harness.clone();
+                    let model = self.state.launch_config.model.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx
+                                .send(ScudCommand::RunTaskHeadless {
+                                    task_id,
+                                    harness,
+                                    model,
+                                })
+                                .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
             Message::StartSwarm {
                 tag,
                 harness,
@@ -273,6 +350,7 @@ impl DescartesGui {
             } => {
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
+                    let model = self.state.launch_config.model.clone();
                     self.state.agent_status = AgentStatus::Running;
                     self.state.output_buffer.clear();
                     self.state
@@ -285,6 +363,7 @@ impl DescartesGui {
                                     tag,
                                     harness,
                                     round_size,
+                                    model,
                                 })
                                 .await;
                         },
@@ -315,6 +394,7 @@ impl DescartesGui {
             } => {
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
+                    let model = self.state.launch_config.model.clone();
                     self.state.agent_status = AgentStatus::Running;
                     self.state.output_buffer.clear();
                     self.state
@@ -327,6 +407,7 @@ impl DescartesGui {
                                     tag,
                                     harness,
                                     round_size,
+                                    model,
                                 })
                                 .await;
                         },
@@ -348,9 +429,16 @@ impl DescartesGui {
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
                     let harness = self.state.swarm_defaults.harness.clone();
+                    let model = self.state.launch_config.model.clone();
                     return Task::perform(
                         async move {
-                            let _ = tx.send(ScudCommand::RunTask { task_id, harness }).await;
+                            let _ = tx
+                                .send(ScudCommand::RunTask {
+                                    task_id,
+                                    harness,
+                                    model,
+                                })
+                                .await;
                         },
                         |_| Message::Tick,
                     );
@@ -438,6 +526,12 @@ impl DescartesGui {
                         } else {
                             self.state.waves = vec![];
                         }
+                    }
+                    ScudEvent::TagsLoaded(tags) => {
+                        self.state.available_tags = tags;
+                    }
+                    ScudEvent::AgentsLoaded(agents) => {
+                        self.state.available_agents = agents;
                     }
                     ScudEvent::WavesComputed(waves) => {
                         // WavesComputed now contains full TaskInfo directly from ScudBridge
