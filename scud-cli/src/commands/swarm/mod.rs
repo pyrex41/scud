@@ -706,7 +706,8 @@ pub async fn run(
                         round_idx,
                         harness,
                         event_writer.as_ref(),
-                    )?
+                    )
+                    .await?
                 }
                 SwarmMode::Beads => {
                     // Beads mode is handled earlier with early return
@@ -1465,9 +1466,9 @@ fn execute_round_server(
 ///
 /// Uses the headless runner from `spawn::headless` to capture streaming JSON
 /// events from Claude Code or OpenCode agents without requiring tmux.
-fn execute_round_headless(
+async fn execute_round_headless(
     storage: &Storage,
-    tasks: &[TaskInfo],
+    tasks: &[TaskInfo<'_>],
     working_dir: &std::path::Path,
     round_idx: usize,
     default_harness: Harness,
@@ -1484,8 +1485,6 @@ fn execute_round_headless(
     let runner = headless::create_runner(default_harness)?;
 
     // Mark tasks as in-progress and spawn agents
-    let handle = tokio::runtime::Handle::current();
-
     for info in tasks {
         // Resolve agent config (harness, model, prompt) from task's agent_type
         let config =
@@ -1495,16 +1494,14 @@ fn execute_round_headless(
         store.create_session(&info.task.id, &info.tag);
 
         // Spawn headless session
-        let spawn_result = handle.block_on(async {
-            runner
-                .start(
-                    &info.task.id,
-                    &config.prompt,
-                    working_dir,
-                    config.model.as_deref(),
-                )
-                .await
-        });
+        let spawn_result = runner
+            .start(
+                &info.task.id,
+                &config.prompt,
+                working_dir,
+                config.model.as_deref(),
+            )
+            .await;
 
         match spawn_result {
             Ok(mut session_handle) => {
@@ -1580,7 +1577,7 @@ fn execute_round_headless(
         }
 
         // Small delay between spawns to avoid overwhelming the system
-        std::thread::sleep(Duration::from_millis(200));
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     // Wait for all tasks to complete by polling the store
@@ -1648,7 +1645,7 @@ fn execute_round_headless(
             }
         }
 
-        std::thread::sleep(poll_interval);
+        tokio::time::sleep(poll_interval).await;
     }
 
     // Emit completion events
