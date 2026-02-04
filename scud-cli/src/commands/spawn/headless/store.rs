@@ -305,6 +305,26 @@ impl StreamStore {
             .map(|s| (s.event_count(), s.line_count()))
     }
 
+    /// Get elapsed seconds since session started
+    pub fn get_elapsed_secs(&self, task_id: &str) -> Option<u64> {
+        let sessions = self.sessions.read().unwrap();
+        sessions
+            .get(task_id)
+            .map(|s| s.started_at.elapsed().as_secs())
+    }
+
+    /// Get last tool activity (most recent tool_start or tool_result line)
+    pub fn get_last_tool_line(&self, task_id: &str) -> Option<String> {
+        let sessions = self.sessions.read().unwrap();
+        sessions.get(task_id).and_then(|s| {
+            s.output_lines
+                .iter()
+                .rev()
+                .find(|l| l.starts_with(">>") || l.starts_with("<<"))
+                .cloned()
+        })
+    }
+
     /// Save session metadata for later continuation
     ///
     /// Persists the session ID, task ID, tag, and PID to a JSON file

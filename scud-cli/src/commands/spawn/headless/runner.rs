@@ -12,6 +12,7 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
+use tracing::{debug, trace};
 
 use super::events::{StreamEvent, StreamEventKind};
 use crate::commands::spawn::terminal::{find_harness_binary, Harness};
@@ -196,6 +197,7 @@ impl HeadlessRunner for ClaudeHeadless {
             // Spawn task to read stdout and parse events
             let stdout = child.stdout.take().expect("stdout was piped");
             let task_id_clone = task_id.to_string();
+            let task_id_for_events = task_id.to_string();
 
             tokio::spawn(async move {
                 let reader = BufReader::new(stdout);
@@ -203,9 +205,12 @@ impl HeadlessRunner for ClaudeHeadless {
 
                 while let Ok(Some(line)) = lines.next_line().await {
                     if let Some(event) = parse_claude_event(&line) {
+                        trace!(task_id = %task_id_for_events, "claude event: {:?}", event.kind);
                         if tx.send(event).await.is_err() {
                             break;
                         }
+                    } else if !line.trim().is_empty() {
+                        debug!(task_id = %task_id_for_events, "claude: unparsed line: {}", if line.len() > 200 { &line[..200] } else { &line });
                     }
                 }
 
@@ -461,6 +466,7 @@ impl HeadlessRunner for OpenCodeHeadless {
             let (tx, rx) = mpsc::channel(1000);
 
             let stdout = child.stdout.take().expect("stdout was piped");
+            let task_id_for_events = task_id.to_string();
 
             tokio::spawn(async move {
                 let reader = BufReader::new(stdout);
@@ -468,9 +474,12 @@ impl HeadlessRunner for OpenCodeHeadless {
 
                 while let Ok(Some(line)) = lines.next_line().await {
                     if let Some(event) = parse_opencode_event(&line) {
+                        trace!(task_id = %task_id_for_events, "opencode event: {:?}", event.kind);
                         if tx.send(event).await.is_err() {
                             break;
                         }
+                    } else if !line.trim().is_empty() {
+                        debug!(task_id = %task_id_for_events, "opencode: unparsed line: {}", if line.len() > 200 { &line[..200] } else { &line });
                     }
                 }
 
@@ -547,6 +556,7 @@ impl HeadlessRunner for CursorHeadless {
             let (tx, rx) = mpsc::channel(1000);
 
             let stdout = child.stdout.take().expect("stdout was piped");
+            let task_id_for_events = task_id.to_string();
 
             tokio::spawn(async move {
                 let reader = BufReader::new(stdout);
@@ -555,15 +565,17 @@ impl HeadlessRunner for CursorHeadless {
                 while let Ok(Some(line)) = lines.next_line().await {
                     // Try Cursor-specific parsing first
                     if let Some(event) = parse_cursor_event(&line) {
+                        trace!(task_id = %task_id_for_events, "cursor event: {:?}", event.kind);
                         if tx.send(event).await.is_err() {
                             break;
                         }
-                    } else if !line.trim().is_empty()
-                        && serde_json::from_str::<serde_json::Value>(&line).is_err()
-                    {
-                        // Only treat non-JSON output as text (skip unrecognized JSON events)
-                        // Append \n since BufReader::lines() strips it
-                        let _ = tx.send(StreamEvent::text_delta(&format!("{}\n", line))).await;
+                    } else if !line.trim().is_empty() {
+                        if serde_json::from_str::<serde_json::Value>(&line).is_err() {
+                            // Non-JSON output treated as text
+                            let _ = tx.send(StreamEvent::text_delta(&format!("{}\n", line))).await;
+                        } else {
+                            debug!(task_id = %task_id_for_events, "cursor: unparsed json: {}", if line.len() > 200 { &line[..200] } else { &line });
+                        }
                     }
                 }
 

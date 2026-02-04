@@ -1593,18 +1593,19 @@ async fn execute_round_headless(
     }
 
     // Wait for all tasks to complete by polling the store
-    println!("    Waiting for headless round completion...");
     let max_wait = Duration::from_secs(3600); // 1 hour max
     let start = std::time::Instant::now();
     let total_tasks = round_state.task_ids.len();
     let mut poll_count = 0u32;
+    // Track how many display lines we printed last time (for ANSI overwrite)
+    let mut prev_display_lines = 0usize;
 
     loop {
-        // Fast initial polling (2s for first 5 polls), then slow (10s)
+        // Fast initial polling (2s for first 5 polls), then slow (5s)
         let poll_interval = if poll_count < 5 {
             Duration::from_secs(2)
         } else {
-            Duration::from_secs(10)
+            Duration::from_secs(5)
         };
         poll_count += 1;
 
@@ -1628,81 +1629,118 @@ async fn execute_round_headless(
             break;
         }
 
-        // Show rich status: per-task info from the stream store
+        // Move cursor up to overwrite previous display (if any)
+        if prev_display_lines > 0 {
+            // Move up N lines and clear each one
+            for _ in 0..prev_display_lines {
+                print!("\x1b[A\x1b[2K");
+            }
+        }
+
+        // Build display lines, then print them all
+        let mut display = Vec::new();
         let completed = total_tasks - active_count;
         let elapsed = start.elapsed().as_secs();
-        println!(
-            "\n    ─── {} {}/{} done ({} active) · {}s elapsed ───",
+
+        display.push(format!(
+            "\n    ─── {} {}/{} done ({} active) · {}s ───",
             "▶".blue(),
             completed,
             total_tasks,
             active_count,
-            elapsed,
-        );
-        for task_id in &active_tasks {
-            let status = store
-                .get_status(task_id)
-                .map(|s| format!("{:?}", s))
-                .unwrap_or_else(|| "?".to_string());
+            format_duration(elapsed),
+        ));
+
+        // Show ALL tasks in this round with their current status
+        for task_id in &round_state.task_ids {
+            let status = store.get_status(task_id);
+            let elapsed_task = store.get_elapsed_secs(task_id).unwrap_or(0);
             let stats = store
                 .session_stats(task_id)
-                .map(|(events, lines)| format!("{} events, {} lines", events, lines))
-                .unwrap_or_else(|| "starting...".to_string());
-            let last_line = store
-                .get_output(task_id, 1)
-                .into_iter()
-                .next()
+                .map(|(events, _)| format!("{}ev", events))
                 .unwrap_or_default();
-            let last_line_trimmed = if last_line.len() > 80 {
-                format!("{}…", &last_line[..79])
-            } else {
-                last_line
+
+            let (icon, status_str) = match &status {
+                Some(SessionStatus::Completed) => ("✓".green(), "done".green()),
+                Some(SessionStatus::Failed) => ("✗".red(), "fail".red()),
+                Some(SessionStatus::Running) => ("⟳".blue(), "run".blue()),
+                Some(SessionStatus::Starting) => ("…".yellow(), "init".yellow()),
+                None => ("?".dimmed(), "?".dimmed()),
             };
-            println!(
-                "      {} {} [{}] ({})",
-                "·".dimmed(),
+
+            // For active tasks, show last tool activity; for done tasks, just show stats
+            let detail = match &status {
+                Some(SessionStatus::Running) | Some(SessionStatus::Starting) => {
+                    // Prefer tool line, fall back to last output line
+                    let tool_line = store.get_last_tool_line(task_id);
+                    let activity = tool_line
+                        .or_else(|| {
+                            store.get_output(task_id, 1).into_iter().next()
+                        })
+                        .unwrap_or_default();
+                    let trimmed = if activity.len() > 60 {
+                        format!("{}…", &activity[..59])
+                    } else {
+                        activity
+                    };
+                    if trimmed.is_empty() {
+                        format!("{}s {}", format_duration(elapsed_task), stats)
+                    } else {
+                        format!("{}s {} {}", format_duration(elapsed_task), stats, trimmed)
+                    }
+                }
+                _ => {
+                    format!("{}s {}", format_duration(elapsed_task), stats)
+                }
+            };
+
+            display.push(format!(
+                "      {} {:>5} [{}] {}",
+                icon,
                 task_id.cyan(),
-                status.yellow(),
-                stats.dimmed(),
-            );
-            if !last_line_trimmed.is_empty() {
-                println!("        {}", last_line_trimmed.dimmed());
-            }
+                status_str,
+                detail.dimmed(),
+            ));
+        }
+
+        // Print and track line count for next overwrite
+        prev_display_lines = display.len();
+        for line in &display {
+            println!("{}", line);
         }
 
         tokio::time::sleep(poll_interval).await;
     }
 
-    // Show completion summary with final stats for all tasks
-    println!("\n    ─── Completion Summary ───");
+    // Final summary (printed once, not overwritten)
+    let elapsed = start.elapsed().as_secs();
+    let successes = round_state.task_ids.iter()
+        .filter(|id| matches!(store.get_status(id), Some(SessionStatus::Completed)))
+        .count();
+    let failures = round_state.task_ids.iter()
+        .filter(|id| matches!(store.get_status(id), Some(SessionStatus::Failed)))
+        .count();
+    println!(
+        "\n    ─── Round complete: {} ok, {} failed, {} total in {}s ───",
+        format!("{}", successes).green(),
+        format!("{}", failures).red(),
+        total_tasks,
+        format_duration(elapsed),
+    );
+    // Show details for failed tasks only
     for task_id in &round_state.task_ids {
-        let status = store
-            .get_status(task_id)
-            .map(|s| format!("{:?}", s))
-            .unwrap_or_else(|| "?".to_string());
-        let stats = store
-            .session_stats(task_id)
-            .map(|(events, lines)| format!("{} events, {} lines", events, lines))
-            .unwrap_or_else(|| "no data".to_string());
-        let icon = match store.get_status(task_id) {
-            Some(SessionStatus::Completed) => "✓".green(),
-            Some(SessionStatus::Failed) => "✗".red(),
-            _ => "?".yellow(),
-        };
-        println!(
-            "      {} {} [{}] ({})",
-            icon, task_id.cyan(), status, stats.dimmed(),
-        );
-        // Show last few lines of output for context
-        let output = store.get_all_output(task_id);
-        for line in output.iter().rev().take(3).rev() {
-            let trimmed = if line.len() > 80 {
-                format!("{}…", &line[..79])
-            } else {
-                line.clone()
-            };
-            if !trimmed.is_empty() {
-                println!("        {}", trimmed.dimmed());
+        if matches!(store.get_status(task_id), Some(SessionStatus::Failed)) {
+            println!("      {} {} — last output:", "✗".red(), task_id.red());
+            let output = store.get_all_output(task_id);
+            for line in output.iter().rev().take(5).rev() {
+                let trimmed = if line.len() > 80 {
+                    format!("{}…", &line[..79])
+                } else {
+                    line.clone()
+                };
+                if !trimmed.is_empty() {
+                    println!("        {}", trimmed.dimmed());
+                }
             }
         }
     }
@@ -1715,6 +1753,17 @@ async fn execute_round_headless(
     }
 
     Ok(round_state)
+}
+
+/// Format seconds into compact human-readable duration (e.g., "45s", "2m30s", "1h05m")
+fn format_duration(secs: u64) -> String {
+    if secs < 60 {
+        format!("{}", secs)
+    } else if secs < 3600 {
+        format!("{}m{:02}", secs / 60, secs % 60)
+    } else {
+        format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60)
+    }
 }
 
 /// Generate prompt for server mode (similar to extensions but optimized for OpenCode)
