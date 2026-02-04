@@ -41,6 +41,8 @@ pub fn ensure_worktree(
         if wt_path.exists() {
             // Refresh the filtered task file with latest state
             refresh_filtered_tasks(project_root, &wt_path, tag)?;
+            // Sync agent and spawn definitions
+            sync_scud_subdirs(project_root, &wt_path)?;
             println!(
                 "Using existing salvo worktree at {}",
                 wt_path.display()
@@ -143,6 +145,32 @@ fn create_worktree(project_root: &Path, tag: &str, worktree_path: &Path) -> Resu
         }
     }
 
+    // Copy agent definitions if they exist
+    let main_agents = project_root.join(".scud").join("agents");
+    if main_agents.exists() {
+        let wt_agents = worktree_scud.join("agents");
+        std::fs::create_dir_all(&wt_agents)?;
+        for entry in std::fs::read_dir(&main_agents)? {
+            let entry = entry?;
+            if entry.path().is_file() {
+                std::fs::copy(entry.path(), wt_agents.join(entry.file_name()))?;
+            }
+        }
+    }
+
+    // Copy spawn agent definitions if they exist
+    let main_spawn = project_root.join(".scud").join("spawn");
+    if main_spawn.exists() {
+        let wt_spawn = worktree_scud.join("spawn");
+        std::fs::create_dir_all(&wt_spawn)?;
+        for entry in std::fs::read_dir(&main_spawn)? {
+            let entry = entry?;
+            if entry.path().is_file() {
+                std::fs::copy(entry.path(), wt_spawn.join(entry.file_name()))?;
+            }
+        }
+    }
+
     // Record in database (use main project's database, not worktree's)
     let db = Database::new(project_root);
     let guard = db.connection()?;
@@ -207,6 +235,24 @@ fn generate_filtered_tasks(
     }
 
     std::fs::write(&worktree_tasks, output)?;
+    Ok(())
+}
+
+/// Sync .scud subdirectories (agents, spawn) from main to worktree
+fn sync_scud_subdirs(project_root: &Path, worktree_path: &Path) -> Result<()> {
+    for dir_name in &["agents", "spawn"] {
+        let main_dir = project_root.join(".scud").join(dir_name);
+        if main_dir.exists() {
+            let wt_dir = worktree_path.join(".scud").join(dir_name);
+            std::fs::create_dir_all(&wt_dir)?;
+            for entry in std::fs::read_dir(&main_dir)? {
+                let entry = entry?;
+                if entry.path().is_file() {
+                    std::fs::copy(entry.path(), wt_dir.join(entry.file_name()))?;
+                }
+            }
+        }
+    }
     Ok(())
 }
 

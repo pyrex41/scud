@@ -53,7 +53,7 @@ use std::time::Duration;
 
 use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
-use crate::commands::spawn::headless::{self, StreamStore};
+use crate::commands::spawn::headless::{self, store::SessionStatus, StreamStore};
 use crate::commands::spawn::hooks;
 use crate::commands::spawn::monitor::{self, SpawnSession};
 use crate::commands::spawn::terminal::{self, Harness};
@@ -1481,9 +1481,6 @@ async fn execute_round_headless(
     // Create stream store for this round
     let store = StreamStore::new();
 
-    // Create the headless runner
-    let runner = headless::create_runner(default_harness)?;
-
     // Mark tasks as in-progress and spawn agents
     for info in tasks {
         // Resolve agent config (harness, model, prompt) from task's agent_type
@@ -1492,6 +1489,21 @@ async fn execute_round_headless(
 
         // Create session in store
         store.create_session(&info.task.id, &info.tag);
+
+        // Create a runner for this task's specific harness
+        let runner = match headless::create_runner(config.harness) {
+            Ok(r) => r,
+            Err(e) => {
+                println!(
+                    "    {} Failed to create runner for {}: {}",
+                    "✗".red(),
+                    info.task.id.red(),
+                    e
+                );
+                round_state.failures.push(info.task.id.clone());
+                continue;
+            }
+        };
 
         // Spawn headless session
         let spawn_result = runner
@@ -1582,12 +1594,25 @@ async fn execute_round_headless(
 
     // Wait for all tasks to complete by polling the store
     println!("    Waiting for headless round completion...");
-    let poll_interval = Duration::from_secs(10);
     let max_wait = Duration::from_secs(3600); // 1 hour max
     let start = std::time::Instant::now();
     let total_tasks = round_state.task_ids.len();
+    let mut poll_count = 0u32;
 
     loop {
+        // Fast initial polling (2s for first 5 polls), then slow (10s)
+        let poll_interval = if poll_count < 5 {
+            Duration::from_secs(2)
+        } else {
+            Duration::from_secs(10)
+        };
+        poll_count += 1;
+
+        // Small initial delay to let agents start producing output
+        if poll_count == 1 {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+
         let active_tasks = store.active_tasks();
         let active_count = active_tasks.len();
         if active_count == 0 {
@@ -1646,6 +1671,40 @@ async fn execute_round_headless(
         }
 
         tokio::time::sleep(poll_interval).await;
+    }
+
+    // Show completion summary with final stats for all tasks
+    println!("\n    ─── Completion Summary ───");
+    for task_id in &round_state.task_ids {
+        let status = store
+            .get_status(task_id)
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_else(|| "?".to_string());
+        let stats = store
+            .session_stats(task_id)
+            .map(|(events, lines)| format!("{} events, {} lines", events, lines))
+            .unwrap_or_else(|| "no data".to_string());
+        let icon = match store.get_status(task_id) {
+            Some(SessionStatus::Completed) => "✓".green(),
+            Some(SessionStatus::Failed) => "✗".red(),
+            _ => "?".yellow(),
+        };
+        println!(
+            "      {} {} [{}] ({})",
+            icon, task_id.cyan(), status, stats.dimmed(),
+        );
+        // Show last few lines of output for context
+        let output = store.get_all_output(task_id);
+        for line in output.iter().rev().take(3).rev() {
+            let trimmed = if line.len() > 80 {
+                format!("{}…", &line[..79])
+            } else {
+                line.clone()
+            };
+            if !trimmed.is_empty() {
+                println!("        {}", trimmed.dimmed());
+            }
+        }
     }
 
     // Emit completion events

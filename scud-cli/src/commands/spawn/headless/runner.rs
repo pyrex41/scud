@@ -309,6 +309,102 @@ fn parse_claude_event(line: &str) -> Option<StreamEvent> {
     }
 }
 
+/// Parse a line of Cursor Agent CLI stream-json output into a StreamEvent
+///
+/// Cursor Agent CLI (`agent -p --output-format stream-json`) outputs newline-delimited
+/// JSON events with the following structure:
+///
+/// - `{"type":"system","subtype":"init","session_id":"..."}` - Session init
+/// - `{"type":"tool_call","subtype":"started","call_id":"...","tool_call":{"editToolCall":{...}}}` - Tool start
+/// - `{"type":"tool_call","subtype":"completed","call_id":"...","tool_call":{...}}` - Tool result
+/// - `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"..."}]}}` - Text output
+/// - `{"type":"result","subtype":"success","is_error":false,"result":"...","session_id":"..."}` - Completion
+/// - `{"type":"user",...}` - User message echo (ignored)
+fn parse_cursor_event(line: &str) -> Option<StreamEvent> {
+    let json: serde_json::Value = serde_json::from_str(line).ok()?;
+    let event_type = json.get("type")?.as_str()?;
+
+    match event_type {
+        "system" => {
+            // System init event carries session_id
+            let session_id = json.get("session_id").and_then(|v| v.as_str())?;
+            Some(StreamEvent::new(StreamEventKind::SessionAssigned {
+                session_id: session_id.to_string(),
+            }))
+        }
+        "tool_call" => {
+            let subtype = json.get("subtype").and_then(|v| v.as_str()).unwrap_or("started");
+            let call_id = json
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // Extract tool name from Cursor's *ToolCall nested structure
+            let tool_name = json
+                .get("tool_call")
+                .and_then(|tc| tc.as_object())
+                .and_then(|obj| obj.keys().next())
+                .map(|k| {
+                    // Convert "editToolCall" -> "Edit", "bashToolCall" -> "Bash", etc.
+                    k.trim_end_matches("ToolCall")
+                        .chars()
+                        .next()
+                        .map(|c| {
+                            let mut s = c.to_uppercase().to_string();
+                            s.push_str(&k.trim_end_matches("ToolCall")[c.len_utf8()..]);
+                            s
+                        })
+                        .unwrap_or_else(|| k.to_string())
+                })
+                .unwrap_or_else(|| "tool".to_string());
+
+            match subtype {
+                "started" => {
+                    // Extract args summary from the tool call
+                    let input_summary = json
+                        .get("tool_call")
+                        .and_then(|tc| tc.as_object())
+                        .and_then(|obj| obj.values().next())
+                        .and_then(|v| v.get("args"))
+                        .map(|args| summarize_json(args))
+                        .unwrap_or_default();
+                    Some(StreamEvent::tool_start(&tool_name, call_id, &input_summary))
+                }
+                "completed" => {
+                    let success = json
+                        .get("tool_call")
+                        .and_then(|tc| tc.as_object())
+                        .and_then(|obj| obj.values().next())
+                        .and_then(|v| v.get("result"))
+                        .map(|r| r.get("success").is_some())
+                        .unwrap_or(true);
+                    Some(StreamEvent::new(StreamEventKind::ToolResult {
+                        tool_name,
+                        tool_id: call_id.to_string(),
+                        success,
+                    }))
+                }
+                _ => None,
+            }
+        }
+        "assistant" => {
+            let text = json
+                .pointer("/message/content/0/text")
+                .and_then(|v| v.as_str())?;
+            Some(StreamEvent::text_delta(text))
+        }
+        "result" => {
+            let is_error = json
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            Some(StreamEvent::complete(!is_error))
+        }
+        // Ignore user message echo and unknown types
+        _ => None,
+    }
+}
+
 /// OpenCode headless runner
 ///
 /// Runs OpenCode CLI in headless mode using `opencode run --format json`
@@ -406,6 +502,96 @@ impl HeadlessRunner for OpenCodeHeadless {
     }
 }
 
+/// Cursor Agent headless runner
+///
+/// Runs Cursor Agent CLI in headless mode with `-p` flag,
+/// parsing the streaming JSON output into unified StreamEvent types.
+pub struct CursorHeadless {
+    binary_path: String,
+}
+
+impl CursorHeadless {
+    /// Create a new Cursor headless runner
+    pub fn new() -> Result<Self> {
+        let binary_path = find_harness_binary(Harness::Cursor)?.to_string();
+        Ok(Self { binary_path })
+    }
+}
+
+impl HeadlessRunner for CursorHeadless {
+    fn start<'a>(
+        &'a self,
+        task_id: &'a str,
+        prompt: &'a str,
+        working_dir: &'a Path,
+        model: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<SessionHandle>> {
+        Box::pin(async move {
+            let mut cmd = Command::new(&self.binary_path);
+
+            cmd.arg("-p");
+
+            if let Some(m) = model {
+                cmd.arg("--model").arg(m);
+            }
+
+            // Request streaming JSON output
+            cmd.arg("--output-format").arg("stream-json");
+            cmd.arg(prompt);
+            cmd.current_dir(working_dir);
+            cmd.env("SCUD_TASK_ID", task_id);
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+
+            let mut child = cmd.spawn()?;
+            let (tx, rx) = mpsc::channel(1000);
+
+            let stdout = child.stdout.take().expect("stdout was piped");
+
+            tokio::spawn(async move {
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    // Try Cursor-specific parsing first
+                    if let Some(event) = parse_cursor_event(&line) {
+                        if tx.send(event).await.is_err() {
+                            break;
+                        }
+                    } else if !line.trim().is_empty()
+                        && serde_json::from_str::<serde_json::Value>(&line).is_err()
+                    {
+                        // Only treat non-JSON output as text (skip unrecognized JSON events)
+                        // Append \n since BufReader::lines() strips it
+                        let _ = tx.send(StreamEvent::text_delta(&format!("{}\n", line))).await;
+                    }
+                }
+
+                let _ = tx.send(StreamEvent::complete(true)).await;
+            });
+
+            Ok(SessionHandle {
+                task_id: task_id.to_string(),
+                session_id: None,
+                child,
+                events: rx,
+            })
+        })
+    }
+
+    fn interactive_command(&self, session_id: &str) -> Vec<String> {
+        vec![
+            self.binary_path.clone(),
+            "--resume".to_string(),
+            session_id.to_string(),
+        ]
+    }
+
+    fn harness(&self) -> Harness {
+        Harness::Cursor
+    }
+}
+
 /// Enum-based runner that wraps concrete implementations
 ///
 /// This provides polymorphism without requiring the trait to be object-safe.
@@ -414,6 +600,7 @@ impl HeadlessRunner for OpenCodeHeadless {
 pub enum AnyRunner {
     Claude(ClaudeHeadless),
     OpenCode(OpenCodeHeadless),
+    Cursor(CursorHeadless),
 }
 
 impl AnyRunner {
@@ -422,9 +609,7 @@ impl AnyRunner {
         match harness {
             Harness::Claude => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
             Harness::OpenCode => Ok(AnyRunner::OpenCode(OpenCodeHeadless::new()?)),
-            // Cursor headless uses the same CLI pattern as Claude (prompt-based)
-            // For now, fall back to Claude runner as the interface is similar
-            Harness::Cursor => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
+            Harness::Cursor => Ok(AnyRunner::Cursor(CursorHeadless::new()?)),
         }
     }
 
@@ -439,6 +624,7 @@ impl AnyRunner {
         match self {
             AnyRunner::Claude(runner) => runner.start(task_id, prompt, working_dir, model).await,
             AnyRunner::OpenCode(runner) => runner.start(task_id, prompt, working_dir, model).await,
+            AnyRunner::Cursor(runner) => runner.start(task_id, prompt, working_dir, model).await,
         }
     }
 
@@ -447,6 +633,7 @@ impl AnyRunner {
         match self {
             AnyRunner::Claude(runner) => runner.interactive_command(session_id),
             AnyRunner::OpenCode(runner) => runner.interactive_command(session_id),
+            AnyRunner::Cursor(runner) => runner.interactive_command(session_id),
         }
     }
 
@@ -455,6 +642,7 @@ impl AnyRunner {
         match self {
             AnyRunner::Claude(runner) => runner.harness(),
             AnyRunner::OpenCode(runner) => runner.harness(),
+            AnyRunner::Cursor(runner) => runner.harness(),
         }
     }
 }
@@ -1455,6 +1643,121 @@ mod tests {
     fn test_parse_opencode_unknown_subtype_returns_none() {
         let line = r#"{"type": "tool_call", "subtype": "unknown_status", "name": "bash"}"#;
         let event = parse_opencode_event(line);
+        assert!(event.is_none());
+    }
+
+    // =======================
+    // Cursor event parsing
+    // =======================
+
+    #[test]
+    fn test_parse_cursor_system_init() {
+        let line = r#"{"type":"system","subtype":"init","session_id":"013608ef-dda7-4b38-9741-54fb0323ce1c","model":"Claude 4.5 Opus"}"#;
+        let event = parse_cursor_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::SessionAssigned { ref session_id },
+                ..
+            }) => {
+                assert_eq!(session_id, "013608ef-dda7-4b38-9741-54fb0323ce1c");
+            }
+            _ => panic!("Expected SessionAssigned from system init"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cursor_tool_call_started() {
+        let line = r#"{"type":"tool_call","subtype":"started","call_id":"toolu_123","tool_call":{"editToolCall":{"args":{"path":"/tmp/hello.py","streamContent":"print(\"Hello\")\n"}}}}"#;
+        let event = parse_cursor_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolStart {
+                        ref tool_name,
+                        ref tool_id,
+                        ref input_summary,
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(tool_id, "toolu_123");
+                assert!(input_summary.contains("path"));
+            }
+            _ => panic!("Expected ToolStart, got {:?}", event),
+        }
+    }
+
+    #[test]
+    fn test_parse_cursor_tool_call_completed() {
+        let line = r#"{"type":"tool_call","subtype":"completed","call_id":"toolu_123","tool_call":{"editToolCall":{"args":{"path":"/tmp/hello.py"},"result":{"success":{"path":"/tmp/hello.py","linesAdded":1}}}}}"#;
+        let event = parse_cursor_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolResult {
+                        ref tool_name,
+                        ref tool_id,
+                        success,
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "Edit");
+                assert_eq!(tool_id, "toolu_123");
+                assert!(success);
+            }
+            _ => panic!("Expected ToolResult, got {:?}", event),
+        }
+    }
+
+    #[test]
+    fn test_parse_cursor_assistant_message() {
+        let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Created hello.py"}]}}"#;
+        let event = parse_cursor_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Created hello.py"
+        ));
+    }
+
+    #[test]
+    fn test_parse_cursor_result_success() {
+        let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"Done","session_id":"sess-123"}"#;
+        let event = parse_cursor_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: true },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_cursor_result_error() {
+        let line = r#"{"type":"result","subtype":"error","is_error":true,"result":"Failed"}"#;
+        let event = parse_cursor_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: false },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_cursor_user_message_ignored() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Do something"}]}}"#;
+        let event = parse_cursor_event(line);
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_cursor_invalid_json() {
+        let event = parse_cursor_event("not json");
         assert!(event.is_none());
     }
 }

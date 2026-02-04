@@ -108,6 +108,18 @@ impl SessionStream {
             }
         }
 
+        // Transition from Starting to Running on first meaningful event
+        if matches!(self.status, SessionStatus::Starting)
+            && matches!(
+                event.kind,
+                StreamEventKind::TextDelta { .. }
+                    | StreamEventKind::ToolStart { .. }
+                    | StreamEventKind::ToolResult { .. }
+            )
+        {
+            self.status = SessionStatus::Running;
+        }
+
         // Store event with memory limit
         if self.events.len() >= MAX_EVENTS {
             // Remove oldest 10% when limit reached
