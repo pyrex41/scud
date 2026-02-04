@@ -20,7 +20,10 @@ mod theme;
 mod views;
 
 use scud_bridge::{ScudBridge, ScudCommand, ScudEvent};
-use state::{AgentStatus, AppState, HeadlessSessionInfo, HeadlessSessionStatus, SwarmDefaults, TaskInfo};
+use state::{
+    AgentStatus, AppState, HeadlessSessionInfo, HeadlessSessionStatus, LaunchConfig, SwarmDefaults,
+    TaskInfo,
+};
 use views::ViewMode;
 
 /// Wrapper for ScudEvent receiver that implements Hash for Iced subscriptions
@@ -71,16 +74,28 @@ pub enum Message {
     WavesLoaded(Result<Vec<Vec<TaskInfo>>, String>),
 
     // SCUD task management via ScudBridge
-    LoadTasksViaScud { tag: Option<String> },
-    ComputeWavesViaScud { tag: String },
-    MarkTaskComplete { task_id: String },
-    MarkTaskBlocked { task_id: String },
+    LoadTasksViaScud {
+        tag: Option<String>,
+    },
+    ComputeWavesViaScud {
+        tag: String,
+    },
+    MarkTaskComplete {
+        task_id: String,
+    },
+    MarkTaskBlocked {
+        task_id: String,
+    },
     SelectTask(Option<String>),
     SelectTag(Option<String>),
     RefreshTasks,
 
     // Swarm management
-    StartSwarm { tag: String, harness: String, round_size: usize },
+    StartSwarm {
+        tag: String,
+        harness: String,
+        round_size: usize,
+    },
     StopSwarm,
 
     // Agent management (legacy - for single task execution)
@@ -105,7 +120,11 @@ pub enum Message {
     MonitorClearCompleted,
 
     // Headless swarm
-    StartSwarmHeadless { tag: String, harness: String, round_size: usize },
+    StartSwarmHeadless {
+        tag: String,
+        harness: String,
+        round_size: usize,
+    },
 
     Tick,
 }
@@ -124,6 +143,8 @@ impl DescartesGui {
             swarm_defaults.default_tag
         );
 
+        let launch_config = LaunchConfig::from_defaults(&swarm_defaults);
+
         // Create ScudBridge and get channel handles
         let (bridge, scud_command_tx, scud_event_rx) = ScudBridge::create();
 
@@ -141,6 +162,7 @@ impl DescartesGui {
                 view: ViewMode::Waves,
                 state: AppState {
                     swarm_defaults,
+                    launch_config,
                     ..AppState::default()
                 },
                 scud_command_tx: Some(scud_command_tx),
@@ -239,10 +261,16 @@ impl DescartesGui {
 
             Message::RefreshTasks => {
                 // Refresh tasks with current tag selection
-                Task::done(Message::LoadTasksViaScud { tag: self.state.active_tag.clone() })
+                Task::done(Message::LoadTasksViaScud {
+                    tag: self.state.active_tag.clone(),
+                })
             }
 
-            Message::StartSwarm { tag, harness, round_size } => {
+            Message::StartSwarm {
+                tag,
+                harness,
+                round_size,
+            } => {
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
                     self.state.agent_status = AgentStatus::Running;
@@ -280,7 +308,11 @@ impl DescartesGui {
                 Task::none()
             }
 
-            Message::StartSwarmHeadless { tag, harness, round_size } => {
+            Message::StartSwarmHeadless {
+                tag,
+                harness,
+                round_size,
+            } => {
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
                     self.state.agent_status = AgentStatus::Running;
@@ -463,9 +495,7 @@ impl DescartesGui {
                         }
                     }
                     ScudEvent::ValidationStarted => {
-                        self.state
-                            .output_buffer
-                            .push_str("Validation started...\n");
+                        self.state.output_buffer.push_str("Validation started...\n");
                     }
                     ScudEvent::ValidationCompleted { passed, output } => {
                         let status = if passed { "passed" } else { "failed" };
@@ -501,23 +531,30 @@ impl DescartesGui {
                     ScudEvent::HeadlessStarted { task_id, harness } => {
                         self.state.agent_status = AgentStatus::Running;
                         self.state.current_task = Some(task_id.clone());
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("Headless session started for task {} ({})\n", task_id, harness));
+                        self.state.output_buffer.push_str(&format!(
+                            "Headless session started for task {} ({})\n",
+                            task_id, harness
+                        ));
                         // Populate headless session for monitor view
-                        let title = self.state.tasks.iter()
+                        let title = self
+                            .state
+                            .tasks
+                            .iter()
                             .find(|t| t.id == task_id)
                             .map(|t| t.title.clone())
                             .unwrap_or_else(|| task_id.clone());
-                        self.state.headless_sessions.insert(task_id.clone(), HeadlessSessionInfo {
-                            task_id: task_id.clone(),
-                            task_title: title,
-                            harness: harness.clone(),
-                            status: HeadlessSessionStatus::Starting,
-                            event_count: 0,
-                            line_count: 0,
-                            output_lines: Vec::new(),
-                        });
+                        self.state.headless_sessions.insert(
+                            task_id.clone(),
+                            HeadlessSessionInfo {
+                                task_id: task_id.clone(),
+                                task_title: title,
+                                harness: harness.clone(),
+                                status: HeadlessSessionStatus::Starting,
+                                event_count: 0,
+                                line_count: 0,
+                                output_lines: Vec::new(),
+                            },
+                        );
                         if self.state.monitor_selected_task.is_none() {
                             self.state.monitor_selected_task = Some(task_id);
                         }
@@ -528,11 +565,14 @@ impl DescartesGui {
                         tool_id: _,
                         input_summary,
                     } => {
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("[{}] >> {} {}\n", task_id, tool_name, input_summary));
+                        self.state.output_buffer.push_str(&format!(
+                            "[{}] >> {} {}\n",
+                            task_id, tool_name, input_summary
+                        ));
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
-                            session.output_lines.push(format!(">> {} {}", tool_name, input_summary));
+                            session
+                                .output_lines
+                                .push(format!(">> {} {}", tool_name, input_summary));
                             session.line_count = session.output_lines.len();
                             session.event_count += 1;
                             if session.status == HeadlessSessionStatus::Starting {
@@ -551,12 +591,17 @@ impl DescartesGui {
                             .output_buffer
                             .push_str(&format!("[{}] << {} {}\n", task_id, tool_name, status));
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
-                            session.output_lines.push(format!("<< {} {}", tool_name, status));
+                            session
+                                .output_lines
+                                .push(format!("<< {} {}", tool_name, status));
                             session.line_count = session.output_lines.len();
                             session.event_count += 1;
                         }
                     }
-                    ScudEvent::SessionAssigned { task_id, session_id } => {
+                    ScudEvent::SessionAssigned {
+                        task_id,
+                        session_id,
+                    } => {
                         self.state
                             .output_buffer
                             .push_str(&format!("[{}] Session assigned: {}\n", task_id, session_id));
@@ -703,9 +748,7 @@ async fn load_waves_from_scud() -> Result<Vec<Vec<TaskInfo>>, String> {
     let storage = Storage::new(None);
 
     // Load active group/phase
-    let phase = storage
-        .load_active_group()
-        .map_err(|e| e.to_string())?;
+    let phase = storage.load_active_group().map_err(|e| e.to_string())?;
 
     // Get all tasks
     let tasks = &phase.tasks;
@@ -935,7 +978,10 @@ mod tests {
         // Render and find the Pause button
         let mut ui = simulator(app.view());
         let pause_result = ui.click("Pause");
-        assert!(pause_result.is_ok(), "Pause button should exist when agent is running");
+        assert!(
+            pause_result.is_ok(),
+            "Pause button should exist when agent is running"
+        );
 
         // Process messages
         for message in ui.into_messages() {
@@ -946,7 +992,10 @@ mod tests {
         // Now Resume button should appear
         let mut ui = simulator(app.view());
         let resume_result = ui.click("Resume");
-        assert!(resume_result.is_ok(), "Resume button should exist when agent is paused");
+        assert!(
+            resume_result.is_ok(),
+            "Resume button should exist when agent is paused"
+        );
 
         for message in ui.into_messages() {
             let _ = app.update(message);
@@ -983,7 +1032,10 @@ mod tests {
 
         // Error banner should have Dismiss button
         let dismiss_result = ui.click("Dismiss");
-        assert!(dismiss_result.is_ok(), "Dismiss button should exist in error banner");
+        assert!(
+            dismiss_result.is_ok(),
+            "Dismiss button should exist in error banner"
+        );
 
         for message in ui.into_messages() {
             let _ = app.update(message);
@@ -1043,7 +1095,10 @@ mod tests {
         let _ = app.update(Message::StartAgent("task-1".into()));
         let mut ui = simulator(app.view());
         let status_find = ui.find("Status: Running");
-        assert!(status_find.is_ok(), "Should show Status: Running when agent runs");
+        assert!(
+            status_find.is_ok(),
+            "Should show Status: Running when agent runs"
+        );
     }
 
     /// Test Output view displays agent output
@@ -1057,8 +1112,14 @@ mod tests {
         let _ = app.update(Message::AgentOutput("Line 2\n".into()));
 
         // Verify the model state directly (more reliable than UI text search for long content)
-        assert!(app.state.output_buffer.contains("Line 1"), "Output buffer should contain Line 1");
-        assert!(app.state.output_buffer.contains("Line 2"), "Output buffer should contain Line 2");
+        assert!(
+            app.state.output_buffer.contains("Line 1"),
+            "Output buffer should contain Line 1"
+        );
+        assert!(
+            app.state.output_buffer.contains("Line 2"),
+            "Output buffer should contain Line 2"
+        );
 
         // Switch to output view and verify it renders without error
         let _ = app.update(Message::SwitchView(ViewMode::Output));
@@ -1170,7 +1231,10 @@ mod tests {
         // Step 3: Dismiss error via UI - find and click Dismiss button
         let mut ui = simulator(app.view());
         let dismiss_result = ui.click("Dismiss");
-        assert!(dismiss_result.is_ok(), "Dismiss button should be present in error banner");
+        assert!(
+            dismiss_result.is_ok(),
+            "Dismiss button should be present in error banner"
+        );
         for msg in ui.into_messages() {
             let _ = app.update(msg);
         }
@@ -1201,7 +1265,9 @@ mod tests {
         let _ = app.update(Message::StartAgent("1".into()));
 
         // Agent encounters an error
-        let _ = app.update(Message::AgentComplete(Err("Build failed with exit code 1".into())));
+        let _ = app.update(Message::AgentComplete(Err(
+            "Build failed with exit code 1".into()
+        )));
 
         assert_eq!(app.state.agent_status, AgentStatus::Idle);
         assert!(app.state.output_buffer.contains("Agent error"));
@@ -1269,7 +1335,10 @@ mod tests {
 
         // Clear the output
         let _ = app.update(Message::ClearOutput);
-        assert!(app.state.output_buffer.is_empty(), "Output should be cleared");
+        assert!(
+            app.state.output_buffer.is_empty(),
+            "Output should be cleared"
+        );
     }
 
     /// Test clicking Clear button in output view
@@ -1288,7 +1357,10 @@ mod tests {
         for msg in ui.into_messages() {
             let _ = app.update(msg);
         }
-        assert!(app.state.output_buffer.is_empty(), "Output should be cleared after clicking Clear");
+        assert!(
+            app.state.output_buffer.is_empty(),
+            "Output should be cleared after clicking Clear"
+        );
     }
 
     /// Test ScudEvent::TasksLoaded updates state correctly
@@ -1337,13 +1409,11 @@ mod tests {
                     status: "Pending".into(),
                 },
             ],
-            vec![
-                TaskInfo {
-                    id: "3".into(),
-                    title: "Third task".into(),
-                    status: "Pending".into(),
-                },
-            ],
+            vec![TaskInfo {
+                id: "3".into(),
+                title: "Third task".into(),
+                status: "Pending".into(),
+            }],
         ];
         let _ = app.update(Message::ScudEvent(ScudEvent::WavesComputed(waves)));
 
@@ -1376,7 +1446,9 @@ mod tests {
         app.state.agent_status = AgentStatus::Running;
         app.state.current_task = Some("task-1".into());
 
-        let _ = app.update(Message::ScudEvent(ScudEvent::SwarmCompleted { success: true }));
+        let _ = app.update(Message::ScudEvent(ScudEvent::SwarmCompleted {
+            success: true,
+        }));
 
         assert_eq!(app.state.agent_status, AgentStatus::Idle);
         assert!(app.state.current_task.is_none());
@@ -1421,7 +1493,10 @@ mod tests {
 
         // When idle, Start Swarm button should be present
         let click_result = ui.click("Start Swarm");
-        assert!(click_result.is_ok(), "Start Swarm button should exist when idle");
+        assert!(
+            click_result.is_ok(),
+            "Start Swarm button should exist when idle"
+        );
 
         // Process the message
         for msg in ui.into_messages() {
