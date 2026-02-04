@@ -282,6 +282,7 @@ impl ScudBridge {
         }
     }
 
+    #[allow(dead_code)]
     /// Create a new ScudBridge with a specific working directory
     pub fn with_working_dir(
         event_tx: mpsc::Sender<ScudEvent>,
@@ -309,6 +310,7 @@ impl ScudBridge {
         (bridge, command_tx, event_rx)
     }
 
+    #[allow(dead_code)]
     /// Create a new ScudBridge with specific working directory and return channel handles
     pub fn create_with_working_dir(
         working_dir: PathBuf,
@@ -1175,7 +1177,7 @@ impl ScudBridge {
                     let task_id = task.id.clone();
                     let task_title = task.title.clone();
                     let task_description = task.description.clone();
-                    let harness_clone = harness.clone();
+                    let harness_copy = harness;
                     let harness_name_str = harness_name.to_string();
                     let event_tx = self.event_tx.clone();
                     let working_dir = self.working_dir.clone();
@@ -1208,7 +1210,7 @@ impl ScudBridge {
                         );
 
                         // Create runner
-                        let runner: AnyRunner = match create_runner(harness_clone) {
+                        let runner: AnyRunner = match create_runner(harness_copy) {
                             Ok(r) => r,
                             Err(e) => {
                                 error!("Failed to create runner for task {}: {}", task_id, e);
@@ -1610,16 +1612,19 @@ impl ScudBridge {
         }
     }
 
+    #[allow(dead_code)]
     /// Get the stream store for external access (e.g., for TUI integration)
     pub fn stream_store(&self) -> &StreamStore {
         &self.stream_store
     }
 
+    #[allow(dead_code)]
     /// Get headless session output for a task
     pub fn get_headless_output(&self, task_id: &str, limit: usize) -> Vec<String> {
         self.stream_store.get_output(task_id, limit)
     }
 
+    #[allow(dead_code)]
     /// Check if a headless session is active for a task
     pub fn is_headless_active(&self, task_id: &str) -> bool {
         self.stream_store

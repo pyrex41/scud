@@ -371,7 +371,7 @@ fn parse_cursor_event(line: &str) -> Option<StreamEvent> {
                         .and_then(|tc| tc.as_object())
                         .and_then(|obj| obj.values().next())
                         .and_then(|v| v.get("args"))
-                        .map(|args| summarize_json(args))
+                        .map(summarize_json)
                         .unwrap_or_default();
                     Some(StreamEvent::tool_start(&tool_name, call_id, &input_summary))
                 }
@@ -572,7 +572,7 @@ impl HeadlessRunner for CursorHeadless {
                     } else if !line.trim().is_empty() {
                         if serde_json::from_str::<serde_json::Value>(&line).is_err() {
                             // Non-JSON output treated as text
-                            let _ = tx.send(StreamEvent::text_delta(&format!("{}\n", line))).await;
+                            let _ = tx.send(StreamEvent::text_delta(format!("{}\n", line))).await;
                         } else {
                             debug!(task_id = %task_id_for_events, "cursor: unparsed json: {}", if line.len() > 200 { &line[..200] } else { &line });
                         }

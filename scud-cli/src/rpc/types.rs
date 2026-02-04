@@ -215,18 +215,13 @@ impl RpcError {
 }
 
 /// JSON RPC ID can be string, number, or null
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(untagged)]
 pub enum RpcId {
     String(String),
     Number(i64),
+    #[default]
     Null,
-}
-
-impl Default for RpcId {
-    fn default() -> Self {
-        Self::Null
-    }
 }
 
 // ============================================================================

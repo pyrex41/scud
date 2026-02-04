@@ -100,7 +100,7 @@ pub fn show_all(project_root: Option<PathBuf>, limit: usize, tag: Option<&str>) 
         let entry = entry?;
         let path = entry.path();
 
-        if path.extension().map_or(false, |ext| ext == "log") {
+        if path.extension().is_some_and(|ext| ext == "log") {
             let task_id = path
                 .file_stem()
                 .and_then(|s| s.to_str())

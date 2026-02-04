@@ -365,8 +365,8 @@ pub fn list_worktrees(project_root: &Path) -> Result<()> {
 
     println!("Salvo Worktrees:");
     println!(
-        "{:<15} {:<40} {:<20} {}",
-        "Tag", "Path", "Branch", "Last Sync"
+        "{:<15} {:<40} {:<20} Last Sync",
+        "Tag", "Path", "Branch"
     );
     println!("{}", "-".repeat(90));
 

@@ -87,7 +87,7 @@ pub async fn run(args: WatchArgs) -> Result<()> {
             Ok(msg) => {
                 // Get the first frame from the multi-part message
                 if let Some(frame) = msg.iter().next() {
-                    if let Ok(text) = std::str::from_utf8(&frame) {
+                    if let Ok(text) = std::str::from_utf8(frame) {
                         if args.format == "json" {
                             println!("{}", text);
                         } else if let Ok(event) = serde_json::from_str::<ZmqEvent>(text) {

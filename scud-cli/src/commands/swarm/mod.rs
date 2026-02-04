@@ -141,9 +141,8 @@ pub async fn run(
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
     // Determine actual working directory (may be a salvo worktree)
-    let (working_dir, is_salvo_worktree, main_project_root) =
-        if !no_worktree && tag.is_some() && !all_tags {
-            let tag_name = tag.unwrap();
+    let (working_dir, is_salvo_worktree, main_project_root) = if !no_worktree && !all_tags {
+        if let Some(tag_name) = tag {
             match crate::commands::salvo::ensure_worktree(
                 &original_working_dir,
                 tag_name,
@@ -158,7 +157,10 @@ pub async fn run(
             }
         } else {
             (original_working_dir.clone(), false, None)
-        };
+        }
+    } else {
+        (original_working_dir.clone(), false, None)
+    };
 
     // Load backpressure configuration
     let bp_config = BackpressureConfig::load(project_root.as_ref())?;
@@ -531,7 +533,10 @@ pub async fn run(
                 .flat_map(|phase| &phase.tasks)
                 .filter(|task| matches!(task.status, TaskStatus::Done))
                 .count();
-            status.state = if pause_flag.as_ref().map_or(false, |f| f.load(Ordering::SeqCst)) {
+            status.state = if pause_flag
+                .as_ref()
+                .is_some_and(|f| f.load(Ordering::SeqCst))
+            {
                 "paused".to_string()
             } else {
                 "running".to_string()
@@ -998,8 +1003,8 @@ fn create_and_update_spawn_proxy(
     Ok(Some(session_file))
 }
 
-fn find_task_title_tag<'a>(
-    phases: &'a HashMap<String, crate::models::phase::Phase>,
+fn find_task_title_tag(
+    phases: &HashMap<String, crate::models::phase::Phase>,
     task_id: &str,
 ) -> Option<(String, String)> {
     for (tag, phase) in phases {
@@ -1915,7 +1920,7 @@ fn wait_for_round_completion(
                     // Emit failed event
                     if let Some(writer) = event_writer {
                         let event = events::AgentEvent::new(
-                            &writer.session_id(),
+                            writer.session_id(),
                             task_id,
                             events::EventKind::Failed {
                                 reason: "agent window disappeared".to_string(),

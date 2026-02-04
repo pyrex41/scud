@@ -10,7 +10,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::backpressure::{run_validation, BackpressureConfig};
 use crate::commands::helpers::resolve_group_tag;
@@ -348,6 +348,7 @@ fn get_next_task(storage: &Storage, tag: &str) -> Result<Option<(String, String,
     Ok(None)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_ralph_agent(
     task_id: &str,
     task_title: &str,
@@ -356,7 +357,7 @@ fn spawn_ralph_agent(
     model: Option<&str>,
     session_name: &str,
     window_name: &str,
-    working_dir: &PathBuf,
+    working_dir: &Path,
 ) -> Result<()> {
     // Generate prompt
     let prompt = generate_ralph_prompt(task_id, task_title, task_description);
@@ -430,7 +431,7 @@ fn run_repair_loop(
     harness: Harness,
     model: Option<&str>,
     session_name: &str,
-    working_dir: &PathBuf,
+    working_dir: &Path,
     bp_config: &BackpressureConfig,
     initial_failure: &crate::backpressure::ValidationResult,
 ) -> Result<bool> {

@@ -287,6 +287,7 @@ pub fn spawn_terminal_with_task_list(
 
 /// Spawn in tmux session
 /// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
+#[allow(clippy::too_many_arguments)]
 fn spawn_tmux(
     task_id: &str,
     prompt: &str,

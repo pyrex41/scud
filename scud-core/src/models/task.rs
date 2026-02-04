@@ -461,7 +461,7 @@ impl Task {
     }
 
     fn flatten_to_claude(&self, tasks: &mut Vec<ClaudeTask>, all_tasks: &[Task]) {
-        let claude_status = TaskStatus::from(self.status.clone()).into();
+        let claude_status = ClaudeTaskStatus::from(self.status.clone());
         let claude_task = ClaudeTask {
             id: self.local_id().to_string(),
             subject: self.title.clone(),

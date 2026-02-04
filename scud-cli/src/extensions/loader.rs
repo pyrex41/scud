@@ -135,7 +135,7 @@ impl ExtensionManifest {
     ///
     /// Supports both the new extension.toml format and legacy agent TOML format
     /// via automatic detection and conversion.
-    pub fn from_file(path: &PathBuf) -> Result<Self, ExtensionError> {
+    pub fn from_file(path: &Path) -> Result<Self, ExtensionError> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| ExtensionError::Io(format!("Failed to read {}: {}", path.display(), e)))?;
 
@@ -145,7 +145,7 @@ impl ExtensionManifest {
     /// Parse an extension manifest from a string
     ///
     /// Automatically detects and handles legacy agent TOML format.
-    pub fn from_str(content: &str, path: &PathBuf) -> Result<Self, ExtensionError> {
+    pub fn from_str(content: &str, path: &Path) -> Result<Self, ExtensionError> {
         // Try parsing as new extension format first
         if let Ok(manifest) = toml::from_str::<ExtensionManifest>(content) {
             return Ok(manifest);
@@ -227,7 +227,7 @@ pub struct LegacyPromptSection {
 
 impl LegacyAgentToml {
     /// Convert legacy agent TOML to new extension manifest format
-    pub fn into_extension_manifest(self, path: &PathBuf) -> ExtensionManifest {
+    pub fn into_extension_manifest(self, path: &Path) -> ExtensionManifest {
         let mut config = HashMap::new();
 
         // Preserve model configuration
@@ -650,7 +650,7 @@ pub fn discover(root: &Path, options: DiscoveryOptions) -> Result<DiscoveryResul
         }
 
         // Try to load the manifest
-        let manifest = match ExtensionManifest::from_file(&path.to_path_buf()) {
+        let manifest = match ExtensionManifest::from_file(path) {
             Ok(m) => m,
             Err(e) => {
                 if options.skip_errors {

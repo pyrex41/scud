@@ -97,14 +97,14 @@ impl MigrationShim {
         let content = std::fs::read_to_string(path)
             .map_err(|e| ExtensionError::Io(format!("Failed to read {}: {}", path.display(), e)))?;
 
-        self.load_legacy_agent_str(&content, &path.to_path_buf())
+        self.load_legacy_agent_str(&content, path)
     }
 
     /// Load a legacy agent from string content
     pub fn load_legacy_agent_str(
         &mut self,
         content: &str,
-        path: &PathBuf,
+        path: &Path,
     ) -> Result<ExtensionManifest, ExtensionError> {
         let legacy: LegacyAgentToml = toml::from_str(content)
             .map_err(|e| ExtensionError::Parse(format!("Failed to parse legacy format: {}", e)))?;
@@ -116,7 +116,7 @@ impl MigrationShim {
         self.emit_deprecation_warning(path, &agent_name);
 
         // Track loaded path
-        self.legacy_paths_loaded.push(path.clone());
+        self.legacy_paths_loaded.push(path.to_path_buf());
 
         // Convert to extension manifest (consumes legacy)
         let manifest = legacy.into_extension_manifest(path);
@@ -294,7 +294,7 @@ pub fn convert_legacy_to_extension_toml(
     let legacy: LegacyAgentToml = toml::from_str(legacy_content)
         .map_err(|e| ExtensionError::Parse(format!("Failed to parse legacy format: {}", e)))?;
 
-    let manifest = legacy.into_extension_manifest(&source_path.to_path_buf());
+    let manifest = legacy.into_extension_manifest(source_path);
 
     // Generate the new format TOML
     let mut output = String::new();

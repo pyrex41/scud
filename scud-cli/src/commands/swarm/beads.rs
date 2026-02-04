@@ -246,6 +246,7 @@ pub fn spawn_agent_tmux(
 /// Continuously polls for ready tasks and spawns agents immediately.
 /// Does not wait for batches - new tasks can start as soon as their
 /// dependencies complete.
+#[allow(clippy::too_many_arguments)]
 pub fn run_beads_loop(
     storage: &Storage,
     phase_tag: &str,

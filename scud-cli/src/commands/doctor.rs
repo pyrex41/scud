@@ -518,7 +518,7 @@ pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
         };
 
         let path = entry.path();
-        if !path.extension().map_or(false, |ext| ext == "toml") {
+        if !matches!(path.extension(), Some(ext) if ext == "toml") {
             continue;
         }
 

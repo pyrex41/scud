@@ -235,7 +235,7 @@ pub fn find_claude_project_dir(working_dir: &Path) -> Option<PathBuf> {
         .to_string();
 
     // Try exact match first
-    let exact_path = claude_dir.join(&format!("-{}", project_name));
+    let exact_path = claude_dir.join(format!("-{}", project_name));
     if exact_path.exists() {
         return Some(exact_path);
     }
