@@ -218,11 +218,9 @@ impl Storage {
         fs::create_dir_all(scud_dir.join("tasks"))
             .context("Failed to create .scud/tasks directory")?;
 
-        // Initialize config.toml
+        // Initialize config.toml (always overwrite with provided config)
         let config_file = self.config_file();
-        if !config_file.exists() {
-            config.save(&config_file)?;
-        }
+        config.save(&config_file)?;
 
         // Initialize tasks.scg with empty content
         let tasks_file = self.tasks_file();
