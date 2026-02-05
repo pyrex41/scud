@@ -4,8 +4,10 @@
 
 pub mod agents;
 pub mod header;
+pub mod launch;
 pub mod monitor;
 pub mod output;
+pub mod settings;
 pub mod waves;
 
 // Re-export ViewMode from header for convenience

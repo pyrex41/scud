@@ -168,6 +168,7 @@ impl HeadlessRunner for ClaudeHeadless {
             cmd.arg("-p").arg(prompt);
             cmd.arg("--output-format").arg("stream-json");
             cmd.arg("--verbose");
+            cmd.arg("--include-partial-messages");
             cmd.arg("--dangerously-skip-permissions");
 
             // Model selection

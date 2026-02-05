@@ -1,161 +1,233 @@
-//! Agent status view
+//! Agent configuration view
 //!
-//! Displays current agent status, configuration, and controls.
+//! Configure agent types (builder, tester, etc.) with their harness and model settings.
 
-use iced::widget::{button, column, pick_list, row, text, text_input};
-use iced::{Alignment, Element, Length};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Column};
+use iced::{Alignment, Background, Border, Element, Length};
+use std::collections::HashMap;
 
-use crate::state::{AgentStatus, LaunchConfig};
+use crate::state::AgentConfig;
+use crate::theme;
 use crate::Message;
 
-/// Render the agents view with config panel and controls
+/// Render the agents configuration view
 pub fn view<'a>(
-    agent_status: AgentStatus,
-    current_task: &Option<String>,
-    launch_config: &LaunchConfig,
+    agent_configs: &'a HashMap<String, AgentConfig>,
     available_harnesses: &'a [String],
-    available_tags: &'a [String],
-    available_agents: &'a [String],
+    available_models: &'a HashMap<String, Vec<String>>,
+    selected_agent: &Option<String>,
 ) -> Element<'a, Message> {
-    let status_text = text(format!("Status: {:?}", agent_status));
+    let mut agents_list = Column::new().spacing(theme::SPACING_SM);
 
-    let current_task_display = if let Some(ref task_id) = current_task {
-        text(format!("Current task: {}", task_id))
+    // Sort agents alphabetically
+    let mut agent_names: Vec<&String> = agent_configs.keys().collect();
+    agent_names.sort();
+
+    if agent_names.is_empty() {
+        agents_list = agents_list.push(
+            text("No agents configured. Agents are loaded from .scud/agents/")
+                .style(theme::muted_text())
+                .size(theme::font_size::BODY),
+        );
     } else {
-        text("No task selected")
+        for name in &agent_names {
+            let config = &agent_configs[*name];
+            let is_selected = selected_agent.as_ref() == Some(*name);
+
+            let (bg_color, border_width) = if is_selected {
+                (theme::surface::HOVER, 2.0_f32)
+            } else {
+                (theme::surface::RAISED, 1.0_f32)
+            };
+
+            let dirty_indicator = if config.dirty { " *" } else { "" };
+
+            let agent_row = button(
+                container(
+                    row![
+                        column![
+                            text(format!("{}{}", config.name, dirty_indicator))
+                                .size(theme::font_size::BODY)
+                                .style(|_| iced::widget::text::Style {
+                                    color: Some(theme::text::PRIMARY),
+                                }),
+                            text(format!("{} / {}", config.harness, config.model))
+                                .size(theme::font_size::CAPTION)
+                                .style(theme::muted_text()),
+                        ]
+                        .spacing(2),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .padding(theme::SPACING_MD)
+                .width(Length::Fill)
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(bg_color)),
+                    border: Border {
+                        color: if is_selected {
+                            theme::ACCENT
+                        } else {
+                            theme::border::SUBTLE
+                        },
+                        width: border_width,
+                        radius: theme::RADIUS.into(),
+                    },
+                    ..Default::default()
+                }),
+            )
+            .on_press(Message::SelectAgentConfig((*name).clone()))
+            .width(Length::Fill)
+            .style(|_, _| button::Style {
+                background: None,
+                ..Default::default()
+            });
+
+            agents_list = agents_list.push(agent_row);
+        }
+    }
+
+    let left_panel = container(
+        column![
+            text("Agent Types")
+                .size(theme::font_size::HEADING)
+                .style(theme::heading_text()),
+            scrollable(agents_list).height(Length::Fill),
+        ]
+        .spacing(theme::SPACING_MD),
+    )
+    .width(Length::FillPortion(3))
+    .height(Length::Fill)
+    .padding(theme::SPACING_MD);
+
+    // Right panel: edit selected agent
+    let right_panel = if let Some(ref agent_name) = selected_agent {
+        if let Some(config) = agent_configs.get(agent_name) {
+            build_agent_editor(config, available_harnesses, available_models)
+        } else {
+            centered_placeholder("Select an agent to configure")
+        }
+    } else {
+        centered_placeholder("Select an agent to configure")
     };
 
-    let status_section = column![status_text, current_task_display].spacing(4);
+    row![left_panel, right_panel]
+        .spacing(theme::SPACING_MD)
+        .height(Length::Fill)
+        .into()
+}
 
-    let harness_options = with_selected_option(available_harnesses, &launch_config.harness);
+/// Build the agent editor panel
+fn build_agent_editor<'a>(
+    config: &'a AgentConfig,
+    available_harnesses: &'a [String],
+    available_models: &'a HashMap<String, Vec<String>>,
+) -> Element<'a, Message> {
+    let name = config.name.clone();
+
     let harness_picker = pick_list(
-        harness_options,
-        Some(launch_config.harness.clone()),
-        Message::SetHarness,
+        available_harnesses.to_vec(),
+        Some(config.harness.clone()),
+        move |h| Message::UpdateAgentHarness {
+            agent: name.clone(),
+            harness: h,
+        },
     )
     .width(Length::Fill);
 
-    let round_options = round_size_options(launch_config.round_size);
-    let round_picker = pick_list(
-        round_options,
-        Some(launch_config.round_size),
-        Message::SetRoundSize,
-    )
-    .width(Length::Fill);
+    // Get models for the currently selected harness
+    let models_for_harness = available_models
+        .get(&config.harness)
+        .cloned()
+        .unwrap_or_default();
 
-    let tag_options = with_selected_option(available_tags, &launch_config.tag);
-    let tag_picker = pick_list(
-        tag_options,
-        Some(launch_config.tag.clone()),
-        Message::SetLaunchTag,
-    )
-    .width(Length::Fill);
+    // Ensure current model is in the list (even if not from the harness's model list)
+    let model_options = if models_for_harness.is_empty() {
+        vec![config.model.clone()]
+    } else if !models_for_harness.contains(&config.model) && !config.model.is_empty() {
+        let mut opts = vec![config.model.clone()];
+        opts.extend(models_for_harness);
+        opts
+    } else {
+        models_for_harness
+    };
 
-    let (agent_options, agent_selected) =
-        agent_picker_options(available_agents, launch_config.agent_type.as_ref());
-    let agent_picker = pick_list(agent_options, Some(agent_selected), |selected| {
-        if selected == "Default" {
-            Message::SetAgentType(None)
-        } else {
-            Message::SetAgentType(Some(selected))
+    let name_for_model = config.name.clone();
+    let model_picker = pick_list(model_options, Some(config.model.clone()), move |m| {
+        Message::UpdateAgentModel {
+            agent: name_for_model.clone(),
+            model: m,
         }
     })
     .width(Length::Fill);
 
-    let model_input = text_input("Model (optional)", &launch_config.model)
-        .on_input(Message::SetModel)
+    let name_for_desc = config.name.clone();
+    let desc_input = text_input("Description", &config.description)
+        .on_input(move |d| Message::UpdateAgentDescription {
+            agent: name_for_desc.clone(),
+            description: d,
+        })
         .width(Length::Fill);
 
-    let label_width = Length::Fixed(140.0);
-    let config_section = column![
-        text("Launch Configuration").size(18),
-        row![text("Harness").width(label_width), harness_picker]
-            .spacing(10)
-            .align_y(Alignment::Center),
-        row![text("Model").width(label_width), model_input]
-            .spacing(10)
-            .align_y(Alignment::Center),
-        row![text("Round size").width(label_width), round_picker]
-            .spacing(10)
-            .align_y(Alignment::Center),
-        row![text("Tag").width(label_width), tag_picker]
-            .spacing(10)
-            .align_y(Alignment::Center),
-        row![text("Agent type").width(label_width), agent_picker]
-            .spacing(10)
-            .align_y(Alignment::Center),
+    let label_width = Length::Fixed(100.0);
+
+    let save_btn = if config.dirty {
+        button(text("Save").size(theme::font_size::BODY))
+            .on_press(Message::SaveAgentConfig(config.name.clone()))
+            .style(theme::primary_button())
+    } else {
+        button(text("Saved").size(theme::font_size::BODY)).style(theme::ghost_button())
+    };
+
+    let editor = column![
+        text(&config.name)
+            .size(theme::font_size::HEADING)
+            .style(theme::heading_text()),
+        row![
+            text("Description")
+                .width(label_width)
+                .style(theme::secondary_text()),
+            desc_input,
+        ]
+        .spacing(theme::SPACING_MD)
+        .align_y(Alignment::Center),
+        row![
+            text("Harness")
+                .width(label_width)
+                .style(theme::secondary_text()),
+            harness_picker,
+        ]
+        .spacing(theme::SPACING_MD)
+        .align_y(Alignment::Center),
+        row![
+            text("Model")
+                .width(label_width)
+                .style(theme::secondary_text()),
+            model_picker,
+        ]
+        .spacing(theme::SPACING_MD)
+        .align_y(Alignment::Center),
+        row![save_btn].padding([theme::SPACING_MD, 0.0]),
     ]
-    .spacing(10);
+    .spacing(theme::SPACING_MD);
 
-    let mut controls = row![].spacing(10);
-
-    match agent_status {
-        AgentStatus::Idle => {
-            controls = controls.push(button("Start Swarm").on_press(Message::StartSwarm {
-                tag: launch_config.tag.clone(),
-                harness: launch_config.harness.clone(),
-                round_size: launch_config.round_size,
-            }));
-            controls = controls.push(button("Start Headless").on_press(
-                Message::StartSwarmHeadless {
-                    tag: launch_config.tag.clone(),
-                    harness: launch_config.harness.clone(),
-                    round_size: launch_config.round_size,
-                },
-            ));
-        }
-        AgentStatus::Running => {
-            controls = controls
-                .push(button("Pause").on_press(Message::PauseAgent))
-                .push(button("Stop Swarm").on_press(Message::StopSwarm))
-                .push(button("Cancel").on_press(Message::CancelAgent));
-        }
-        AgentStatus::Paused => {
-            controls = controls
-                .push(button("Resume").on_press(Message::ResumeAgent))
-                .push(button("Cancel").on_press(Message::CancelAgent));
-        }
-    }
-
-    column![status_section, config_section, controls]
-        .spacing(15)
+    container(editor)
+        .width(Length::FillPortion(7))
+        .height(Length::Fill)
+        .padding(theme::SPACING_LG)
+        .style(theme::panel_container())
         .into()
 }
 
-fn with_selected_option(options: &[String], selected: &str) -> Vec<String> {
-    let mut values: Vec<String> = options.to_vec();
-    if values.is_empty() {
-        values.push(selected.to_string());
-    } else if !values.iter().any(|value| value == selected) {
-        values.insert(0, selected.to_string());
-    }
-    values
-}
-
-fn round_size_options(selected: usize) -> Vec<usize> {
-    let mut values: Vec<usize> = (1..=10).collect();
-    if !values.contains(&selected) {
-        values.insert(0, selected);
-    }
-    values
-}
-
-fn agent_picker_options(
-    available_agents: &[String],
-    selected: Option<&String>,
-) -> (Vec<String>, String) {
-    let mut values = Vec::with_capacity(available_agents.len() + 1);
-    values.push("Default".to_string());
-    values.extend(available_agents.iter().cloned());
-
-    let selected_value = selected
-        .cloned()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "Default".to_string());
-
-    if !values.iter().any(|value| value == &selected_value) {
-        values.insert(1, selected_value.clone());
-    }
-
-    (values, selected_value)
+/// Create a centered placeholder message
+fn centered_placeholder(message: &str) -> Element<'_, Message> {
+    container(
+        text(message)
+            .style(theme::muted_text())
+            .size(theme::font_size::BODY),
+    )
+    .width(Length::FillPortion(7))
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .into()
 }

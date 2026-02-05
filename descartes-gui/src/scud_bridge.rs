@@ -5,14 +5,15 @@
 
 use serde::Deserialize;
 use std::fs;
-use std::path::PathBuf;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use scud_core::{compute_waves, Phase, Storage, Task, TaskStatus};
+
+use crate::state::RalphConfig;
 
 // Import headless streaming infrastructure from scud-cli
 use scud::commands::spawn::headless::{
@@ -95,6 +96,31 @@ pub enum ScudEvent {
 
     /// Agent session ID assigned (for continuation)
     SessionAssigned { task_id: String, session_id: String },
+
+    /// Tag archived successfully
+    TagArchived { tag: String },
+
+    // Ralph mode events
+    /// Ralph loop started
+    RalphStarted { tag: String, max_iterations: usize },
+
+    /// A new Ralph iteration began (one task)
+    RalphIterationStarted { iteration: usize, task_id: String, task_title: String },
+
+    /// Backpressure validation started for a task
+    RalphValidationStarted { task_id: String },
+
+    /// Backpressure validation completed
+    RalphValidationCompleted { task_id: String, passed: bool, output: String },
+
+    /// Repair agent spawned for a failed validation
+    RalphRepairStarted { task_id: String, attempt: usize },
+
+    /// A Ralph iteration completed (task done or failed)
+    RalphIterationCompleted { iteration: usize, task_id: String, success: bool },
+
+    /// Ralph loop finished
+    RalphCompleted { iterations: usize, completed: usize, failed: usize },
 }
 
 /// Commands to send to SCUD
@@ -115,7 +141,7 @@ pub enum ScudCommand {
     /// Load available agent types from .scud/agents
     LoadAvailableAgents,
 
-    /// Start swarm execution
+    /// Start swarm execution (headless runners with streaming output)
     StartSwarm {
         tag: String,
         harness: String,
@@ -123,7 +149,7 @@ pub enum ScudCommand {
         model: String,
     },
 
-    /// Run a single task with an agent
+    /// Run a single task with streaming output
     RunTask {
         task_id: String,
         harness: String,
@@ -145,20 +171,26 @@ pub enum ScudCommand {
     /// Mark a task as blocked
     BlockTask { task_id: String },
 
-    /// Start swarm execution using headless runners (for monitoring)
-    StartSwarmHeadless {
-        tag: String,
-        harness: String,
-        round_size: usize,
-        model: String,
-    },
+    /// Archive a tag's tasks
+    ArchiveTag { tag: String },
 
-    /// Run a single task in headless mode with streaming output
-    RunTaskHeadless {
+    /// Attach to a session in interactive terminal mode
+    AttachSession {
         task_id: String,
         harness: String,
-        model: String,
+        session_id: String,
     },
+
+    /// Start Ralph mode execution (sequential, backpressure-driven)
+    StartRalph {
+        tag: String,
+        harness: String,
+        model: String,
+        ralph_config: RalphConfig,
+    },
+
+    /// Stop a running Ralph loop
+    StopRalph,
 }
 
 /// JSON event format from SCUD CLI when running with --json-events
@@ -233,6 +265,8 @@ struct ScudJsonTask {
     priority: Option<String>,
     #[serde(default)]
     complexity: Option<usize>,
+    #[serde(default)]
+    agent_type: Option<String>,
 }
 
 impl From<ScudJsonTask> for TaskInfo {
@@ -241,6 +275,7 @@ impl From<ScudJsonTask> for TaskInfo {
             id: task.id,
             title: task.title,
             status: task.status,
+            agent: task.agent_type,
         }
     }
 }
@@ -267,6 +302,9 @@ pub struct ScudBridge {
 
     /// Working directory for headless execution
     working_dir: PathBuf,
+
+    /// Cancellation flag for Ralph mode
+    ralph_cancelled: Arc<AtomicBool>,
 }
 
 impl ScudBridge {
@@ -279,6 +317,7 @@ impl ScudBridge {
             paused: false,
             stream_store: StreamStore::new(),
             working_dir: std::env::current_dir().unwrap_or_default(),
+            ralph_cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -296,6 +335,7 @@ impl ScudBridge {
             paused: false,
             stream_store: StreamStore::new(),
             working_dir,
+            ralph_cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -375,8 +415,7 @@ impl ScudBridge {
                     } else {
                         Some(model)
                     };
-                    self.run_single_task(&task_id, &harness, model_override)
-                        .await;
+                    self.run_task(&task_id, &harness, model_override).await;
                 }
                 ScudCommand::CompleteTask { task_id } => {
                     self.complete_task(&task_id).await;
@@ -384,32 +423,33 @@ impl ScudBridge {
                 ScudCommand::BlockTask { task_id } => {
                     self.block_task(&task_id).await;
                 }
-                ScudCommand::StartSwarmHeadless {
-                    tag,
-                    harness,
-                    round_size,
-                    model,
-                } => {
-                    let model_override = if model.trim().is_empty() {
-                        None
-                    } else {
-                        Some(model)
-                    };
-                    self.run_swarm_headless(&tag, &harness, round_size, model_override)
-                        .await;
+                ScudCommand::ArchiveTag { tag } => {
+                    self.archive_tag(&tag).await;
                 }
-                ScudCommand::RunTaskHeadless {
+                ScudCommand::AttachSession {
                     task_id,
                     harness,
+                    session_id,
+                } => {
+                    self.attach_session(&task_id, &harness, &session_id).await;
+                }
+                ScudCommand::StartRalph {
+                    tag,
+                    harness,
                     model,
+                    ralph_config,
                 } => {
                     let model_override = if model.trim().is_empty() {
                         None
                     } else {
                         Some(model)
                     };
-                    self.run_task_headless(&task_id, &harness, model_override)
+                    self.run_ralph(&tag, &harness, model_override, ralph_config)
                         .await;
+                }
+                ScudCommand::StopRalph => {
+                    info!("StopRalph received, setting cancellation flag");
+                    self.ralph_cancelled.store(true, Ordering::SeqCst);
                 }
             }
         }
@@ -503,6 +543,7 @@ impl ScudBridge {
                 id: task.id.clone(),
                 title: task.title.clone(),
                 status: task.status.as_str().to_string(),
+                agent: task.agent_type.clone(),
             })
             .collect()
     }
@@ -513,6 +554,7 @@ impl ScudBridge {
             id: task.id.clone(),
             title: task.title.clone(),
             status: task.status.as_str().to_string(),
+            agent: task.agent_type.clone(),
         }
     }
 
@@ -664,222 +706,6 @@ impl ScudBridge {
                 let _ = self
                     .event_tx
                     .send(ScudEvent::Error(format!("Task spawn error: {}", e)))
-                    .await;
-            }
-        }
-    }
-
-    /// Run swarm execution with event streaming
-    ///
-    /// Spawns `scud swarm --tag <tag> --harness <harness> --json-events`
-    /// and streams events as they occur
-    async fn run_swarm(
-        &mut self,
-        tag: &str,
-        harness: &str,
-        round_size: usize,
-        model: Option<String>,
-    ) {
-        let round_size_str = round_size.to_string();
-        let args = vec![
-            "swarm",
-            "--tag",
-            tag,
-            "--harness",
-            harness,
-            "--round-size",
-            &round_size_str,
-            "--json-events",
-        ];
-
-        info!("Starting swarm: scud {}", args.join(" "));
-
-        let mut command = Command::new("scud");
-        command
-            .args(&args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if let Some(model) = model.as_deref() {
-            command.env("SCUD_MODEL", model);
-            command.env("SCUD_FAST_MODEL", model);
-            command.env("SCUD_SMART_MODEL", model);
-        }
-
-        match command.spawn() {
-            Ok(mut child) => {
-                // Take stdout for event streaming
-                if let Some(stdout) = child.stdout.take() {
-                    let event_tx = self.event_tx.clone();
-                    let reader = BufReader::new(stdout);
-                    let mut lines = reader.lines();
-
-                    // Stream events from stdout
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        // Try to parse as JSON event
-                        if let Ok(event) = serde_json::from_str::<ScudJsonEvent>(&line) {
-                            let scud_event: ScudEvent = event.into();
-                            if event_tx.send(scud_event).await.is_err() {
-                                warn!("Event channel closed");
-                                break;
-                            }
-                        } else {
-                            // Non-JSON line - send as generic output
-                            if !line.trim().is_empty() {
-                                let _ = event_tx.send(ScudEvent::Output(line)).await;
-                            }
-                        }
-                    }
-                }
-
-                // Wait for process to complete
-                match child.wait().await {
-                    Ok(status) => {
-                        if status.success() {
-                            info!("Swarm completed successfully");
-                        } else {
-                            warn!("Swarm exited with status: {}", status);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error waiting for swarm process: {}", e);
-                        let _ = self
-                            .event_tx
-                            .send(ScudEvent::Error(format!("Swarm process error: {}", e)))
-                            .await;
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to spawn swarm: {}", e);
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::Error(format!("Failed to start swarm: {}", e)))
-                    .await;
-            }
-        }
-    }
-
-    /// Run a single task with an agent
-    ///
-    /// Uses `scud run` to execute the task with the specified harness
-    async fn run_single_task(&mut self, task_id: &str, harness: &str, model: Option<String>) {
-        info!("Running single task {} with harness {}", task_id, harness);
-
-        // First, load the task details to get the prompt
-        let task_id_clone = task_id.to_string();
-        let task_result = tokio::task::spawn_blocking(move || -> Result<Task, String> {
-            let storage = Storage::new(None);
-            let tag = storage
-                .get_active_group()
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "No active task group".to_string())?;
-            let phase = storage.load_group(&tag).map_err(|e| e.to_string())?;
-            phase
-                .get_task(&task_id_clone)
-                .cloned()
-                .ok_or_else(|| format!("Task '{}' not found", task_id_clone))
-        })
-        .await;
-
-        let task = match task_result {
-            Ok(Ok(t)) => t,
-            Ok(Err(e)) => {
-                error!("Failed to load task: {}", e);
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::Error(format!("Failed to load task: {}", e)))
-                    .await;
-                return;
-            }
-            Err(e) => {
-                error!("Task spawn error: {}", e);
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::Error(format!("Task spawn error: {}", e)))
-                    .await;
-                return;
-            }
-        };
-
-        // Construct the prompt for the agent
-        let prompt = format!(
-            "Complete the following task:\n\n## Task: {}\n\n{}\n\nImplement this task and commit your changes.",
-            task.title, task.description
-        );
-
-        // Emit task started event
-        let _ = self
-            .event_tx
-            .send(ScudEvent::TaskStarted {
-                task_id: task_id.to_string(),
-            })
-            .await;
-
-        // Run the agent using scud run
-        let mut args = vec!["run".to_string(), "-H".to_string(), harness.to_string()];
-        if let Some(model) = model.as_deref() {
-            args.push("-M".to_string());
-            args.push(model.to_string());
-        }
-        args.push(prompt);
-        info!("Running: scud {}", args.join(" "));
-
-        match Command::new("scud")
-            .args(&args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(mut child) => {
-                // Stream stdout
-                if let Some(stdout) = child.stdout.take() {
-                    let event_tx = self.event_tx.clone();
-                    let task_id_for_output = task_id.to_string();
-                    let reader = BufReader::new(stdout);
-                    let mut lines = reader.lines();
-
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        let _ = event_tx
-                            .send(ScudEvent::TaskOutput {
-                                task_id: task_id_for_output.clone(),
-                                text: line,
-                            })
-                            .await;
-                    }
-                }
-
-                // Wait for completion
-                match child.wait().await {
-                    Ok(status) => {
-                        let success = status.success();
-                        let _ = self
-                            .event_tx
-                            .send(ScudEvent::TaskCompleted {
-                                task_id: task_id.to_string(),
-                                success,
-                            })
-                            .await;
-
-                        if success {
-                            info!("Task {} completed successfully", task_id);
-                        } else {
-                            warn!("Task {} failed with status: {}", task_id, status);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error waiting for task process: {}", e);
-                        let _ = self
-                            .event_tx
-                            .send(ScudEvent::Error(format!("Task process error: {}", e)))
-                            .await;
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Failed to spawn task agent: {}", e);
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::Error(format!("Failed to start task: {}", e)))
                     .await;
             }
         }
@@ -1061,12 +887,187 @@ impl ScudBridge {
         }
     }
 
+    /// Archive a tag by shelling out to `scud clean --tag <tag>`
+    async fn archive_tag(&self, tag: &str) {
+        let tag = tag.to_string();
+        let tag_for_event = tag.clone();
+        info!("Archiving tag '{}'", tag);
+
+        let result = tokio::process::Command::new("scud")
+            .args(["clean", "--tag", &tag])
+            .output()
+            .await;
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    info!("Tag '{}' archived successfully", tag_for_event);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::TagArchived {
+                            tag: tag_for_event,
+                        })
+                        .await;
+                    // Reload tags after archiving
+                    self.load_available_tags().await;
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    error!("Failed to archive tag '{}': {}", tag_for_event, stderr);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::Error(format!(
+                            "Failed to archive tag '{}': {}",
+                            tag_for_event, stderr
+                        )))
+                        .await;
+                }
+            }
+            Err(e) => {
+                error!("Failed to run scud clean: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to archive: {}", e)))
+                    .await;
+            }
+        }
+    }
+
+    /// Attach to a session in interactive terminal mode
+    ///
+    /// Opens a new terminal window with the harness's resume command.
+    async fn attach_session(&self, task_id: &str, harness_name: &str, session_id: &str) {
+        info!(
+            "Attaching to session {} for task {} (harness: {})",
+            session_id, task_id, harness_name
+        );
+
+        // Build the command based on harness type
+        let cmd_args: Vec<String> = match harness_name {
+            "claude" => {
+                vec!["claude".to_string(), "--resume".to_string(), session_id.to_string()]
+            }
+            "opencode" => {
+                vec![
+                    "opencode".to_string(),
+                    "attach".to_string(),
+                    "http://localhost:4096".to_string(),
+                    "--session".to_string(),
+                    session_id.to_string(),
+                ]
+            }
+            "cursor" => {
+                vec!["cursor-agent".to_string(), "--resume".to_string(), session_id.to_string()]
+            }
+            _ => {
+                error!("Unknown harness for attach: {}", harness_name);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!(
+                        "Cannot attach: unknown harness '{}'",
+                        harness_name
+                    )))
+                    .await;
+                return;
+            }
+        };
+
+        // Open in a new terminal using open -a Terminal on macOS
+        // The command is: open -a Terminal -- <binary> <args>...
+        #[cfg(target_os = "macos")]
+        {
+            let script = format!(
+                "tell application \"Terminal\"\n\
+                    activate\n\
+                    do script \"{}\"\n\
+                end tell",
+                cmd_args.join(" ").replace("\"", "\\\"")
+            );
+
+            let result = tokio::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+                .await;
+
+            match result {
+                Ok(output) => {
+                    if output.status.success() {
+                        info!("Opened terminal for session {}", session_id);
+                        let _ = self
+                            .event_tx
+                            .send(ScudEvent::Output(format!(
+                                "Opened terminal to attach to session {}",
+                                session_id
+                            )))
+                            .await;
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        error!("Failed to open terminal: {}", stderr);
+                        let _ = self
+                            .event_tx
+                            .send(ScudEvent::Error(format!(
+                                "Failed to open terminal: {}",
+                                stderr
+                            )))
+                            .await;
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to run osascript: {}", e);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::Error(format!("Failed to open terminal: {}", e)))
+                        .await;
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            // On Linux, try xterm or gnome-terminal
+            let term_cmd = if std::process::Command::new("which")
+                .arg("gnome-terminal")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                "gnome-terminal"
+            } else {
+                "xterm"
+            };
+
+            let result = tokio::process::Command::new(term_cmd)
+                .arg("-e")
+                .args(&cmd_args)
+                .spawn();
+
+            match result {
+                Ok(_) => {
+                    info!("Opened terminal for session {}", session_id);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::Output(format!(
+                            "Opened terminal to attach to session {}",
+                            session_id
+                        )))
+                        .await;
+                }
+                Err(e) => {
+                    error!("Failed to open terminal: {}", e);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::Error(format!("Failed to open terminal: {}", e)))
+                        .await;
+                }
+            }
+        }
+    }
+
     /// Run swarm execution using headless runners for each task
     ///
-    /// Instead of shelling out to `scud swarm`, this spawns headless runners
-    /// per-task so each task gets its own StreamStore session visible in the
-    /// Monitor view.
-    async fn run_swarm_headless(
+    /// Spawns headless runners per-task so each task gets its own StreamStore
+    /// session visible in the Monitor view.
+    async fn run_swarm(
         &mut self,
         tag: &str,
         harness_name: &str,
@@ -1178,7 +1179,6 @@ impl ScudBridge {
                     let task_title = task.title.clone();
                     let task_description = task.description.clone();
                     let harness_copy = harness;
-                    let harness_name_str = harness_name.to_string();
                     let event_tx = self.event_tx.clone();
                     let working_dir = self.working_dir.clone();
                     let stream_store = self.stream_store.clone();
@@ -1186,153 +1186,25 @@ impl ScudBridge {
                     let model_override = model.clone();
 
                     let handle = tokio::spawn(async move {
-                        // Create stream session
-                        stream_store.create_session(&task_id, &tag_str);
-
-                        // Emit headless started
-                        let _ = event_tx
-                            .send(ScudEvent::HeadlessStarted {
-                                task_id: task_id.clone(),
-                                harness: harness_name_str.clone(),
-                            })
-                            .await;
-
-                        let _ = event_tx
-                            .send(ScudEvent::TaskStarted {
-                                task_id: task_id.clone(),
-                            })
-                            .await;
-
                         // Build prompt
                         let prompt = format!(
                             "Complete the following task:\n\n## Task: {}\n\n{}\n\nWhen done, run: scud set-status {} done",
                             task_title, task_description, task_id
                         );
 
-                        // Create runner
-                        let runner: AnyRunner = match create_runner(harness_copy) {
-                            Ok(r) => r,
-                            Err(e) => {
-                                error!("Failed to create runner for task {}: {}", task_id, e);
-                                let _ = event_tx
-                                    .send(ScudEvent::TaskCompleted {
-                                        task_id: task_id.clone(),
-                                        success: false,
-                                    })
-                                    .await;
-                                return false;
-                            }
-                        };
-
-                        // Start session
-                        let model_ref = model_override.as_deref();
-                        let mut session: SessionHandle = match runner
-                            .start(&task_id, &prompt, &working_dir, model_ref)
-                            .await
-                        {
-                            Ok(s) => s,
-                            Err(e) => {
-                                error!(
-                                    "Failed to start headless session for task {}: {}",
-                                    task_id, e
-                                );
-                                let _ = event_tx
-                                    .send(ScudEvent::TaskCompleted {
-                                        task_id: task_id.clone(),
-                                        success: false,
-                                    })
-                                    .await;
-                                return false;
-                            }
-                        };
-
-                        // Store PID
-                        if let Some(pid) = session.pid() {
-                            stream_store.set_pid(&task_id, pid);
-                        }
-
-                        // Stream events
-                        let mut task_success = false;
-                        while let Some(stream_event) = session.events.recv().await {
-                            stream_store.push_event(&task_id, stream_event.clone());
-
-                            match stream_event.kind {
-                                StreamEventKind::TextDelta { text } => {
-                                    let _ = event_tx
-                                        .send(ScudEvent::TaskOutput {
-                                            task_id: task_id.clone(),
-                                            text,
-                                        })
-                                        .await;
-                                }
-                                StreamEventKind::ToolStart {
-                                    tool_name,
-                                    tool_id,
-                                    input_summary,
-                                } => {
-                                    let _ = event_tx
-                                        .send(ScudEvent::ToolStart {
-                                            task_id: task_id.clone(),
-                                            tool_name,
-                                            tool_id,
-                                            input_summary,
-                                        })
-                                        .await;
-                                }
-                                StreamEventKind::ToolResult {
-                                    tool_name,
-                                    tool_id,
-                                    success,
-                                } => {
-                                    let _ = event_tx
-                                        .send(ScudEvent::ToolResult {
-                                            task_id: task_id.clone(),
-                                            tool_name,
-                                            tool_id,
-                                            success,
-                                        })
-                                        .await;
-                                }
-                                StreamEventKind::SessionAssigned { session_id } => {
-                                    stream_store.set_session_id(&task_id, &session_id);
-                                    let _ = event_tx
-                                        .send(ScudEvent::SessionAssigned {
-                                            task_id: task_id.clone(),
-                                            session_id,
-                                        })
-                                        .await;
-                                }
-                                StreamEventKind::Complete { success } => {
-                                    task_success = success;
-                                    let _ = event_tx
-                                        .send(ScudEvent::TaskCompleted {
-                                            task_id: task_id.clone(),
-                                            success,
-                                        })
-                                        .await;
-                                    break;
-                                }
-                                StreamEventKind::Error { message } => {
-                                    let _ = event_tx
-                                        .send(ScudEvent::Error(format!(
-                                            "Task {} error: {}",
-                                            task_id, message
-                                        )))
-                                        .await;
-                                    let _ = event_tx
-                                        .send(ScudEvent::TaskCompleted {
-                                            task_id: task_id.clone(),
-                                            success: false,
-                                        })
-                                        .await;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Wait for session to finish
-                        let _ = session.wait().await;
-                        task_success
+                        Self::execute_headless_task(
+                            &task_id,
+                            &task_title,
+                            &prompt,
+                            harness_copy,
+                            model_override.as_deref(),
+                            &working_dir,
+                            &tag_str,
+                            Some(wave_idx),
+                            &event_tx,
+                            &stream_store,
+                        )
+                        .await
                     });
 
                     handles.push(handle);
@@ -1369,12 +1241,12 @@ impl ScudBridge {
         info!("Headless swarm completed with success={}", all_success);
     }
 
-    /// Run a task in headless mode with direct streaming output
+    /// Run a single task with direct streaming output
     ///
     /// Uses the scud-cli headless infrastructure for proper event parsing.
     /// Spawns the appropriate harness (Claude/OpenCode) and streams structured
     /// events (text deltas, tool calls, completion) back to the GUI.
-    async fn run_task_headless(
+    async fn run_task(
         &mut self,
         task_id: &str,
         harness_name: &str,
@@ -1612,6 +1484,634 @@ impl ScudBridge {
         }
     }
 
+    /// Execute a single headless task, streaming events to the GUI
+    ///
+    /// Shared helper used by both run_swarm and run_ralph.
+    /// Returns true if the task completed successfully.
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_headless_task(
+        task_id: &str,
+        _task_title: &str,
+        prompt: &str,
+        harness: Harness,
+        model: Option<&str>,
+        working_dir: &Path,
+        tag: &str,
+        _wave: Option<usize>,
+        event_tx: &mpsc::Sender<ScudEvent>,
+        stream_store: &StreamStore,
+    ) -> bool {
+        let harness_name = harness.name().to_string();
+
+        // Create stream session
+        stream_store.create_session(task_id, tag);
+
+        // Emit headless started
+        let _ = event_tx
+            .send(ScudEvent::HeadlessStarted {
+                task_id: task_id.to_string(),
+                harness: harness_name.clone(),
+            })
+            .await;
+
+        let _ = event_tx
+            .send(ScudEvent::TaskStarted {
+                task_id: task_id.to_string(),
+            })
+            .await;
+
+        // Create runner
+        let runner: AnyRunner = match create_runner(harness) {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to create runner for task {}: {}", task_id, e);
+                let _ = event_tx
+                    .send(ScudEvent::TaskCompleted {
+                        task_id: task_id.to_string(),
+                        success: false,
+                    })
+                    .await;
+                return false;
+            }
+        };
+
+        // Start session
+        let mut session: SessionHandle = match runner
+            .start(task_id, prompt, working_dir, model)
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                error!(
+                    "Failed to start headless session for task {}: {}",
+                    task_id, e
+                );
+                let _ = event_tx
+                    .send(ScudEvent::TaskCompleted {
+                        task_id: task_id.to_string(),
+                        success: false,
+                    })
+                    .await;
+                return false;
+            }
+        };
+
+        // Store PID
+        if let Some(pid) = session.pid() {
+            stream_store.set_pid(task_id, pid);
+        }
+
+        // Stream events
+        let mut task_success = false;
+        while let Some(stream_event) = session.events.recv().await {
+            stream_store.push_event(task_id, stream_event.clone());
+
+            match stream_event.kind {
+                StreamEventKind::TextDelta { text } => {
+                    let _ = event_tx
+                        .send(ScudEvent::TaskOutput {
+                            task_id: task_id.to_string(),
+                            text,
+                        })
+                        .await;
+                }
+                StreamEventKind::ToolStart {
+                    tool_name,
+                    tool_id,
+                    input_summary,
+                } => {
+                    let _ = event_tx
+                        .send(ScudEvent::ToolStart {
+                            task_id: task_id.to_string(),
+                            tool_name,
+                            tool_id,
+                            input_summary,
+                        })
+                        .await;
+                }
+                StreamEventKind::ToolResult {
+                    tool_name,
+                    tool_id,
+                    success,
+                } => {
+                    let _ = event_tx
+                        .send(ScudEvent::ToolResult {
+                            task_id: task_id.to_string(),
+                            tool_name,
+                            tool_id,
+                            success,
+                        })
+                        .await;
+                }
+                StreamEventKind::SessionAssigned { session_id } => {
+                    stream_store.set_session_id(task_id, &session_id);
+                    let _ = event_tx
+                        .send(ScudEvent::SessionAssigned {
+                            task_id: task_id.to_string(),
+                            session_id,
+                        })
+                        .await;
+                }
+                StreamEventKind::Complete { success } => {
+                    task_success = success;
+                    let _ = event_tx
+                        .send(ScudEvent::TaskCompleted {
+                            task_id: task_id.to_string(),
+                            success,
+                        })
+                        .await;
+                    break;
+                }
+                StreamEventKind::Error { message } => {
+                    let _ = event_tx
+                        .send(ScudEvent::Error(format!(
+                            "Task {} error: {}",
+                            task_id, message
+                        )))
+                        .await;
+                    let _ = event_tx
+                        .send(ScudEvent::TaskCompleted {
+                            task_id: task_id.to_string(),
+                            success: false,
+                        })
+                        .await;
+                    break;
+                }
+            }
+        }
+
+        // Wait for session to finish
+        let _ = session.wait().await;
+        task_success
+    }
+
+    /// Run Ralph mode: sequential task execution with backpressure validation and repair
+    async fn run_ralph(
+        &mut self,
+        tag: &str,
+        harness_name: &str,
+        model: Option<String>,
+        ralph_config: RalphConfig,
+    ) {
+        info!(
+            "Starting Ralph mode for tag '{}' with harness '{}' (max_iterations={})",
+            tag, harness_name, ralph_config.max_iterations
+        );
+
+        // Parse harness type
+        let harness = match Harness::parse(harness_name) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("Invalid harness: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Invalid harness: {}", e)))
+                    .await;
+                return;
+            }
+        };
+
+        // Load backpressure config (sync, needs spawn_blocking)
+        let working_dir = self.working_dir.clone();
+        let bp_config = if ralph_config.validate {
+            let wd = working_dir.clone();
+            match tokio::task::spawn_blocking(move || {
+                scud::backpressure::BackpressureConfig::load(Some(&wd))
+            })
+            .await
+            {
+                Ok(Ok(config)) if !config.commands.is_empty() => Some(config),
+                Ok(Ok(_)) => {
+                    info!("No backpressure commands found, validation disabled");
+                    None
+                }
+                Ok(Err(e)) => {
+                    warn!("Failed to load backpressure config: {}, validation disabled", e);
+                    None
+                }
+                Err(e) => {
+                    warn!("Spawn error loading backpressure config: {}, validation disabled", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Reset cancellation flag
+        self.ralph_cancelled.store(false, Ordering::SeqCst);
+
+        let max_iterations = ralph_config.max_iterations;
+        let _ = self
+            .event_tx
+            .send(ScudEvent::RalphStarted {
+                tag: tag.to_string(),
+                max_iterations,
+            })
+            .await;
+
+        let mut completed_count: usize = 0;
+        let mut failed_count: usize = 0;
+
+        for iteration in 1..=max_iterations {
+            // Check cancellation
+            if self.ralph_cancelled.load(Ordering::SeqCst) {
+                info!("Ralph cancelled at iteration {}", iteration);
+                break;
+            }
+
+            // Find next task (spawn_blocking)
+            let tag_owned = tag.to_string();
+            let next_task = tokio::task::spawn_blocking(move || -> Option<Task> {
+                let storage = Storage::new(None);
+                let phase = match storage.load_group(&tag_owned) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::error!("Failed to load phase: {}", e);
+                        return None;
+                    }
+                };
+
+                // Get actionable tasks sorted by dependency order
+                let actionable = phase.get_actionable_tasks();
+                let pending: Vec<&Task> = actionable
+                    .into_iter()
+                    .filter(|t| matches!(t.status, TaskStatus::Pending | TaskStatus::Failed))
+                    .collect();
+
+                if pending.is_empty() {
+                    return None;
+                }
+
+                // Compute waves to get dependency order, take first task from first wave
+                let wave_result = compute_waves(&pending);
+                wave_result
+                    .waves
+                    .into_iter()
+                    .flat_map(|w| w.tasks)
+                    .next()
+                    .and_then(|id| phase.get_task(&id).cloned())
+            })
+            .await;
+
+            let task = match next_task {
+                Ok(Some(t)) => t,
+                Ok(None) => {
+                    info!("No more pending tasks, Ralph loop complete");
+                    break;
+                }
+                Err(e) => {
+                    error!("Spawn error finding next task: {}", e);
+                    break;
+                }
+            };
+
+            let task_id = task.id.clone();
+            let task_title = task.title.clone();
+
+            // Mark task in-progress
+            {
+                let tid = task_id.clone();
+                let tag_owned = tag.to_string();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let storage = Storage::new(None);
+                    if let Ok(mut phase) = storage.load_group(&tag_owned) {
+                        if let Some(t) = phase.get_task_mut(&tid) {
+                            t.set_status(TaskStatus::InProgress);
+                            let _ = storage.update_group(&tag_owned, &phase);
+                        }
+                    }
+                })
+                .await;
+            }
+
+            let _ = self
+                .event_tx
+                .send(ScudEvent::RalphIterationStarted {
+                    iteration,
+                    task_id: task_id.clone(),
+                    task_title: task_title.clone(),
+                })
+                .await;
+
+            // Resolve agent config for this task
+            // Convert scud_core::Task to scud::models::Task via JSON round-trip
+            // (both types derive Serialize/Deserialize with the same schema)
+            let resolved = {
+                let task_json = serde_json::to_value(&task).ok();
+                let tag_str = tag.to_string();
+                let harness_copy = harness;
+                let model_clone = model.clone();
+                let wd = working_dir.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Some(json) = task_json {
+                        if let Ok(scud_task) = serde_json::from_value::<scud::models::Task>(json) {
+                            return Some(scud::commands::spawn::agent::resolve_agent_config(
+                                &scud_task,
+                                &tag_str,
+                                harness_copy,
+                                model_clone.as_deref(),
+                                &wd,
+                            ));
+                        }
+                    }
+                    None
+                })
+                .await
+            };
+
+            let resolved = match resolved {
+                Ok(Some(r)) => r,
+                Ok(None) | Err(_) => {
+                    // Fallback: build a simple prompt manually
+                    scud::commands::spawn::agent::ResolvedAgentConfig {
+                        harness,
+                        model: model.clone(),
+                        prompt: format!(
+                            "Complete the following task:\n\n## Task: {}\n\n{}\n\nWhen done, run: scud set-status {} done",
+                            task_title, task.description, task_id
+                        ),
+                        from_agent_def: false,
+                        agent_type: task.agent_type.clone(),
+                    }
+                }
+            };
+
+            // Execute the task
+            let success = Self::execute_headless_task(
+                &task_id,
+                &task_title,
+                &resolved.prompt,
+                resolved.harness,
+                resolved.model.as_deref(),
+                &working_dir,
+                tag,
+                None, // no wave number in Ralph mode
+                &self.event_tx,
+                &self.stream_store,
+            )
+            .await;
+
+            if !success {
+                // Mark task failed
+                let tid = task_id.clone();
+                let tag_owned = tag.to_string();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let storage = Storage::new(None);
+                    if let Ok(mut phase) = storage.load_group(&tag_owned) {
+                        if let Some(t) = phase.get_task_mut(&tid) {
+                            t.set_status(TaskStatus::Failed);
+                            let _ = storage.update_group(&tag_owned, &phase);
+                        }
+                    }
+                })
+                .await;
+                failed_count += 1;
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::RalphIterationCompleted {
+                        iteration,
+                        task_id: task_id.clone(),
+                        success: false,
+                    })
+                    .await;
+                continue;
+            }
+
+            // Validation phase
+            let mut validation_passed = true;
+            if let Some(ref bp) = bp_config {
+                if self.ralph_cancelled.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::RalphValidationStarted {
+                        task_id: task_id.clone(),
+                    })
+                    .await;
+
+                let wd = working_dir.clone();
+                let bp_clone = bp.clone();
+                let val_result = tokio::task::spawn_blocking(move || {
+                    scud::backpressure::run_validation(&wd, &bp_clone)
+                })
+                .await;
+
+                match val_result {
+                    Ok(Ok(result)) => {
+                        validation_passed = result.all_passed;
+                        let output = if result.all_passed {
+                            "All checks passed".to_string()
+                        } else {
+                            format!("Failed: {}", result.failures.join(", "))
+                        };
+
+                        let _ = self
+                            .event_tx
+                            .send(ScudEvent::RalphValidationCompleted {
+                                task_id: task_id.clone(),
+                                passed: result.all_passed,
+                                output: output.clone(),
+                            })
+                            .await;
+
+                        // Append validation output to session
+                        let _ = self.event_tx.send(ScudEvent::TaskOutput {
+                            task_id: task_id.clone(),
+                            text: format!("\n--- VALIDATION ---\n{}\n", output),
+                        }).await;
+
+                        // Repair loop
+                        if !result.all_passed && ralph_config.repair {
+                            let mut repair_results = result.results;
+                            for attempt in 1..=ralph_config.max_repair_attempts {
+                                if self.ralph_cancelled.load(Ordering::SeqCst) {
+                                    break;
+                                }
+
+                                let _ = self
+                                    .event_tx
+                                    .send(ScudEvent::RalphRepairStarted {
+                                        task_id: task_id.clone(),
+                                        attempt,
+                                    })
+                                    .await;
+
+                                let _ = self.event_tx.send(ScudEvent::TaskOutput {
+                                    task_id: task_id.clone(),
+                                    text: format!("\n--- REPAIR ATTEMPT {} ---\n", attempt),
+                                }).await;
+
+                                // Build repair prompt from failures
+                                let failure_details: Vec<String> = repair_results
+                                    .iter()
+                                    .filter(|r| !r.passed)
+                                    .map(|r| {
+                                        format!(
+                                            "Command `{}` failed (exit {}):\nstdout: {}\nstderr: {}",
+                                            r.command,
+                                            r.exit_code.unwrap_or(-1),
+                                            r.stdout,
+                                            r.stderr
+                                        )
+                                    })
+                                    .collect();
+
+                                let repair_prompt = format!(
+                                    "The previous task '{}' completed but validation failed. Fix the issues:\n\n{}\n\nMake minimal, targeted fixes to pass validation.",
+                                    task_title,
+                                    failure_details.join("\n\n")
+                                );
+
+                                // Run repair agent (same task_id to reuse session in monitor)
+                                let repair_success = Self::execute_headless_task(
+                                    &task_id,
+                                    &format!("{} (repair #{})", task_title, attempt),
+                                    &repair_prompt,
+                                    resolved.harness,
+                                    resolved.model.as_deref(),
+                                    &working_dir,
+                                    tag,
+                                    None,
+                                    &self.event_tx,
+                                    &self.stream_store,
+                                )
+                                .await;
+
+                                if !repair_success {
+                                    continue;
+                                }
+
+                                // Re-validate
+                                let wd = working_dir.clone();
+                                let bp_clone = bp.clone();
+                                let reval = tokio::task::spawn_blocking(move || {
+                                    scud::backpressure::run_validation(&wd, &bp_clone)
+                                })
+                                .await;
+
+                                match reval {
+                                    Ok(Ok(r)) => {
+                                        let out = if r.all_passed {
+                                            "All checks passed".to_string()
+                                        } else {
+                                            format!("Failed: {}", r.failures.join(", "))
+                                        };
+                                        let _ = self
+                                            .event_tx
+                                            .send(ScudEvent::RalphValidationCompleted {
+                                                task_id: task_id.clone(),
+                                                passed: r.all_passed,
+                                                output: out.clone(),
+                                            })
+                                            .await;
+                                        let _ = self.event_tx.send(ScudEvent::TaskOutput {
+                                            task_id: task_id.clone(),
+                                            text: format!("\n--- VALIDATION ---\n{}\n", out),
+                                        }).await;
+
+                                        if r.all_passed {
+                                            validation_passed = true;
+                                            break;
+                                        }
+                                        repair_results = r.results;
+                                    }
+                                    _ => {
+                                        // Validation itself errored, treat as failed
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        warn!("Validation error: {}, treating as passed", e);
+                    }
+                    Err(e) => {
+                        warn!("Spawn error during validation: {}, treating as passed", e);
+                    }
+                }
+            }
+
+            if !validation_passed {
+                // Mark task failed
+                let tid = task_id.clone();
+                let tag_owned = tag.to_string();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let storage = Storage::new(None);
+                    if let Ok(mut phase) = storage.load_group(&tag_owned) {
+                        if let Some(t) = phase.get_task_mut(&tid) {
+                            t.set_status(TaskStatus::Failed);
+                            let _ = storage.update_group(&tag_owned, &phase);
+                        }
+                    }
+                })
+                .await;
+                failed_count += 1;
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::RalphIterationCompleted {
+                        iteration,
+                        task_id: task_id.clone(),
+                        success: false,
+                    })
+                    .await;
+                continue;
+            }
+
+            // Mark task done
+            {
+                let tid = task_id.clone();
+                let tag_owned = tag.to_string();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let storage = Storage::new(None);
+                    if let Ok(mut phase) = storage.load_group(&tag_owned) {
+                        if let Some(t) = phase.get_task_mut(&tid) {
+                            t.set_status(TaskStatus::Done);
+                            let _ = storage.update_group(&tag_owned, &phase);
+                        }
+                    }
+                })
+                .await;
+            }
+
+            // Git push if configured
+            if ralph_config.git_push {
+                let wd = working_dir.clone();
+                let _ = tokio::process::Command::new("git")
+                    .arg("push")
+                    .current_dir(&wd)
+                    .output()
+                    .await;
+            }
+
+            completed_count += 1;
+            let _ = self
+                .event_tx
+                .send(ScudEvent::RalphIterationCompleted {
+                    iteration,
+                    task_id: task_id.clone(),
+                    success: true,
+                })
+                .await;
+        }
+
+        let _ = self
+            .event_tx
+            .send(ScudEvent::RalphCompleted {
+                iterations: completed_count + failed_count,
+                completed: completed_count,
+                failed: failed_count,
+            })
+            .await;
+
+        info!(
+            "Ralph loop finished: {} completed, {} failed",
+            completed_count, failed_count
+        );
+    }
+
     #[allow(dead_code)]
     /// Get the stream store for external access (e.g., for TUI integration)
     pub fn stream_store(&self) -> &StreamStore {
@@ -1721,12 +2221,14 @@ mod tests {
             dependencies: vec!["0".to_string()],
             priority: Some("High".to_string()),
             complexity: Some(3),
+            agent_type: Some("builder".to_string()),
         };
 
         let task_info: TaskInfo = json_task.into();
         assert_eq!(task_info.id, "1");
         assert_eq!(task_info.title, "Test task");
         assert_eq!(task_info.status, "Pending");
+        assert_eq!(task_info.agent, Some("builder".to_string()));
     }
 
     #[test]

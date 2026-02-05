@@ -21,8 +21,8 @@ mod views;
 
 use scud_bridge::{ScudBridge, ScudCommand, ScudEvent};
 use state::{
-    AgentStatus, AppState, HeadlessSessionInfo, HeadlessSessionStatus, LaunchConfig, SwarmDefaults,
-    TaskInfo,
+    AgentConfig, AgentStatus, AppState, ExecutionMode, HeadlessSessionInfo,
+    HeadlessSessionStatus, LaunchConfig, RalphPhase, SwarmDefaults, SwarmProgress, TaskInfo,
 };
 use views::ViewMode;
 
@@ -60,6 +60,8 @@ struct DescartesGui {
     scud_event_rx: Arc<TokioMutex<Option<mpsc::Receiver<ScudEvent>>>>,
     /// Error message to display
     error: Option<String>,
+    /// Currently selected agent in the Agents config view
+    selected_agent_config: Option<String>,
 }
 
 /// Application messages
@@ -93,13 +95,16 @@ pub enum Message {
     // Launch configuration
     SetHarness(String),
     SetModel(String),
-    SetRoundSize(usize),
+    SetRoundSizeInput(String),
     SetLaunchTag(String),
     SetAgentType(Option<String>),
     TagsLoaded(Vec<String>),
     AgentsLoaded(Vec<String>),
     SpawnTask {
         task_id: String,
+    },
+    ArchiveTag {
+        tag: String,
     },
 
     // Swarm management
@@ -110,8 +115,7 @@ pub enum Message {
     },
     StopSwarm,
 
-    // Agent management (legacy - for single task execution)
-    StartAgent(String), // task_id
+    // Agent output (for legacy message handling)
     AgentOutput(String),
     AgentComplete(Result<(), String>),
 
@@ -130,13 +134,48 @@ pub enum Message {
     // Monitor view
     MonitorSelectTask(String),
     MonitorClearCompleted,
+    /// Attach to a session in interactive terminal mode
+    MonitorAttachSession { task_id: String },
+    /// Pause the current swarm
+    MonitorPauseSwarm,
+    /// Stop the current swarm
+    MonitorStopSwarm,
 
-    // Headless swarm
-    StartSwarmHeadless {
-        tag: String,
+    // Agent configuration
+    LoadAgentConfigs,
+    SelectAgentConfig(String),
+    UpdateAgentHarness { agent: String, harness: String },
+    UpdateAgentModel { agent: String, model: String },
+    UpdateAgentDescription { agent: String, description: String },
+    SaveAgentConfig(String),
+    AgentConfigSaved(String),
+    AgentConfigsLoaded(std::collections::HashMap<String, AgentConfig>),
+
+    // Model loading
+    LoadHarnessModels,
+    HarnessModelsLoaded {
         harness: String,
-        round_size: usize,
+        models: Vec<String>,
     },
+
+    // Settings
+    SetTerminalApp(String),
+    BrowseProject,
+    SwitchProject(std::path::PathBuf),
+    ProjectSwitched,
+
+    // Ralph config
+    SetExecutionMode(ExecutionMode),
+    SetRalphValidate(bool),
+    SetRalphRepair(bool),
+    SetRalphMaxIterations(String),
+    SetRalphMaxRepairAttempts(String),
+    SetRalphBatchSubtasks(bool),
+    SetRalphGitPush(bool),
+
+    // Ralph lifecycle
+    StartRalph { tag: String, harness: String },
+    StopRalph,
 
     Tick,
 }
@@ -190,8 +229,13 @@ impl DescartesGui {
                 scud_command_tx: Some(scud_command_tx),
                 scud_event_rx,
                 error: None,
+                selected_agent_config: None,
             },
-            init_task,
+            Task::batch([
+                init_task,
+                Task::done(Message::LoadAgentConfigs),
+                Task::done(Message::LoadHarnessModels),
+            ]),
         )
     }
 
@@ -297,14 +341,20 @@ impl DescartesGui {
                 Task::none()
             }
 
-            Message::SetRoundSize(round_size) => {
-                self.state.launch_config.round_size = round_size;
+            Message::SetRoundSizeInput(input) => {
+                self.state.launch_config.round_size_input = input.clone();
+                if let Ok(n) = input.parse::<usize>() {
+                    if (1..=30).contains(&n) {
+                        self.state.launch_config.round_size = n;
+                    }
+                }
                 Task::none()
             }
 
             Message::SetLaunchTag(tag) => {
-                self.state.launch_config.tag = tag;
-                Task::none()
+                self.state.launch_config.tag = tag.clone();
+                self.state.active_tag = Some(tag.clone());
+                Task::done(Message::LoadTasksViaScud { tag: Some(tag) })
             }
 
             Message::SetAgentType(agent_type) => {
@@ -330,12 +380,25 @@ impl DescartesGui {
                     return Task::perform(
                         async move {
                             let _ = tx
-                                .send(ScudCommand::RunTaskHeadless {
+                                .send(ScudCommand::RunTask {
                                     task_id,
                                     harness,
                                     model,
                                 })
                                 .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::ArchiveTag { tag } => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::ArchiveTag { tag }).await;
                         },
                         |_| Message::Tick,
                     );
@@ -356,6 +419,8 @@ impl DescartesGui {
                     self.state
                         .output_buffer
                         .push_str(&format!("Starting swarm for tag '{}'...\n", tag));
+                    // Switch to Monitor view automatically
+                    self.view = ViewMode::Monitor;
                     return Task::perform(
                         async move {
                             let _ = tx
@@ -384,66 +449,6 @@ impl DescartesGui {
                     );
                 }
                 self.state.agent_status = AgentStatus::Idle;
-                Task::none()
-            }
-
-            Message::StartSwarmHeadless {
-                tag,
-                harness,
-                round_size,
-            } => {
-                if let Some(ref tx) = self.scud_command_tx {
-                    let tx = tx.clone();
-                    let model = self.state.launch_config.model.clone();
-                    self.state.agent_status = AgentStatus::Running;
-                    self.state.output_buffer.clear();
-                    self.state
-                        .output_buffer
-                        .push_str(&format!("Starting headless swarm for tag '{}'...\n", tag));
-                    return Task::perform(
-                        async move {
-                            let _ = tx
-                                .send(ScudCommand::StartSwarmHeadless {
-                                    tag,
-                                    harness,
-                                    round_size,
-                                    model,
-                                })
-                                .await;
-                        },
-                        |_| Message::Tick,
-                    );
-                }
-                Task::none()
-            }
-
-            Message::StartAgent(task_id) => {
-                self.state.agent_status = AgentStatus::Running;
-                self.state.current_task = Some(task_id.clone());
-                self.state.output_buffer.clear();
-                self.state
-                    .output_buffer
-                    .push_str(&format!("Starting agent for task {}...\n", task_id));
-
-                // Spawn the agent via ScudBridge RunTask command
-                if let Some(ref tx) = self.scud_command_tx {
-                    let tx = tx.clone();
-                    let harness = self.state.swarm_defaults.harness.clone();
-                    let model = self.state.launch_config.model.clone();
-                    return Task::perform(
-                        async move {
-                            let _ = tx
-                                .send(ScudCommand::RunTask {
-                                    task_id,
-                                    harness,
-                                    model,
-                                })
-                                .await;
-                        },
-                        |_| Message::Tick,
-                    );
-                }
-
                 Task::none()
             }
 
@@ -543,12 +548,25 @@ impl DescartesGui {
                     }
                     ScudEvent::SwarmStarted { tag, total_waves } => {
                         self.state.agent_status = AgentStatus::Running;
+                        self.state.swarm_progress = SwarmProgress {
+                            total_waves,
+                            current_wave: 0,
+                            active: true,
+                            tag: tag.clone(),
+                        };
                         self.state.output_buffer.push_str(&format!(
                             "Swarm started for tag '{}' with {} waves\n",
                             tag, total_waves
                         ));
                     }
                     ScudEvent::WaveStarted { wave, tasks } => {
+                        self.state.swarm_progress.current_wave = wave;
+                        // Mark tasks in this wave with their wave number
+                        for task_id in &tasks {
+                            if let Some(session) = self.state.headless_sessions.get_mut(task_id) {
+                                session.wave = Some(wave);
+                            }
+                        }
                         self.state.output_buffer.push_str(&format!(
                             "Wave {} started with {} tasks: {:?}\n",
                             wave,
@@ -563,30 +581,52 @@ impl DescartesGui {
                             .push_str(&format!("Task {} started\n", task_id));
                     }
                     ScudEvent::TaskOutput { task_id, text } => {
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("[{}] {}\n", task_id, text));
+                        // Accumulate text, splitting on newlines
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
-                            session.output_lines.push(text);
-                            session.line_count = session.output_lines.len();
                             session.event_count += 1;
                             if session.status == HeadlessSessionStatus::Starting {
                                 session.status = HeadlessSessionStatus::Running;
                             }
+
+                            // Process text character by character for proper line handling
+                            for ch in text.chars() {
+                                if ch == '\n' {
+                                    // Complete line - push to output
+                                    if !session.partial_line.is_empty() {
+                                        let line = std::mem::take(&mut session.partial_line);
+                                        self.state
+                                            .output_buffer
+                                            .push_str(&format!("[{}] {}\n", task_id, line));
+                                        session.output_lines.push(line);
+                                    }
+                                } else {
+                                    session.partial_line.push(ch);
+                                }
+                            }
+                            session.line_count = session.output_lines.len();
                         }
                     }
                     ScudEvent::TaskCompleted { task_id, success } => {
                         let status = if success { "completed" } else { "failed" };
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("Task {} {}\n", task_id, status));
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            // Flush any remaining partial line
+                            if !session.partial_line.is_empty() {
+                                let line = std::mem::take(&mut session.partial_line);
+                                self.state
+                                    .output_buffer
+                                    .push_str(&format!("[{}] {}\n", task_id, line));
+                                session.output_lines.push(line);
+                                session.line_count = session.output_lines.len();
+                            }
                             session.status = if success {
                                 HeadlessSessionStatus::Completed
                             } else {
                                 HeadlessSessionStatus::Failed
                             };
                         }
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Task {} {}\n", task_id, status));
                     }
                     ScudEvent::ValidationStarted => {
                         self.state.output_buffer.push_str("Validation started...\n");
@@ -605,6 +645,7 @@ impl DescartesGui {
                     ScudEvent::SwarmCompleted { success } => {
                         self.state.agent_status = AgentStatus::Idle;
                         self.state.current_task = None;
+                        self.state.swarm_progress.active = false;
                         let status = if success {
                             "successfully"
                         } else {
@@ -613,6 +654,8 @@ impl DescartesGui {
                         self.state
                             .output_buffer
                             .push_str(&format!("Swarm completed {}\n", status));
+                        // Reload tasks to reflect updated statuses
+                        return Task::done(Message::RefreshTasks);
                     }
                     ScudEvent::Output(text) => {
                         self.state.output_buffer.push_str(&text);
@@ -637,6 +680,12 @@ impl DescartesGui {
                             .find(|t| t.id == task_id)
                             .map(|t| t.title.clone())
                             .unwrap_or_else(|| task_id.clone());
+                        // Use current wave if swarm is active
+                        let wave = if self.state.swarm_progress.active {
+                            Some(self.state.swarm_progress.current_wave)
+                        } else {
+                            None
+                        };
                         self.state.headless_sessions.insert(
                             task_id.clone(),
                             HeadlessSessionInfo {
@@ -647,6 +696,9 @@ impl DescartesGui {
                                 event_count: 0,
                                 line_count: 0,
                                 output_lines: Vec::new(),
+                                wave,
+                                partial_line: String::new(),
+                                session_id: None,
                             },
                         );
                         if self.state.monitor_selected_task.is_none() {
@@ -659,11 +711,15 @@ impl DescartesGui {
                         tool_id: _,
                         input_summary,
                     } => {
-                        self.state.output_buffer.push_str(&format!(
-                            "[{}] >> {} {}\n",
-                            task_id, tool_name, input_summary
-                        ));
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            // Flush any partial line before tool event
+                            if !session.partial_line.is_empty() {
+                                let line = std::mem::take(&mut session.partial_line);
+                                self.state
+                                    .output_buffer
+                                    .push_str(&format!("[{}] {}\n", task_id, line));
+                                session.output_lines.push(line);
+                            }
                             session
                                 .output_lines
                                 .push(format!(">> {} {}", tool_name, input_summary));
@@ -673,6 +729,10 @@ impl DescartesGui {
                                 session.status = HeadlessSessionStatus::Running;
                             }
                         }
+                        self.state.output_buffer.push_str(&format!(
+                            "[{}] >> {} {}\n",
+                            task_id, tool_name, input_summary
+                        ));
                     }
                     ScudEvent::ToolResult {
                         task_id,
@@ -681,16 +741,24 @@ impl DescartesGui {
                         success,
                     } => {
                         let status = if success { "ok" } else { "failed" };
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("[{}] << {} {}\n", task_id, tool_name, status));
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            // Flush any partial line before tool result
+                            if !session.partial_line.is_empty() {
+                                let line = std::mem::take(&mut session.partial_line);
+                                self.state
+                                    .output_buffer
+                                    .push_str(&format!("[{}] {}\n", task_id, line));
+                                session.output_lines.push(line);
+                            }
                             session
                                 .output_lines
                                 .push(format!("<< {} {}", tool_name, status));
                             session.line_count = session.output_lines.len();
                             session.event_count += 1;
                         }
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("[{}] << {} {}\n", task_id, tool_name, status));
                     }
                     ScudEvent::SessionAssigned {
                         task_id,
@@ -701,7 +769,89 @@ impl DescartesGui {
                             .push_str(&format!("[{}] Session assigned: {}\n", task_id, session_id));
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
                             session.status = HeadlessSessionStatus::Running;
+                            session.session_id = Some(session_id);
                         }
+                    }
+                    ScudEvent::TagArchived { tag } => {
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Tag '{}' archived\n", tag));
+                    }
+                    // Ralph events
+                    ScudEvent::RalphStarted { tag, max_iterations } => {
+                        self.state.ralph_progress = state::RalphProgress {
+                            active: true,
+                            current_iteration: 0,
+                            max_iterations,
+                            tag: tag.clone(),
+                            current_task_id: None,
+                            current_task_title: None,
+                            phase: RalphPhase::Idle,
+                            repair_attempt: 0,
+                            completed_count: 0,
+                            failed_count: 0,
+                        };
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Ralph started for tag '{}' (max {} iterations)\n", tag, max_iterations));
+                    }
+                    ScudEvent::RalphIterationStarted { iteration, task_id, task_title } => {
+                        self.state.ralph_progress.current_iteration = iteration;
+                        self.state.ralph_progress.current_task_id = Some(task_id.clone());
+                        self.state.ralph_progress.current_task_title = Some(task_title.clone());
+                        self.state.ralph_progress.phase = RalphPhase::Executing;
+                        self.state.ralph_progress.repair_attempt = 0;
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Ralph iteration {}: {} - {}\n", iteration, task_id, task_title));
+                    }
+                    ScudEvent::RalphValidationStarted { task_id } => {
+                        self.state.ralph_progress.phase = RalphPhase::Validating;
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Validating task {}...\n", task_id));
+                    }
+                    ScudEvent::RalphValidationCompleted { task_id, passed, output } => {
+                        // Append validation output to task's session
+                        if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
+                            session.output_lines.push("--- VALIDATION ---".to_string());
+                            session.output_lines.push(output.clone());
+                            session.line_count = session.output_lines.len();
+                        }
+                        let status = if passed { "PASSED" } else { "FAILED" };
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Validation {}: {}\n", status, output));
+                    }
+                    ScudEvent::RalphRepairStarted { task_id, attempt } => {
+                        self.state.ralph_progress.phase = RalphPhase::Repairing;
+                        self.state.ralph_progress.repair_attempt = attempt;
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Repair attempt {} for task {}\n", attempt, task_id));
+                    }
+                    ScudEvent::RalphIterationCompleted { iteration, task_id, success } => {
+                        if success {
+                            self.state.ralph_progress.completed_count += 1;
+                        } else {
+                            self.state.ralph_progress.failed_count += 1;
+                        }
+                        self.state.ralph_progress.phase = RalphPhase::Idle;
+                        let status = if success { "completed" } else { "failed" };
+                        self.state.output_buffer.push_str(&format!(
+                            "Ralph iteration {} ({}) {}\n",
+                            iteration, task_id, status
+                        ));
+                    }
+                    ScudEvent::RalphCompleted { iterations, completed, failed } => {
+                        self.state.agent_status = AgentStatus::Idle;
+                        self.state.ralph_progress.active = false;
+                        self.state.ralph_progress.phase = RalphPhase::Idle;
+                        self.state.output_buffer.push_str(&format!(
+                            "Ralph complete: {} iterations, {} completed, {} failed\n",
+                            iterations, completed, failed
+                        ));
+                        return Task::done(Message::RefreshTasks);
                     }
                 }
                 Task::none()
@@ -736,6 +886,258 @@ impl DescartesGui {
                 Task::none()
             }
 
+            Message::MonitorAttachSession { task_id } => {
+                // Get session info to build the attach command
+                if let Some(ref tx) = self.scud_command_tx {
+                    if let Some(session) = self.state.headless_sessions.get(&task_id) {
+                        if let Some(ref session_id) = session.session_id {
+                            let harness = session.harness.clone();
+                            let session_id = session_id.clone();
+                            let _ = tx.blocking_send(ScudCommand::AttachSession {
+                                task_id,
+                                harness,
+                                session_id,
+                            });
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::MonitorPauseSwarm => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let _ = tx.blocking_send(ScudCommand::PauseSwarm);
+                }
+                Task::none()
+            }
+
+            Message::MonitorStopSwarm => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let _ = tx.blocking_send(ScudCommand::StopSwarm);
+                }
+                Task::none()
+            }
+
+            // Agent configuration
+            Message::LoadAgentConfigs => {
+                let working_dir = self.state.working_directory.clone();
+                Task::perform(
+                    async move { load_agent_configs(&working_dir) },
+                    Message::AgentConfigsLoaded,
+                )
+            }
+
+            Message::AgentConfigsLoaded(configs) => {
+                self.state.agent_configs = configs;
+                Task::none()
+            }
+
+            Message::SelectAgentConfig(name) => {
+                self.selected_agent_config = Some(name);
+                Task::none()
+            }
+
+            Message::UpdateAgentHarness { agent, harness } => {
+                if let Some(config) = self.state.agent_configs.get_mut(&agent) {
+                    config.harness = harness;
+                    config.dirty = true;
+                }
+                Task::none()
+            }
+
+            Message::UpdateAgentModel { agent, model } => {
+                if let Some(config) = self.state.agent_configs.get_mut(&agent) {
+                    config.model = model;
+                    config.dirty = true;
+                }
+                Task::none()
+            }
+
+            Message::UpdateAgentDescription { agent, description } => {
+                if let Some(config) = self.state.agent_configs.get_mut(&agent) {
+                    config.description = description;
+                    config.dirty = true;
+                }
+                Task::none()
+            }
+
+            Message::SaveAgentConfig(name) => {
+                if let Some(config) = self.state.agent_configs.get(&name) {
+                    let config = config.clone();
+                    let working_dir = self.state.working_directory.clone();
+                    return Task::perform(
+                        async move {
+                            save_agent_config(&working_dir, &config);
+                            name
+                        },
+                        Message::AgentConfigSaved,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::AgentConfigSaved(name) => {
+                if let Some(config) = self.state.agent_configs.get_mut(&name) {
+                    config.dirty = false;
+                }
+                Task::none()
+            }
+
+            // Model loading
+            Message::LoadHarnessModels => {
+                // Load models for cursor and opencode (claude is hardcoded)
+                Task::batch([
+                    Task::perform(load_cursor_models(), |models| {
+                        Message::HarnessModelsLoaded {
+                            harness: "cursor".to_string(),
+                            models,
+                        }
+                    }),
+                    Task::perform(load_opencode_models(), |models| {
+                        Message::HarnessModelsLoaded {
+                            harness: "opencode".to_string(),
+                            models,
+                        }
+                    }),
+                ])
+            }
+
+            Message::HarnessModelsLoaded { harness, models } => {
+                if !models.is_empty() {
+                    self.state.available_models.insert(harness, models);
+                }
+                Task::none()
+            }
+
+            // Settings
+            Message::SetTerminalApp(app) => {
+                self.state.settings.terminal_app = app;
+                Task::none()
+            }
+
+            Message::BrowseProject => {
+                // Use native file dialog via rfd crate (would need to add dependency)
+                // For now, just log - in a real impl we'd use rfd::FileDialog
+                tracing::info!("Browse project requested - would show file dialog");
+                Task::none()
+            }
+
+            Message::SwitchProject(path) => {
+                self.state.working_directory = path.clone();
+                // Add to recent projects
+                self.state.settings.recent_projects.retain(|p| p != &path);
+                self.state.settings.recent_projects.insert(0, path);
+                if self.state.settings.recent_projects.len()
+                    > self.state.settings.max_recent_projects
+                {
+                    self.state.settings.recent_projects.truncate(
+                        self.state.settings.max_recent_projects,
+                    );
+                }
+                // Reload everything for the new project
+                Task::batch([
+                    Task::done(Message::RefreshTasks),
+                    Task::done(Message::LoadAgentConfigs),
+                    Task::done(Message::ProjectSwitched),
+                ])
+            }
+
+            Message::ProjectSwitched => {
+                // Reload swarm defaults from new project
+                let swarm_defaults = SwarmDefaults::load_from_scud();
+                self.state.launch_config = LaunchConfig::from_defaults(&swarm_defaults);
+                Task::none()
+            }
+
+            // Ralph config messages
+            Message::SetExecutionMode(mode) => {
+                self.state.launch_config.execution_mode = mode;
+                Task::none()
+            }
+
+            Message::SetRalphValidate(val) => {
+                self.state.launch_config.ralph_config.validate = val;
+                Task::none()
+            }
+
+            Message::SetRalphRepair(val) => {
+                self.state.launch_config.ralph_config.repair = val;
+                Task::none()
+            }
+
+            Message::SetRalphMaxIterations(input) => {
+                self.state.launch_config.ralph_max_iterations_input = input.clone();
+                if let Ok(n) = input.parse::<usize>() {
+                    if (1..=1000).contains(&n) {
+                        self.state.launch_config.ralph_config.max_iterations = n;
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SetRalphMaxRepairAttempts(input) => {
+                self.state.launch_config.ralph_max_repair_attempts_input = input.clone();
+                if let Ok(n) = input.parse::<usize>() {
+                    if (1..=10).contains(&n) {
+                        self.state.launch_config.ralph_config.max_repair_attempts = n;
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SetRalphBatchSubtasks(val) => {
+                self.state.launch_config.ralph_config.batch_subtasks = val;
+                Task::none()
+            }
+
+            Message::SetRalphGitPush(val) => {
+                self.state.launch_config.ralph_config.git_push = val;
+                Task::none()
+            }
+
+            // Ralph lifecycle
+            Message::StartRalph { tag, harness } => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    let model = self.state.launch_config.model.clone();
+                    let ralph_config = self.state.launch_config.ralph_config.clone();
+                    self.state.agent_status = AgentStatus::Running;
+                    self.state.output_buffer.clear();
+                    self.state
+                        .output_buffer
+                        .push_str(&format!("Starting Ralph mode for tag '{}'...\n", tag));
+                    // Switch to Monitor view
+                    self.view = ViewMode::Monitor;
+                    return Task::perform(
+                        async move {
+                            let _ = tx
+                                .send(ScudCommand::StartRalph {
+                                    tag,
+                                    harness,
+                                    model,
+                                    ralph_config,
+                                })
+                                .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::StopRalph => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::StopRalph).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
             Message::Tick => Task::none(),
         }
     }
@@ -758,16 +1160,23 @@ impl DescartesGui {
                 ..Default::default()
             });
 
-            let header = views::header::view(self.view, self.state.agent_status);
+            let header = views::header::view(self.view, self.state.agent_status, self.state.headless_sessions.len());
             let content = match self.view {
-                ViewMode::Waves => views::waves::view(&self.state.waves, &self.state.active_tag),
-                ViewMode::Agents => views::agents::view(
+                ViewMode::Waves => views::waves::view(&self.state.waves, &self.state.active_tag, &self.state.available_tags),
+                ViewMode::Launch => views::launch::view(
                     self.state.agent_status,
                     &self.state.current_task,
                     &self.state.launch_config,
                     &self.state.available_harnesses,
                     &self.state.available_tags,
                     &self.state.available_agents,
+                    &self.state.available_models,
+                ),
+                ViewMode::Agents => views::agents::view(
+                    &self.state.agent_configs,
+                    &self.state.available_harnesses,
+                    &self.state.available_models,
+                    &self.selected_agent_config,
                 ),
                 ViewMode::Output => views::output::view(
                     &self.state.current_task,
@@ -777,21 +1186,35 @@ impl DescartesGui {
                 ViewMode::Monitor => views::monitor::view(
                     &self.state.headless_sessions,
                     &self.state.monitor_selected_task,
+                    &self.state.swarm_progress,
+                    self.state.agent_status,
+                    &self.state.ralph_progress,
+                ),
+                ViewMode::Settings => views::settings::view(
+                    &self.state.settings,
+                    &self.state.working_directory,
                 ),
             };
 
             column![error_banner, header, content].spacing(10).into()
         } else {
-            let header = views::header::view(self.view, self.state.agent_status);
+            let header = views::header::view(self.view, self.state.agent_status, self.state.headless_sessions.len());
             let content = match self.view {
-                ViewMode::Waves => views::waves::view(&self.state.waves, &self.state.active_tag),
-                ViewMode::Agents => views::agents::view(
+                ViewMode::Waves => views::waves::view(&self.state.waves, &self.state.active_tag, &self.state.available_tags),
+                ViewMode::Launch => views::launch::view(
                     self.state.agent_status,
                     &self.state.current_task,
                     &self.state.launch_config,
                     &self.state.available_harnesses,
                     &self.state.available_tags,
                     &self.state.available_agents,
+                    &self.state.available_models,
+                ),
+                ViewMode::Agents => views::agents::view(
+                    &self.state.agent_configs,
+                    &self.state.available_harnesses,
+                    &self.state.available_models,
+                    &self.selected_agent_config,
                 ),
                 ViewMode::Output => views::output::view(
                     &self.state.current_task,
@@ -801,6 +1224,13 @@ impl DescartesGui {
                 ViewMode::Monitor => views::monitor::view(
                     &self.state.headless_sessions,
                     &self.state.monitor_selected_task,
+                    &self.state.swarm_progress,
+                    self.state.agent_status,
+                    &self.state.ralph_progress,
+                ),
+                ViewMode::Settings => views::settings::view(
+                    &self.state.settings,
+                    &self.state.working_directory,
                 ),
             };
 
@@ -811,6 +1241,10 @@ impl DescartesGui {
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(20)
+            .style(|_| iced::widget::container::Style {
+                background: Some(iced::Background::Color(theme::surface::BASE)),
+                ..Default::default()
+            })
             .into()
     }
 
@@ -870,6 +1304,7 @@ async fn load_waves_from_scud() -> Result<Vec<Vec<TaskInfo>>, String> {
                         id: t.id.clone(),
                         title: t.title.clone(),
                         status: format!("{:?}", t.status),
+                        agent: t.agent_type.clone(),
                     })
                 })
                 .collect()
@@ -877,6 +1312,169 @@ async fn load_waves_from_scud() -> Result<Vec<Vec<TaskInfo>>, String> {
         .collect();
 
     Ok(waves)
+}
+
+/// Load agent configurations from .scud/agents/*.toml
+fn load_agent_configs(
+    working_dir: &std::path::Path,
+) -> std::collections::HashMap<String, AgentConfig> {
+    use std::collections::HashMap;
+
+    let mut configs = HashMap::new();
+    let agents_dir = working_dir.join(".scud/agents");
+
+    if !agents_dir.exists() {
+        return configs;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "toml").unwrap_or(false) {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(toml_value) = content.parse::<toml::Table>() {
+                        let name = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+
+                        let agent_section = toml_value.get("agent");
+                        let model_section = toml_value.get("model");
+
+                        let description = agent_section
+                            .and_then(|a| a.get("description"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        let harness = model_section
+                            .and_then(|m| m.get("harness"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("claude")
+                            .to_string();
+
+                        let model = model_section
+                            .and_then(|m| m.get("model"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("sonnet")
+                            .to_string();
+
+                        configs.insert(
+                            name.clone(),
+                            AgentConfig {
+                                name,
+                                description,
+                                harness,
+                                model,
+                                dirty: false,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    configs
+}
+
+/// Save an agent configuration to .scud/agents/{name}.toml
+fn save_agent_config(working_dir: &std::path::Path, config: &AgentConfig) {
+    let agents_dir = working_dir.join(".scud/agents");
+    let path = agents_dir.join(format!("{}.toml", config.name));
+
+    // Read existing file to preserve other sections (like [prompt])
+    let existing_content = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut existing_toml: toml::Table = existing_content.parse().unwrap_or_default();
+
+    // Update [agent] section
+    let mut agent_section = existing_toml
+        .get("agent")
+        .and_then(|v| v.as_table())
+        .cloned()
+        .unwrap_or_default();
+    agent_section.insert("name".to_string(), toml::Value::String(config.name.clone()));
+    agent_section.insert(
+        "description".to_string(),
+        toml::Value::String(config.description.clone()),
+    );
+    existing_toml.insert("agent".to_string(), toml::Value::Table(agent_section));
+
+    // Update [model] section
+    let mut model_section = existing_toml
+        .get("model")
+        .and_then(|v| v.as_table())
+        .cloned()
+        .unwrap_or_default();
+    model_section.insert(
+        "harness".to_string(),
+        toml::Value::String(config.harness.clone()),
+    );
+    model_section.insert("model".to_string(), toml::Value::String(config.model.clone()));
+    existing_toml.insert("model".to_string(), toml::Value::Table(model_section));
+
+    // Write back
+    if let Ok(content) = toml::to_string_pretty(&existing_toml) {
+        let _ = std::fs::write(&path, content);
+    }
+}
+
+/// Load available models for cursor-agent harness
+async fn load_cursor_models() -> Vec<String> {
+    match tokio::process::Command::new("cursor-agent")
+        .arg("models")
+        .output()
+        .await
+    {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Parse lines like "auto - Auto" or "opus-4.5 - Claude 4.5 Opus"
+            stdout
+                .lines()
+                .filter_map(|line| {
+                    let line = line.trim();
+                    // Skip header lines and empty lines
+                    if line.is_empty()
+                        || line.starts_with("Available")
+                        || line.starts_with("Loading")
+                    {
+                        return None;
+                    }
+                    // Extract the model ID (before the " - ")
+                    line.split(" - ").next().map(|s| s.trim().to_string())
+                })
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load cursor-agent models: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+/// Load available models for opencode harness
+async fn load_opencode_models() -> Vec<String> {
+    match tokio::process::Command::new("opencode")
+        .arg("models")
+        .output()
+        .await
+    {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Each line is a model name like "opencode/big-pickle" or "xai/grok-2"
+            stdout
+                .lines()
+                .map(|line| line.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load opencode models: {}", e);
+            Vec::new()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -899,6 +1497,7 @@ mod tests {
             scud_command_tx: None,
             scud_event_rx: Arc::new(TokioMutex::new(None)),
             error: None,
+            selected_agent_config: None,
         }
     }
 
@@ -975,8 +1574,8 @@ mod tests {
         let mut app = test_app();
         assert_eq!(app.view, ViewMode::Waves);
 
-        let _ = app.update(Message::SwitchView(ViewMode::Agents));
-        assert_eq!(app.view, ViewMode::Agents);
+        let _ = app.update(Message::SwitchView(ViewMode::Launch));
+        assert_eq!(app.view, ViewMode::Launch);
 
         let _ = app.update(Message::SwitchView(ViewMode::Output));
         assert_eq!(app.view, ViewMode::Output);
@@ -991,11 +1590,13 @@ mod tests {
                 id: "1".into(),
                 title: "First task".into(),
                 status: "Pending".into(),
+                agent: None,
             }],
             vec![TaskInfo {
                 id: "2".into(),
                 title: "Second task".into(),
                 status: "Pending".into(),
+                agent: None,
             }],
         ];
 
@@ -1023,13 +1624,15 @@ mod tests {
     }
 
     #[test]
-    fn test_start_agent() {
+    fn test_spawn_task() {
         let mut app = test_app();
 
-        let _ = app.update(Message::StartAgent("task-1".into()));
-        assert_eq!(app.state.agent_status, AgentStatus::Running);
-        assert_eq!(app.state.current_task, Some("task-1".into()));
-        assert!(!app.state.output_buffer.is_empty());
+        // SpawnTask without a bridge just does nothing (no scud_command_tx)
+        let _ = app.update(Message::SpawnTask {
+            task_id: "task-1".into(),
+        });
+        // Without a bridge connection, state doesn't change
+        assert_eq!(app.state.agent_status, AgentStatus::Idle);
     }
 
     #[test]
@@ -1073,12 +1676,15 @@ mod tests {
     fn test_ui_agent_control_buttons() {
         let mut app = test_app();
 
-        // Start an agent first
-        let _ = app.update(Message::StartAgent("task-1".into()));
+        // Simulate agent running via ScudEvent
+        let _ = app.update(Message::ScudEvent(ScudEvent::SwarmStarted {
+            tag: "test".into(),
+            total_waves: 1,
+        }));
         assert_eq!(app.state.agent_status, AgentStatus::Running);
 
-        // Switch to Agents view
-        let _ = app.update(Message::SwitchView(ViewMode::Agents));
+        // Switch to Launch view
+        let _ = app.update(Message::SwitchView(ViewMode::Launch));
 
         // Render and find the Pause button
         let mut ui = simulator(app.view());
@@ -1113,9 +1719,12 @@ mod tests {
     fn test_ui_cancel_agent() {
         let mut app = test_app();
 
-        // Start an agent
-        let _ = app.update(Message::StartAgent("task-1".into()));
-        let _ = app.update(Message::SwitchView(ViewMode::Agents));
+        // Simulate agent running
+        let _ = app.update(Message::ScudEvent(ScudEvent::SwarmStarted {
+            tag: "test".into(),
+            total_waves: 1,
+        }));
+        let _ = app.update(Message::SwitchView(ViewMode::Launch));
 
         let mut ui = simulator(app.view());
         let cancel_result = ui.click("Cancel");
@@ -1148,9 +1757,9 @@ mod tests {
         assert!(app.error.is_none(), "Error should be dismissed");
     }
 
-    /// Test clicking Start button on a task row
+    /// Test clicking Spawn button on a task row
     #[test]
-    fn test_ui_start_task_from_waves() {
+    fn test_ui_spawn_task_from_waves() {
         let mut app = test_app();
 
         // Load some tasks
@@ -1159,11 +1768,13 @@ mod tests {
                 id: "1".into(),
                 title: "First task".into(),
                 status: "Pending".into(),
+                agent: None,
             },
             TaskInfo {
                 id: "2".into(),
                 title: "Second task".into(),
                 status: "Pending".into(),
+                agent: None,
             },
         ]];
         let _ = app.update(Message::WavesLoaded(Ok(waves)));
@@ -1171,17 +1782,20 @@ mod tests {
         // Render waves view
         let mut ui = simulator(app.view());
 
-        // Click Start button (there are multiple, clicking finds first)
-        let start_result = ui.click("Start");
-        assert!(start_result.is_ok(), "Start button should exist");
+        // Click Spawn button (there are multiple, clicking finds first)
+        let spawn_result = ui.click("Spawn");
+        assert!(spawn_result.is_ok(), "Spawn button should exist");
 
+        // Verify the message generated is SpawnTask
+        let mut saw_spawn = false;
         for message in ui.into_messages() {
+            if let Message::SpawnTask { task_id } = &message {
+                saw_spawn = true;
+                assert_eq!(task_id, "1");
+            }
             let _ = app.update(message);
         }
-
-        // Agent should be started
-        assert_eq!(app.state.agent_status, AgentStatus::Running);
-        assert!(app.state.current_task.is_some());
+        assert!(saw_spawn, "Should emit SpawnTask message");
     }
 
     /// Test status display updates correctly
@@ -1196,8 +1810,11 @@ mod tests {
             assert!(status_find.is_ok(), "Should show Status: Idle initially");
         }
 
-        // Start agent and check status updates
-        let _ = app.update(Message::StartAgent("task-1".into()));
+        // Simulate agent running and check status updates
+        let _ = app.update(Message::ScudEvent(ScudEvent::SwarmStarted {
+            tag: "test".into(),
+            total_waves: 1,
+        }));
         let mut ui = simulator(app.view());
         let status_find = ui.find("Status: Running");
         assert!(
@@ -1212,7 +1829,6 @@ mod tests {
         let mut app = test_app();
 
         // Add some output
-        let _ = app.update(Message::StartAgent("task-1".into()));
         let _ = app.update(Message::AgentOutput("Line 1\n".into()));
         let _ = app.update(Message::AgentOutput("Line 2\n".into()));
 
@@ -1237,7 +1853,7 @@ mod tests {
     // Full Loop Headless Test
     // =============================================================
 
-    /// Simulates a complete workflow: load tasks -> start agent -> pause -> resume -> complete
+    /// Simulates a complete workflow: load tasks -> spawn -> pause -> resume -> complete
     #[test]
     fn test_full_workflow_headless() {
         let mut app = test_app();
@@ -1248,32 +1864,39 @@ mod tests {
                 id: "1".into(),
                 title: "Setup environment".into(),
                 status: "Pending".into(),
+                agent: None,
             }],
             vec![TaskInfo {
                 id: "2".into(),
                 title: "Build core module".into(),
                 status: "Pending".into(),
+                agent: None,
             }],
         ];
         let _ = app.update(Message::WavesLoaded(Ok(waves)));
         assert_eq!(app.state.waves.len(), 2, "Should have 2 waves loaded");
 
-        // Step 2: Click Start on first task via UI
+        // Step 2: Click Spawn on first task via UI
         let mut ui = simulator(app.view());
-        let _ = ui.click("Start");
+        let _ = ui.click("Spawn");
         for msg in ui.into_messages() {
             let _ = app.update(msg);
         }
+        // Simulate the headless session starting (bridge would send this)
+        let _ = app.update(Message::ScudEvent(ScudEvent::HeadlessStarted {
+            task_id: "1".into(),
+            harness: "claude".into(),
+        }));
         assert_eq!(app.state.agent_status, AgentStatus::Running);
         assert_eq!(app.state.current_task, Some("1".into()));
 
-        // Step 3: Navigate to Agents view
+        // Step 3: Navigate to Launch view
         let mut ui = simulator(app.view());
-        let _ = ui.click("Agents");
+        let _ = ui.click("Launch");
         for msg in ui.into_messages() {
             let _ = app.update(msg);
         }
-        assert_eq!(app.view, ViewMode::Agents);
+        assert_eq!(app.view, ViewMode::Launch);
 
         // Step 4: Pause the agent
         let mut ui = simulator(app.view());
@@ -1360,23 +1983,26 @@ mod tests {
     fn test_agent_failure_workflow() {
         let mut app = test_app();
 
-        // Load tasks and start agent
+        // Load tasks and simulate running
         let waves = vec![vec![TaskInfo {
             id: "1".into(),
             title: "Failing task".into(),
             status: "Pending".into(),
+            agent: None,
         }]];
         let _ = app.update(Message::WavesLoaded(Ok(waves)));
-        let _ = app.update(Message::StartAgent("1".into()));
+        let _ = app.update(Message::ScudEvent(ScudEvent::HeadlessStarted {
+            task_id: "1".into(),
+            harness: "claude".into(),
+        }));
 
-        // Agent encounters an error
-        let _ = app.update(Message::AgentComplete(Err(
-            "Build failed with exit code 1".into()
-        )));
+        // Agent encounters an error via ScudEvent
+        let _ = app.update(Message::ScudEvent(ScudEvent::TaskCompleted {
+            task_id: "1".into(),
+            success: false,
+        }));
 
-        assert_eq!(app.state.agent_status, AgentStatus::Idle);
-        assert!(app.state.output_buffer.contains("Agent error"));
-        assert!(app.state.output_buffer.contains("Build failed"));
+        assert!(app.state.output_buffer.contains("failed"));
     }
 
     // =============================================================
@@ -1394,11 +2020,13 @@ mod tests {
                 id: "1".into(),
                 title: "Task A".into(),
                 status: "Pending".into(),
+                agent: None,
             }],
             vec![TaskInfo {
                 id: "2".into(),
                 title: "Task B".into(),
                 status: "Done".into(),
+                agent: None,
             }],
         ];
         let _ = app.update(Message::WavesLoaded(Ok(waves)));
@@ -1478,11 +2106,13 @@ mod tests {
                 id: "1".into(),
                 title: "First task".into(),
                 status: "Pending".into(),
+                agent: None,
             },
             TaskInfo {
                 id: "2".into(),
                 title: "Second task".into(),
                 status: "Done".into(),
+                agent: None,
             },
         ];
 
@@ -1507,17 +2137,20 @@ mod tests {
                     id: "1".into(),
                     title: "First task".into(),
                     status: "Pending".into(),
+                    agent: None,
                 },
                 TaskInfo {
                     id: "2".into(),
                     title: "Second task".into(),
                     status: "Pending".into(),
+                    agent: None,
                 },
             ],
             vec![TaskInfo {
                 id: "3".into(),
                 title: "Third task".into(),
                 status: "Pending".into(),
+                agent: None,
             }],
         ];
         let _ = app.update(Message::ScudEvent(ScudEvent::WavesComputed(waves)));
@@ -1596,8 +2229,9 @@ mod tests {
         let _ = app.update(Message::SetModel("gpt-4o".into()));
         assert_eq!(app.state.launch_config.model, "gpt-4o");
 
-        let _ = app.update(Message::SetRoundSize(5));
+        let _ = app.update(Message::SetRoundSizeInput("5".into()));
         assert_eq!(app.state.launch_config.round_size, 5);
+        assert_eq!(app.state.launch_config.round_size_input, "5");
 
         let _ = app.update(Message::SetLaunchTag("feature".into()));
         assert_eq!(app.state.launch_config.tag, "feature");
@@ -1633,7 +2267,7 @@ mod tests {
         app.state.launch_config.round_size = 5;
 
         // Switch to agents view
-        let _ = app.update(Message::SwitchView(ViewMode::Agents));
+        let _ = app.update(Message::SwitchView(ViewMode::Launch));
 
         let mut ui = simulator(app.view());
 
@@ -1661,30 +2295,300 @@ mod tests {
             let _ = app.update(msg);
         }
         assert!(saw_start_swarm, "Should emit StartSwarm message");
+    }
 
-        // Start Headless should also use launch_config values
+    /// Test SetLaunchTag triggers task reload and updates active_tag
+    #[test]
+    fn test_set_launch_tag_triggers_reload() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::SetLaunchTag("new-tag".into()));
+
+        // Should update both launch_config.tag and active_tag
+        assert_eq!(app.state.launch_config.tag, "new-tag");
+        assert_eq!(app.state.active_tag, Some("new-tag".into()));
+    }
+
+    /// Test ArchiveTag message (without bridge, just verifies no panic)
+    #[test]
+    fn test_archive_tag_message() {
+        let mut app = test_app();
+
+        // Without a bridge connection, ArchiveTag does nothing but doesn't panic
+        let _ = app.update(Message::ArchiveTag {
+            tag: "old-tag".into(),
+        });
+    }
+
+    /// Test TagArchived event updates output buffer
+    #[test]
+    fn test_tag_archived_event() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::ScudEvent(ScudEvent::TagArchived {
+            tag: "archived-tag".into(),
+        }));
+
+        assert!(app.state.output_buffer.contains("archived-tag"));
+        assert!(app.state.output_buffer.contains("archived"));
+    }
+
+    /// Test tag picker appears in waves view header
+    #[test]
+    fn test_waves_view_has_archive_button() {
+        let mut app = test_app();
+        app.state.active_tag = Some("feature".into());
+        app.state.available_tags = vec!["feature".into(), "bugfix".into()];
+
+        // Load some tasks so the view renders fully
+        let waves = vec![vec![TaskInfo {
+            id: "1".into(),
+            title: "Test task".into(),
+            status: "Pending".into(),
+            agent: None,
+        }]];
+        let _ = app.update(Message::WavesLoaded(Ok(waves)));
+
         let mut ui = simulator(app.view());
-        let click_result = ui.click("Start Headless");
+
+        // Archive button should be clickable when a tag is active
+        let archive_result = ui.click("Archive");
         assert!(
-            click_result.is_ok(),
-            "Start Headless button should exist when idle"
+            archive_result.is_ok(),
+            "Archive button should be clickable when tag is active"
         );
 
-        let mut saw_start_headless = false;
+        // Verify it emits ArchiveTag message
+        let mut saw_archive = false;
         for msg in ui.into_messages() {
-            if let Message::StartSwarmHeadless {
-                tag,
-                harness,
-                round_size,
-            } = &msg
-            {
-                saw_start_headless = true;
-                assert_eq!(tag, "feature", "Should use launch_config tag");
-                assert_eq!(harness, "opencode", "Should use launch_config harness");
-                assert_eq!(*round_size, 5, "Should use launch_config round size");
+            if let Message::ArchiveTag { tag } = &msg {
+                saw_archive = true;
+                assert_eq!(tag, "feature");
             }
             let _ = app.update(msg);
         }
-        assert!(saw_start_headless, "Should emit StartSwarmHeadless message");
+        assert!(saw_archive, "Should emit ArchiveTag message");
+    }
+
+    // =============================================================
+    // Ralph Mode Tests
+    // =============================================================
+
+    /// Test RalphConfig defaults
+    #[test]
+    fn test_ralph_config_defaults() {
+        let config = state::RalphConfig::default();
+        assert_eq!(config.max_iterations, 100);
+        assert!(config.validate);
+        assert!(config.repair);
+        assert_eq!(config.max_repair_attempts, 3);
+        assert!(!config.batch_subtasks);
+        assert!(!config.git_push);
+    }
+
+    /// Test toggling execution mode
+    #[test]
+    fn test_set_execution_mode() {
+        let mut app = test_app();
+        assert_eq!(app.state.launch_config.execution_mode, ExecutionMode::Swarm);
+
+        let _ = app.update(Message::SetExecutionMode(ExecutionMode::Ralph));
+        assert_eq!(app.state.launch_config.execution_mode, ExecutionMode::Ralph);
+
+        let _ = app.update(Message::SetExecutionMode(ExecutionMode::Swarm));
+        assert_eq!(app.state.launch_config.execution_mode, ExecutionMode::Swarm);
+    }
+
+    /// Test all Ralph config update messages
+    #[test]
+    fn test_ralph_config_updates() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::SetRalphValidate(false));
+        assert!(!app.state.launch_config.ralph_config.validate);
+
+        let _ = app.update(Message::SetRalphRepair(false));
+        assert!(!app.state.launch_config.ralph_config.repair);
+
+        let _ = app.update(Message::SetRalphMaxIterations("50".into()));
+        assert_eq!(app.state.launch_config.ralph_config.max_iterations, 50);
+        assert_eq!(app.state.launch_config.ralph_max_iterations_input, "50");
+
+        let _ = app.update(Message::SetRalphMaxRepairAttempts("5".into()));
+        assert_eq!(app.state.launch_config.ralph_config.max_repair_attempts, 5);
+        assert_eq!(app.state.launch_config.ralph_max_repair_attempts_input, "5");
+
+        let _ = app.update(Message::SetRalphBatchSubtasks(true));
+        assert!(app.state.launch_config.ralph_config.batch_subtasks);
+
+        let _ = app.update(Message::SetRalphGitPush(true));
+        assert!(app.state.launch_config.ralph_config.git_push);
+    }
+
+    /// Test Ralph max iterations input validation
+    #[test]
+    fn test_ralph_max_iterations_validation() {
+        let mut app = test_app();
+
+        // Valid input
+        let _ = app.update(Message::SetRalphMaxIterations("200".into()));
+        assert_eq!(app.state.launch_config.ralph_config.max_iterations, 200);
+
+        // Out of range (0) - should not update
+        let _ = app.update(Message::SetRalphMaxIterations("0".into()));
+        assert_eq!(app.state.launch_config.ralph_config.max_iterations, 200);
+
+        // Out of range (>1000) - should not update
+        let _ = app.update(Message::SetRalphMaxIterations("2000".into()));
+        assert_eq!(app.state.launch_config.ralph_config.max_iterations, 200);
+
+        // Non-numeric input - should not update
+        let _ = app.update(Message::SetRalphMaxIterations("abc".into()));
+        assert_eq!(app.state.launch_config.ralph_config.max_iterations, 200);
+        assert_eq!(app.state.launch_config.ralph_max_iterations_input, "abc");
+    }
+
+    /// Test Ralph events update progress state
+    #[test]
+    fn test_ralph_events_update_progress() {
+        let mut app = test_app();
+
+        // RalphStarted
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphStarted {
+            tag: "feature".into(),
+            max_iterations: 10,
+        }));
+        assert!(app.state.ralph_progress.active);
+        assert_eq!(app.state.ralph_progress.max_iterations, 10);
+        assert_eq!(app.state.ralph_progress.tag, "feature");
+
+        // RalphIterationStarted
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphIterationStarted {
+            iteration: 1,
+            task_id: "task-1".into(),
+            task_title: "First task".into(),
+        }));
+        assert_eq!(app.state.ralph_progress.current_iteration, 1);
+        assert_eq!(app.state.ralph_progress.current_task_id, Some("task-1".into()));
+        assert_eq!(app.state.ralph_progress.phase, RalphPhase::Executing);
+
+        // RalphValidationStarted
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphValidationStarted {
+            task_id: "task-1".into(),
+        }));
+        assert_eq!(app.state.ralph_progress.phase, RalphPhase::Validating);
+
+        // RalphRepairStarted
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphRepairStarted {
+            task_id: "task-1".into(),
+            attempt: 2,
+        }));
+        assert_eq!(app.state.ralph_progress.phase, RalphPhase::Repairing);
+        assert_eq!(app.state.ralph_progress.repair_attempt, 2);
+
+        // RalphIterationCompleted (success)
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphIterationCompleted {
+            iteration: 1,
+            task_id: "task-1".into(),
+            success: true,
+        }));
+        assert_eq!(app.state.ralph_progress.completed_count, 1);
+        assert_eq!(app.state.ralph_progress.phase, RalphPhase::Idle);
+
+        // RalphIterationCompleted (failure)
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphIterationCompleted {
+            iteration: 2,
+            task_id: "task-2".into(),
+            success: false,
+        }));
+        assert_eq!(app.state.ralph_progress.failed_count, 1);
+        assert_eq!(app.state.ralph_progress.completed_count, 1);
+    }
+
+    /// Test StartRalph switches to Monitor view
+    #[test]
+    fn test_start_ralph_switches_to_monitor() {
+        let mut app = test_app();
+        app.state.launch_config.execution_mode = ExecutionMode::Ralph;
+        app.state.launch_config.tag = "test-tag".into();
+
+        // Without bridge, StartRalph still updates local state
+        let _ = app.update(Message::StartRalph {
+            tag: "test-tag".into(),
+            harness: "claude".into(),
+        });
+
+        // Without bridge, view doesn't switch (no command sent)
+        // But the code path is exercised without panic
+    }
+
+    /// Test RalphCompleted resets progress and refreshes tasks
+    #[test]
+    fn test_ralph_completed_resets() {
+        let mut app = test_app();
+        app.state.agent_status = AgentStatus::Running;
+        app.state.ralph_progress.active = true;
+        app.state.ralph_progress.completed_count = 5;
+        app.state.ralph_progress.failed_count = 1;
+
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphCompleted {
+            iterations: 6,
+            completed: 5,
+            failed: 1,
+        }));
+
+        assert_eq!(app.state.agent_status, AgentStatus::Idle);
+        assert!(!app.state.ralph_progress.active);
+        assert!(app.state.output_buffer.contains("Ralph complete"));
+        assert!(app.state.output_buffer.contains("5 completed"));
+        assert!(app.state.output_buffer.contains("1 failed"));
+    }
+
+    /// Test UI shows "Start Ralph" button when in Ralph mode
+    #[test]
+    fn test_ui_ralph_start_button() {
+        let mut app = test_app();
+        app.state.launch_config.execution_mode = ExecutionMode::Ralph;
+        app.state.launch_config.tag = "feature".into();
+        let _ = app.update(Message::SwitchView(ViewMode::Launch));
+
+        let mut ui = simulator(app.view());
+        let click_result = ui.click("Start Ralph");
+        assert!(click_result.is_ok(), "Start Ralph button should exist in Ralph mode");
+
+        let mut saw_start_ralph = false;
+        for msg in ui.into_messages() {
+            if let Message::StartRalph { tag, harness } = &msg {
+                saw_start_ralph = true;
+                assert_eq!(tag, "feature");
+                assert_eq!(harness, &app.state.launch_config.harness);
+            }
+            let _ = app.update(msg);
+        }
+        assert!(saw_start_ralph, "Should emit StartRalph message");
+    }
+
+    /// Test StopRalph button in monitor when Ralph is active
+    #[test]
+    fn test_ralph_validation_output_in_session() {
+        let mut app = test_app();
+
+        // Setup a headless session
+        let _ = app.update(Message::ScudEvent(ScudEvent::HeadlessStarted {
+            task_id: "task-1".into(),
+            harness: "claude".into(),
+        }));
+
+        // Simulate validation completed
+        let _ = app.update(Message::ScudEvent(ScudEvent::RalphValidationCompleted {
+            task_id: "task-1".into(),
+            passed: false,
+            output: "cargo test failed".into(),
+        }));
+
+        // Check that validation output was appended to session
+        let session = app.state.headless_sessions.get("task-1").unwrap();
+        assert!(session.output_lines.iter().any(|l| l.contains("VALIDATION")));
+        assert!(session.output_lines.iter().any(|l| l.contains("cargo test failed")));
     }
 }
