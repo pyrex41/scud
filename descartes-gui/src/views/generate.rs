@@ -2,7 +2,7 @@
 //!
 //! Browse PRD markdown files, preview them, configure and run `scud generate`.
 
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Column};
+use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input, Column};
 use iced::{Alignment, Element, Length};
 
 use crate::state::GenerateState;
@@ -45,7 +45,7 @@ fn build_file_list<'a>(
 
     if state.prd_files.is_empty() {
         file_column = file_column.push(
-            text("No PRD files found. Click Scan to search.")
+            text("No PRD files found. Click Rescan to search.")
                 .size(theme::font_size::SMALL)
                 .style(theme::muted_text()),
         );
@@ -75,7 +75,7 @@ fn build_file_list<'a>(
         }
     }
 
-    let scan_button = button("Scan")
+    let scan_button = button(text("Rescan").size(theme::font_size::SMALL))
         .on_press(Message::ScanPrdDirectory)
         .style(theme::ghost_button());
 
@@ -136,17 +136,19 @@ fn build_preview_panel(state: &GenerateState) -> Element<'_, Message> {
 
 /// Build the generate config panel at the bottom of the preview
 fn build_config_panel(state: &GenerateState) -> Element<'_, Message> {
-    let label_width = Length::Fixed(100.0);
+    let label_width = Length::Fixed(80.0);
 
+    // Tag input row
     let tag_row = row![
         text("Tag").width(label_width).style(theme::secondary_text()),
-        text_input("tag name", &state.tag_input)
+        text_input("e.g. hello-world", &state.tag_input)
             .on_input(Message::SetGenerateTag)
             .width(Length::Fixed(200.0)),
     ]
     .spacing(theme::SPACING_MD)
     .align_y(Alignment::Center);
 
+    // Task count row
     let num_row = row![
         text("Tasks").width(label_width).style(theme::secondary_text()),
         text_input("10", &state.num_tasks_input)
@@ -156,37 +158,36 @@ fn build_config_panel(state: &GenerateState) -> Element<'_, Message> {
     .spacing(theme::SPACING_MD)
     .align_y(Alignment::Center);
 
-    let expand_btn = toggle_button(!state.no_expand, Message::SetGenerateNoExpand(!state.no_expand));
-    let check_deps_btn = toggle_button(
-        !state.no_check_deps,
-        Message::SetGenerateNoCheckDeps(!state.no_check_deps),
-    );
-    let append_btn = toggle_button(state.append, Message::SetGenerateAppend(!state.append));
-
-    let toggles_row = row![
-        text("Expand").width(label_width).style(theme::secondary_text()),
-        expand_btn,
-        text("Check deps")
-            .width(Length::Fixed(80.0))
-            .style(theme::secondary_text()),
-        check_deps_btn,
-        text("Append")
-            .width(Length::Fixed(60.0))
-            .style(theme::secondary_text()),
-        append_btn,
+    // Options as checkboxes — much clearer than ON/OFF toggles
+    let options_row = row![
+        checkbox(!state.no_expand)
+            .label("Expand subtasks")
+            .on_toggle(|v| Message::SetGenerateNoExpand(!v))
+            .size(14)
+            .text_size(theme::font_size::SMALL),
+        checkbox(!state.no_check_deps)
+            .label("Check deps")
+            .on_toggle(|v| Message::SetGenerateNoCheckDeps(!v))
+            .size(14)
+            .text_size(theme::font_size::SMALL),
+        checkbox(state.append)
+            .label("Append to existing")
+            .on_toggle(Message::SetGenerateAppend)
+            .size(14)
+            .text_size(theme::font_size::SMALL),
     ]
-    .spacing(theme::SPACING_MD)
-    .align_y(Alignment::Center);
+    .spacing(theme::SPACING_LG);
 
+    // Generate button + status
     let can_generate =
         !state.generating && !state.tag_input.is_empty() && state.selected_prd.is_some();
 
     let generate_btn = if can_generate {
-        button("Generate")
+        button(text("Generate").size(theme::font_size::BODY))
             .on_press(Message::StartGenerate)
             .style(theme::primary_button())
     } else {
-        button("Generate").style(theme::ghost_button())
+        button(text("Generate").size(theme::font_size::BODY)).style(theme::ghost_button())
     };
 
     let status_text = if state.generating {
@@ -197,6 +198,10 @@ fn build_config_panel(state: &GenerateState) -> Element<'_, Message> {
         text(status)
             .size(theme::font_size::SMALL)
             .style(theme::secondary_text())
+    } else if !can_generate && state.tag_input.is_empty() && state.selected_prd.is_some() {
+        text("Enter a tag name to generate")
+            .size(theme::font_size::SMALL)
+            .style(theme::muted_text())
     } else {
         text("")
             .size(theme::font_size::SMALL)
@@ -208,26 +213,10 @@ fn build_config_panel(state: &GenerateState) -> Element<'_, Message> {
         .align_y(Alignment::Center);
 
     container(
-        column![tag_row, num_row, toggles_row, action_row].spacing(theme::SPACING_SM),
+        column![tag_row, num_row, options_row, action_row].spacing(theme::SPACING_MD),
     )
     .padding(theme::SPACING_MD)
     .width(Length::Fill)
     .style(theme::panel_container())
     .into()
-}
-
-/// Toggle button helper
-fn toggle_button(value: bool, on_press: Message) -> Element<'static, Message> {
-    let label = if value { "ON" } else { "OFF" };
-    if value {
-        button(text(label).size(theme::font_size::SMALL))
-            .on_press(on_press)
-            .style(theme::primary_button())
-            .into()
-    } else {
-        button(text(label).size(theme::font_size::SMALL))
-            .on_press(on_press)
-            .style(theme::ghost_button())
-            .into()
-    }
 }
