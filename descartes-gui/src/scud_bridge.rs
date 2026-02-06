@@ -617,7 +617,12 @@ impl ScudBridge {
         #[allow(clippy::type_complexity)]
         let result: Result<Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String>, _> = tokio::task::spawn_blocking(
             move || -> Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String> {
-                let storage = Storage::new(None);
+                let storage = Storage::new(Some(working_dir.clone()));
+
+                // If storage isn't initialized, return empty results gracefully
+                if !storage.is_initialized() {
+                    return Ok((Vec::new(), Vec::new(), None));
+                }
 
                 // Resolve the active tag name only on initial load (tag=None)
                 // so the GUI knows which tag is active. When tag is Some,
@@ -794,8 +799,12 @@ impl ScudBridge {
 
     /// Load available tags from storage
     async fn load_available_tags(&self) {
+        let working_dir = self.working_dir.clone();
         let result = tokio::task::spawn_blocking(move || -> Result<Vec<String>, String> {
-            let storage = Storage::new(None);
+            let storage = Storage::new(Some(working_dir));
+            if !storage.is_initialized() {
+                return Ok(Vec::new());
+            }
             let tasks = storage.load_tasks().map_err(|e| e.to_string())?;
             let mut tags: Vec<String> = tasks.keys().cloned().collect();
             tags.sort();
