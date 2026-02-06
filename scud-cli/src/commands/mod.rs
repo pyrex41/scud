@@ -57,3 +57,6 @@ pub mod serve;
 
 // Claude Tasks sync (internal)
 pub mod sync_from_claude;
+
+// Weave b-thread coordination
+pub mod weave;
