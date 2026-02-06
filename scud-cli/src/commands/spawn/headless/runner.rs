@@ -248,6 +248,13 @@ fn parse_claude_event(line: &str) -> Option<StreamEvent> {
     let event_type = json.get("type")?.as_str()?;
 
     match event_type {
+        "system" => {
+            // System init event carries session_id (same pattern as Cursor parser)
+            let session_id = json.get("session_id").and_then(|v| v.as_str())?;
+            Some(StreamEvent::new(StreamEventKind::SessionAssigned {
+                session_id: session_id.to_string(),
+            }))
+        }
         "stream_event" => {
             // Check for text delta
             if let Some(delta) = json.pointer("/event/delta") {
@@ -920,6 +927,21 @@ mod tests {
                 assert_eq!(message, "Rate limit exceeded");
             }
             _ => panic!("Expected Error event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_claude_system_init_session() {
+        let line = r#"{"type":"system","subtype":"init","session_id":"sess-init-123"}"#;
+        let event = parse_claude_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::SessionAssigned { ref session_id },
+                ..
+            }) => {
+                assert_eq!(session_id, "sess-init-123");
+            }
+            _ => panic!("Expected SessionAssigned from system init event"),
         }
     }
 

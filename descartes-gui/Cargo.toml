@@ -13,7 +13,7 @@ categories = ["gui", "development-tools"]
 include = ["src/**/*", "Cargo.toml", "README.md"]
 
 [[bin]]
-name = "descartes-gui"
+name = "descartes"
 path = "src/main.rs"
 
 [dependencies]
@@ -34,6 +34,7 @@ async-stream = "0.3"
 serde.workspace = true
 serde_json = "1"
 toml = "0.8"
+toml_edit = "0.22"
 
 # Utilities
 tracing = "0.1"

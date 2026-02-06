@@ -3,11 +3,12 @@
 //! Individual view modules for different parts of the UI.
 
 pub mod agents;
+pub mod generate;
 pub mod header;
-pub mod launch;
 pub mod monitor;
 pub mod output;
 pub mod settings;
+pub mod tags;
 pub mod waves;
 
 // Re-export ViewMode from header for convenience

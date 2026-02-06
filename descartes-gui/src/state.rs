@@ -199,6 +199,8 @@ pub struct LaunchConfig {
     pub tag: String,
     /// Optional agent type override (maps to .scud/agents/)
     pub agent_type: Option<String>,
+    /// Whether to override per-task agent configs with launch-level harness/model/agent
+    pub override_agents: bool,
     /// Execution mode: Swarm or Ralph
     pub execution_mode: ExecutionMode,
     /// Ralph-specific configuration
@@ -222,6 +224,7 @@ impl LaunchConfig {
             round_size_input: defaults.round_size.to_string(),
             tag: defaults.default_tag.clone(),
             agent_type: None,
+            override_agents: false,
             execution_mode: ExecutionMode::default(),
             ralph_max_iterations_input: max_iter,
             ralph_max_repair_attempts_input: max_repair,
@@ -233,6 +236,108 @@ impl LaunchConfig {
 impl Default for LaunchConfig {
     fn default() -> Self {
         Self::from_defaults(&SwarmDefaults::default())
+    }
+}
+
+/// State for the PRD viewer and generate pipeline
+#[derive(Debug, Clone)]
+pub struct GenerateState {
+    /// Discovered PRD files from scanning
+    pub prd_files: Vec<std::path::PathBuf>,
+    pub selected_prd: Option<std::path::PathBuf>,
+    pub prd_content: Option<String>,
+    pub tag_input: String,
+    pub num_tasks_input: String,
+    pub num_tasks: u32,
+    pub generating: bool,
+    pub generate_status: Option<String>,
+    pub no_expand: bool,
+    pub no_check_deps: bool,
+    pub append: bool,
+}
+
+impl Default for GenerateState {
+    fn default() -> Self {
+        Self {
+            prd_files: Vec::new(),
+            selected_prd: None,
+            prd_content: None,
+            tag_input: String::new(),
+            num_tasks_input: "10".to_string(),
+            num_tasks: 10,
+            generating: false,
+            generate_status: None,
+            no_expand: false,
+            no_check_deps: false,
+            append: false,
+        }
+    }
+}
+
+/// Tag summary for the tag explorer
+#[derive(Debug, Clone)]
+pub struct TagSummary {
+    pub name: String,
+    pub total_tasks: usize,
+    pub done_count: usize,
+    pub pending_count: usize,
+    pub in_progress_count: usize,
+    pub failed_count: usize,
+    pub is_active: bool,
+}
+
+/// Archive entry for the tag explorer
+#[derive(Debug, Clone)]
+pub struct ArchiveEntry {
+    pub filename: String,
+    pub date: String,
+    pub tag: Option<String>,
+    pub task_count: usize,
+}
+
+/// State for the tag explorer
+#[derive(Debug, Clone, Default)]
+pub struct TagExplorerState {
+    pub tags: Vec<TagSummary>,
+    pub archives: Vec<ArchiveEntry>,
+}
+
+/// State for backpressure configuration in settings
+#[derive(Debug, Clone)]
+pub struct BackpressureState {
+    /// The commands currently configured/detected
+    pub commands: Vec<String>,
+    /// Whether to stop on first failure
+    pub stop_on_failure: bool,
+    /// Timeout per command in seconds
+    pub timeout_secs: u64,
+    /// Text input for timeout
+    pub timeout_input: String,
+    /// Whether the config was auto-detected (vs explicitly configured)
+    pub is_auto_detected: bool,
+    /// Whether the config has been loaded yet
+    pub loaded: bool,
+    /// Text input for adding a new command
+    pub new_command_input: String,
+    /// Whether the config has unsaved changes
+    pub dirty: bool,
+    /// Status message (e.g., "Saved" or error)
+    pub status: Option<String>,
+}
+
+impl Default for BackpressureState {
+    fn default() -> Self {
+        Self {
+            commands: Vec::new(),
+            stop_on_failure: true,
+            timeout_secs: 300,
+            timeout_input: "300".to_string(),
+            is_auto_detected: true,
+            loaded: false,
+            new_command_input: String::new(),
+            dirty: false,
+            status: None,
+        }
     }
 }
 
@@ -278,6 +383,12 @@ pub struct AppState {
     pub working_directory: std::path::PathBuf,
     /// Available models per harness (harness_name -> list of model names)
     pub available_models: HashMap<String, Vec<String>>,
+    /// Generate tab state
+    pub generate_state: GenerateState,
+    /// Tag explorer state
+    pub tag_explorer: TagExplorerState,
+    /// Backpressure configuration state
+    pub backpressure: BackpressureState,
 }
 
 impl Default for AppState {
@@ -312,13 +423,20 @@ impl Default for AppState {
                 // Claude models are hardcoded
                 models.insert(
                     "claude".to_string(),
-                    vec!["sonnet".to_string(), "opus".to_string(), "haiku".to_string()],
+                    vec![
+                        "sonnet".to_string(),
+                        "opus".to_string(),
+                        "haiku".to_string(),
+                    ],
                 );
                 // Others will be populated on startup
                 models.insert("opencode".to_string(), Vec::new());
                 models.insert("cursor".to_string(), Vec::new());
                 models
             },
+            generate_state: GenerateState::default(),
+            tag_explorer: TagExplorerState::default(),
+            backpressure: BackpressureState::default(),
         }
     }
 }

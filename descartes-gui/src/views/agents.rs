@@ -2,7 +2,9 @@
 //!
 //! Configure agent types (builder, tester, etc.) with their harness and model settings.
 
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Column};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_input, Column,
+};
 use iced::{Alignment, Background, Border, Element, Length};
 use std::collections::HashMap;
 
@@ -44,19 +46,17 @@ pub fn view<'a>(
 
             let agent_row = button(
                 container(
-                    row![
-                        column![
-                            text(format!("{}{}", config.name, dirty_indicator))
-                                .size(theme::font_size::BODY)
-                                .style(|_| iced::widget::text::Style {
-                                    color: Some(theme::text::PRIMARY),
-                                }),
-                            text(format!("{} / {}", config.harness, config.model))
-                                .size(theme::font_size::CAPTION)
-                                .style(theme::muted_text()),
-                        ]
-                        .spacing(2),
+                    row![column![
+                        text(format!("{}{}", config.name, dirty_indicator))
+                            .size(theme::font_size::BODY)
+                            .style(|_| iced::widget::text::Style {
+                                color: Some(theme::text::PRIMARY),
+                            }),
+                        text(format!("{} / {}", config.harness, config.model))
+                            .size(theme::font_size::CAPTION)
+                            .style(theme::muted_text()),
                     ]
+                    .spacing(2),]
                     .align_y(Alignment::Center),
                 )
                 .padding(theme::SPACING_MD)
@@ -95,7 +95,6 @@ pub fn view<'a>(
         ]
         .spacing(theme::SPACING_MD),
     )
-    .width(Length::FillPortion(3))
     .height(Length::Fill)
     .padding(theme::SPACING_MD);
 
@@ -110,10 +109,13 @@ pub fn view<'a>(
         centered_placeholder("Select an agent to configure")
     };
 
-    row![left_panel, right_panel]
-        .spacing(theme::SPACING_MD)
-        .height(Length::Fill)
-        .into()
+    row![
+        container(left_panel).width(Length::FillPortion(3)),
+        container(right_panel).width(Length::FillPortion(7)),
+    ]
+    .spacing(theme::SPACING_MD)
+    .height(Length::Fill)
+    .into()
 }
 
 /// Build the agent editor panel
@@ -211,23 +213,25 @@ fn build_agent_editor<'a>(
     .spacing(theme::SPACING_MD);
 
     container(editor)
-        .width(Length::FillPortion(7))
+        .width(Length::Fill)
         .height(Length::Fill)
         .padding(theme::SPACING_LG)
         .style(theme::panel_container())
         .into()
 }
 
-/// Create a centered placeholder message
+/// Create a centered placeholder message with panel styling
 fn centered_placeholder(message: &str) -> Element<'_, Message> {
     container(
         text(message)
             .style(theme::muted_text())
             .size(theme::font_size::BODY),
     )
-    .width(Length::FillPortion(7))
+    .width(Length::Fill)
     .height(Length::Fill)
+    .padding(theme::SPACING_LG)
     .center_x(Length::Fill)
     .center_y(Length::Fill)
+    .style(theme::panel_container())
     .into()
 }

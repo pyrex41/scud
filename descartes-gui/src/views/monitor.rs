@@ -57,7 +57,13 @@ pub fn view<'a>(
     });
 
     // Left panel: scrollable task list with wave grouping
-    let left_panel = build_task_list(&sorted_sessions, selected_task, swarm_progress, agent_status, ralph_progress);
+    let left_panel = build_task_list(
+        &sorted_sessions,
+        selected_task,
+        swarm_progress,
+        agent_status,
+        ralph_progress,
+    );
 
     // Right panel: streaming output
     let right_panel = build_output_panel(sessions, selected_task);
@@ -96,9 +102,7 @@ fn build_task_list<'a>(
 
         let progress_text = format!(
             "Ralph: {} -- Iteration {}/{}",
-            ralph_progress.tag,
-            ralph_progress.current_iteration,
-            ralph_progress.max_iterations
+            ralph_progress.tag, ralph_progress.current_iteration, ralph_progress.max_iterations
         );
         let progress_label = text(progress_text)
             .size(theme::font_size::SMALL)
@@ -132,7 +136,8 @@ fn build_task_list<'a>(
             .style(theme::danger_button());
 
         let ralph_header = container(
-            column![progress_label, detail_label, counts_label, stop_btn].spacing(theme::SPACING_SM),
+            column![progress_label, detail_label, counts_label, stop_btn]
+                .spacing(theme::SPACING_SM),
         )
         .padding([4, 8])
         .width(Length::Fill)
@@ -165,58 +170,41 @@ fn build_task_list<'a>(
         // Add pause/stop controls when swarm is running
         let controls = if agent_status == AgentStatus::Running {
             row![
-                button(
-                    text("Pause")
-                        .size(theme::font_size::CAPTION)
-                )
-                .on_press(Message::MonitorPauseSwarm)
-                .style(theme::ghost_button()),
-                button(
-                    text("Stop")
-                        .size(theme::font_size::CAPTION)
-                )
-                .on_press(Message::MonitorStopSwarm)
-                .style(theme::danger_button()),
+                button(text("Pause").size(theme::font_size::CAPTION))
+                    .on_press(Message::MonitorPauseSwarm)
+                    .style(theme::ghost_button()),
+                button(text("Stop").size(theme::font_size::CAPTION))
+                    .on_press(Message::MonitorStopSwarm)
+                    .style(theme::danger_button()),
             ]
             .spacing(theme::SPACING_SM)
         } else if agent_status == AgentStatus::Paused {
             row![
-                button(
-                    text("Resume")
-                        .size(theme::font_size::CAPTION)
-                )
-                .on_press(Message::ResumeAgent)
-                .style(theme::primary_button()),
-                button(
-                    text("Stop")
-                        .size(theme::font_size::CAPTION)
-                )
-                .on_press(Message::MonitorStopSwarm)
-                .style(theme::danger_button()),
+                button(text("Resume").size(theme::font_size::CAPTION))
+                    .on_press(Message::ResumeAgent)
+                    .style(theme::primary_button()),
+                button(text("Stop").size(theme::font_size::CAPTION))
+                    .on_press(Message::MonitorStopSwarm)
+                    .style(theme::danger_button()),
             ]
             .spacing(theme::SPACING_SM)
         } else {
             row![]
         };
 
-        let progress_header = container(
-            column![
-                progress_label,
-                controls,
-            ]
-            .spacing(theme::SPACING_SM)
-        )
-        .padding([4, 8])
-        .width(Length::Fill)
-        .style(|_| container::Style {
-            background: Some(Background::Color(theme::surface::OVERLAY)),
-            border: Border {
-                color: theme::ACCENT,
-                width: 1.0,
-                radius: theme::RADIUS_SMALL.into(),
-            },
-            ..Default::default()
-        });
+        let progress_header =
+            container(column![progress_label, controls,].spacing(theme::SPACING_SM))
+                .padding([4, 8])
+                .width(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(theme::surface::OVERLAY)),
+                    border: Border {
+                        color: theme::ACCENT,
+                        width: 1.0,
+                        radius: theme::RADIUS_SMALL.into(),
+                    },
+                    ..Default::default()
+                });
         task_column = task_column.push(progress_header);
     }
 
@@ -235,11 +223,8 @@ fn build_task_list<'a>(
                 let wave_header = text(wave_label)
                     .size(theme::font_size::CAPTION)
                     .style(theme::secondary_text());
-                task_column = task_column.push(
-                    container(wave_header)
-                        .padding([8, 4])
-                        .width(Length::Fill),
-                );
+                task_column =
+                    task_column.push(container(wave_header).padding([8, 4]).width(Length::Fill));
             }
             current_wave = session.wave;
         }
@@ -263,13 +248,11 @@ fn build_task_list<'a>(
             HeadlessSessionStatus::Failed => "failed",
         };
 
-        let status_badge = container(
-            text(status_label)
-                .size(theme::font_size::CAPTION)
-                .style(move |_| iced::widget::text::Style {
-                    color: Some(status_color),
-                }),
-        )
+        let status_badge = container(text(status_label).size(theme::font_size::CAPTION).style(
+            move |_| iced::widget::text::Style {
+                color: Some(status_color),
+            },
+        ))
         .padding([1, 6])
         .style(theme::status_badge(status_color));
 
@@ -383,32 +366,48 @@ fn build_output_panel<'a>(
                     .size(theme::font_size::SMALL)
                     .style(theme::secondary_text());
 
-                // Show attach button if session has a session_id (can be resumed)
-                let header_row = if session.session_id.is_some() {
-                    let attach_btn = button(
-                        text("Attach")
-                            .size(theme::font_size::SMALL)
-                    )
-                    .on_press(Message::MonitorAttachSession {
+                // Copy button (always available when there's output)
+                let copy_btn = button(text("Copy").size(theme::font_size::SMALL))
+                    .on_press(Message::MonitorCopyOutput {
                         task_id: session.task_id.clone(),
                     })
-                    .style(theme::primary_button());
+                    .style(theme::ghost_button());
 
-                    row![
-                        column![header_title, header_meta].spacing(theme::SPACING_SM),
-                        attach_btn,
-                    ]
-                    .spacing(theme::SPACING_MD)
-                    .align_y(iced::Alignment::Start)
-                } else {
-                    row![
-                        column![header_title, header_meta].spacing(theme::SPACING_SM),
-                    ]
-                };
+                // Show attach button if session has a session_id (can be resumed)
+                // Show stop button if session is still running
+                let is_running = matches!(
+                    session.status,
+                    HeadlessSessionStatus::Starting | HeadlessSessionStatus::Running
+                );
+
+                let mut header_row = row![
+                    column![header_title, header_meta].spacing(theme::SPACING_SM),
+                    copy_btn,
+                ]
+                .spacing(theme::SPACING_MD)
+                .align_y(iced::Alignment::Start);
+
+                if is_running {
+                    let stop_btn = button(text("Stop").size(theme::font_size::SMALL))
+                        .on_press(Message::MonitorStopSession {
+                            task_id: session.task_id.clone(),
+                        })
+                        .style(theme::danger_button());
+                    header_row = header_row.push(stop_btn);
+                }
+
+                if session.session_id.is_some() {
+                    let attach_btn = button(text("Attach").size(theme::font_size::SMALL))
+                        .on_press(Message::MonitorAttachSession {
+                            task_id: session.task_id.clone(),
+                        })
+                        .style(theme::primary_button());
+                    header_row = header_row.push(attach_btn);
+                }
 
                 let header: Element<'a, Message> = header_row.into();
 
-                let mut output_column = Column::new().spacing(1);
+                let mut output_column = Column::new().spacing(2);
                 for line in &session.output_lines {
                     // Color tool events and validation/repair lines
                     let line_style = if line.starts_with(">>") {
@@ -429,8 +428,19 @@ fn build_output_panel<'a>(
                         }
                     };
 
-                    output_column =
-                        output_column.push(text(line).size(theme::font_size::SMALL).style(line_style));
+                    output_column = output_column
+                        .push(text(line).size(theme::font_size::SMALL).style(line_style));
+                }
+
+                // Show the in-progress partial line so output streams in real-time
+                if !session.partial_line.is_empty() {
+                    output_column = output_column.push(
+                        text(&session.partial_line)
+                            .size(theme::font_size::SMALL)
+                            .style(|_: &_| iced::widget::text::Style {
+                                color: Some(theme::text::SECONDARY),
+                            }),
+                    );
                 }
 
                 let output_scroll = scrollable(
@@ -467,10 +477,14 @@ fn build_output_panel<'a>(
 
 /// Create a centered placeholder message
 fn centered_placeholder(message: &str) -> Element<'_, Message> {
-    container(text(message).style(theme::muted_text()).size(theme::font_size::BODY))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .into()
+    container(
+        text(message)
+            .style(theme::muted_text())
+            .size(theme::font_size::BODY),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .into()
 }

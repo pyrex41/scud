@@ -236,6 +236,12 @@ impl StreamStore {
         }
     }
 
+    /// Get the process ID for a task
+    pub fn get_pid(&self, task_id: &str) -> Option<u32> {
+        let sessions = self.sessions.read().unwrap();
+        sessions.get(task_id).and_then(|s| s.pid)
+    }
+
     /// Get output lines for a task
     pub fn get_output(&self, task_id: &str, limit: usize) -> Vec<String> {
         let sessions = self.sessions.read().unwrap();

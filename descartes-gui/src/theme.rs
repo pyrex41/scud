@@ -109,10 +109,7 @@ pub fn card_container() -> impl Fn(&Theme) -> container::Style {
 /// Status badge: semi-transparent background with colored border
 pub fn status_badge(color: Color) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
-        background: Some(Background::Color(Color {
-            a: 0.15,
-            ..color
-        })),
+        background: Some(Background::Color(Color { a: 0.15, ..color })),
         border: Border {
             color: Color { a: 0.3, ..color },
             width: 1.0,

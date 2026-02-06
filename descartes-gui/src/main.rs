@@ -8,6 +8,7 @@
 use iced::widget::{button, column, container, row, text};
 use iced::{Element, Length, Subscription, Task, Theme};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 
 // Use scud-core directly for task management
@@ -21,8 +22,9 @@ mod views;
 
 use scud_bridge::{ScudBridge, ScudCommand, ScudEvent};
 use state::{
-    AgentConfig, AgentStatus, AppState, ExecutionMode, HeadlessSessionInfo,
-    HeadlessSessionStatus, LaunchConfig, RalphPhase, SwarmDefaults, SwarmProgress, TaskInfo,
+    AgentConfig, AgentStatus, AppState, ArchiveEntry, BackpressureState, ExecutionMode,
+    HeadlessSessionInfo, HeadlessSessionStatus, LaunchConfig, RalphPhase, SwarmDefaults,
+    SwarmProgress, TagSummary, TaskInfo,
 };
 use views::ViewMode;
 
@@ -135,7 +137,17 @@ pub enum Message {
     MonitorSelectTask(String),
     MonitorClearCompleted,
     /// Attach to a session in interactive terminal mode
-    MonitorAttachSession { task_id: String },
+    MonitorAttachSession {
+        task_id: String,
+    },
+    /// Copy session output to clipboard
+    MonitorCopyOutput {
+        task_id: String,
+    },
+    /// Stop a specific headless session
+    MonitorStopSession {
+        task_id: String,
+    },
     /// Pause the current swarm
     MonitorPauseSwarm,
     /// Stop the current swarm
@@ -144,9 +156,18 @@ pub enum Message {
     // Agent configuration
     LoadAgentConfigs,
     SelectAgentConfig(String),
-    UpdateAgentHarness { agent: String, harness: String },
-    UpdateAgentModel { agent: String, model: String },
-    UpdateAgentDescription { agent: String, description: String },
+    UpdateAgentHarness {
+        agent: String,
+        harness: String,
+    },
+    UpdateAgentModel {
+        agent: String,
+        model: String,
+    },
+    UpdateAgentDescription {
+        agent: String,
+        description: String,
+    },
     SaveAgentConfig(String),
     AgentConfigSaved(String),
     AgentConfigsLoaded(std::collections::HashMap<String, AgentConfig>),
@@ -164,6 +185,9 @@ pub enum Message {
     SwitchProject(std::path::PathBuf),
     ProjectSwitched,
 
+    // Launch agent override
+    SetOverrideAgents(bool),
+
     // Ralph config
     SetExecutionMode(ExecutionMode),
     SetRalphValidate(bool),
@@ -174,8 +198,54 @@ pub enum Message {
     SetRalphGitPush(bool),
 
     // Ralph lifecycle
-    StartRalph { tag: String, harness: String },
+    StartRalph {
+        tag: String,
+        harness: String,
+    },
     StopRalph,
+
+    // Generate view
+    ScanPrdDirectory,
+    PrdFilesLoaded(Vec<std::path::PathBuf>),
+    SelectPrd(std::path::PathBuf),
+    PrdContentLoaded(Result<String, String>),
+    SetGenerateTag(String),
+    SetGenerateNumTasks(String),
+    SetGenerateNoExpand(bool),
+    SetGenerateNoCheckDeps(bool),
+    SetGenerateAppend(bool),
+    StartGenerate,
+    GenerateCompleted(Result<(), String>),
+    GenerateStatus(String),
+
+    // Tag explorer
+    LoadTagExplorer,
+    TagSummariesLoaded(Vec<TagSummary>),
+    ArchivesLoaded(Vec<ArchiveEntry>),
+    SetActiveTag(String),
+    ActiveTagChanged(String),
+    TagExplorerArchiveTag(String),
+    RestoreArchive {
+        filename: String,
+    },
+    ArchiveRestored(Result<Vec<String>, String>),
+
+    // Backpressure config
+    LoadBackpressureConfig,
+    BackpressureConfigLoaded {
+        commands: Vec<String>,
+        stop_on_failure: bool,
+        timeout_secs: u64,
+        is_auto_detected: bool,
+    },
+    SetBackpressureStopOnFailure(bool),
+    SetBackpressureTimeout(String),
+    AddBackpressureCommand,
+    SetBackpressureNewCommand(String),
+    RemoveBackpressureCommand(usize),
+    SaveBackpressureConfig,
+    BackpressureConfigSaved(Result<(), String>),
+    DetectBackpressureCommands,
 
     Tick,
 }
@@ -243,7 +313,18 @@ impl DescartesGui {
         match message {
             Message::SwitchView(view) => {
                 self.view = view;
-                Task::none()
+                match view {
+                    ViewMode::Generate => Task::done(Message::ScanPrdDirectory),
+                    ViewMode::Tags => Task::done(Message::LoadTagExplorer),
+                    ViewMode::Settings => {
+                        if !self.state.backpressure.loaded {
+                            Task::done(Message::LoadBackpressureConfig)
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    _ => Task::none(),
+                }
             }
 
             Message::LoadWaves => Task::perform(load_waves_from_scud(), Message::WavesLoaded),
@@ -362,6 +443,15 @@ impl DescartesGui {
                 Task::none()
             }
 
+            Message::SetOverrideAgents(enabled) => {
+                self.state.launch_config.override_agents = enabled;
+                if !enabled {
+                    // Reset overrides when turning off
+                    self.state.launch_config.agent_type = None;
+                }
+                Task::none()
+            }
+
             Message::TagsLoaded(tags) => {
                 self.state.available_tags = tags;
                 Task::none()
@@ -411,6 +501,15 @@ impl DescartesGui {
                 harness,
                 round_size,
             } => {
+                // Check if there are any actionable tasks
+                let has_actionable = self.state.waves.iter().any(|wave| {
+                    wave.iter()
+                        .any(|t| t.status.to_lowercase() != "done")
+                });
+                if !has_actionable {
+                    self.error = Some("No actionable tasks — all tasks are done.".to_string());
+                    return Task::none();
+                }
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
                     let model = self.state.launch_config.model.clone();
@@ -591,14 +690,12 @@ impl DescartesGui {
                             // Process text character by character for proper line handling
                             for ch in text.chars() {
                                 if ch == '\n' {
-                                    // Complete line - push to output
-                                    if !session.partial_line.is_empty() {
-                                        let line = std::mem::take(&mut session.partial_line);
-                                        self.state
-                                            .output_buffer
-                                            .push_str(&format!("[{}] {}\n", task_id, line));
-                                        session.output_lines.push(line);
-                                    }
+                                    // Complete line - always push (even empty for blank lines)
+                                    let line = std::mem::take(&mut session.partial_line);
+                                    self.state
+                                        .output_buffer
+                                        .push_str(&format!("[{}] {}\n", task_id, line));
+                                    session.output_lines.push(line);
                                 } else {
                                     session.partial_line.push(ch);
                                 }
@@ -777,8 +874,48 @@ impl DescartesGui {
                             .output_buffer
                             .push_str(&format!("Tag '{}' archived\n", tag));
                     }
+                    ScudEvent::PrdFilesFound(files) => {
+                        return Task::done(Message::PrdFilesLoaded(files));
+                    }
+                    ScudEvent::GenerateStatus(status) => {
+                        return Task::done(Message::GenerateStatus(status));
+                    }
+                    ScudEvent::GenerateCompleted(result) => {
+                        return Task::done(Message::GenerateCompleted(result));
+                    }
+                    ScudEvent::TagSummariesLoaded(summaries) => {
+                        return Task::done(Message::TagSummariesLoaded(summaries));
+                    }
+                    ScudEvent::ArchivesLoaded(archives) => {
+                        return Task::done(Message::ArchivesLoaded(archives));
+                    }
+                    ScudEvent::ActiveTagChanged(tag) => {
+                        return Task::done(Message::ActiveTagChanged(tag));
+                    }
+                    ScudEvent::ArchiveRestored(result) => {
+                        return Task::done(Message::ArchiveRestored(result));
+                    }
+                    ScudEvent::BackpressureConfigLoaded {
+                        commands,
+                        stop_on_failure,
+                        timeout_secs,
+                        is_auto_detected,
+                    } => {
+                        return Task::done(Message::BackpressureConfigLoaded {
+                            commands,
+                            stop_on_failure,
+                            timeout_secs,
+                            is_auto_detected,
+                        });
+                    }
+                    ScudEvent::BackpressureConfigSaved(result) => {
+                        return Task::done(Message::BackpressureConfigSaved(result));
+                    }
                     // Ralph events
-                    ScudEvent::RalphStarted { tag, max_iterations } => {
+                    ScudEvent::RalphStarted {
+                        tag,
+                        max_iterations,
+                    } => {
                         self.state.ralph_progress = state::RalphProgress {
                             active: true,
                             current_iteration: 0,
@@ -791,19 +928,25 @@ impl DescartesGui {
                             completed_count: 0,
                             failed_count: 0,
                         };
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("Ralph started for tag '{}' (max {} iterations)\n", tag, max_iterations));
+                        self.state.output_buffer.push_str(&format!(
+                            "Ralph started for tag '{}' (max {} iterations)\n",
+                            tag, max_iterations
+                        ));
                     }
-                    ScudEvent::RalphIterationStarted { iteration, task_id, task_title } => {
+                    ScudEvent::RalphIterationStarted {
+                        iteration,
+                        task_id,
+                        task_title,
+                    } => {
                         self.state.ralph_progress.current_iteration = iteration;
                         self.state.ralph_progress.current_task_id = Some(task_id.clone());
                         self.state.ralph_progress.current_task_title = Some(task_title.clone());
                         self.state.ralph_progress.phase = RalphPhase::Executing;
                         self.state.ralph_progress.repair_attempt = 0;
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("Ralph iteration {}: {} - {}\n", iteration, task_id, task_title));
+                        self.state.output_buffer.push_str(&format!(
+                            "Ralph iteration {}: {} - {}\n",
+                            iteration, task_id, task_title
+                        ));
                     }
                     ScudEvent::RalphValidationStarted { task_id } => {
                         self.state.ralph_progress.phase = RalphPhase::Validating;
@@ -811,7 +954,11 @@ impl DescartesGui {
                             .output_buffer
                             .push_str(&format!("Validating task {}...\n", task_id));
                     }
-                    ScudEvent::RalphValidationCompleted { task_id, passed, output } => {
+                    ScudEvent::RalphValidationCompleted {
+                        task_id,
+                        passed,
+                        output,
+                    } => {
                         // Append validation output to task's session
                         if let Some(session) = self.state.headless_sessions.get_mut(&task_id) {
                             session.output_lines.push("--- VALIDATION ---".to_string());
@@ -826,11 +973,16 @@ impl DescartesGui {
                     ScudEvent::RalphRepairStarted { task_id, attempt } => {
                         self.state.ralph_progress.phase = RalphPhase::Repairing;
                         self.state.ralph_progress.repair_attempt = attempt;
-                        self.state
-                            .output_buffer
-                            .push_str(&format!("Repair attempt {} for task {}\n", attempt, task_id));
+                        self.state.output_buffer.push_str(&format!(
+                            "Repair attempt {} for task {}\n",
+                            attempt, task_id
+                        ));
                     }
-                    ScudEvent::RalphIterationCompleted { iteration, task_id, success } => {
+                    ScudEvent::RalphIterationCompleted {
+                        iteration,
+                        task_id,
+                        success,
+                    } => {
                         if success {
                             self.state.ralph_progress.completed_count += 1;
                         } else {
@@ -843,7 +995,11 @@ impl DescartesGui {
                             iteration, task_id, status
                         ));
                     }
-                    ScudEvent::RalphCompleted { iterations, completed, failed } => {
+                    ScudEvent::RalphCompleted {
+                        iterations,
+                        completed,
+                        failed,
+                    } => {
                         self.state.agent_status = AgentStatus::Idle;
                         self.state.ralph_progress.active = false;
                         self.state.ralph_progress.phase = RalphPhase::Idle;
@@ -893,13 +1049,34 @@ impl DescartesGui {
                         if let Some(ref session_id) = session.session_id {
                             let harness = session.harness.clone();
                             let session_id = session_id.clone();
+                            let terminal_app = self.state.settings.terminal_app.clone();
                             let _ = tx.blocking_send(ScudCommand::AttachSession {
                                 task_id,
                                 harness,
                                 session_id,
+                                terminal_app,
                             });
                         }
                     }
+                }
+                Task::none()
+            }
+
+            Message::MonitorCopyOutput { task_id } => {
+                if let Some(session) = self.state.headless_sessions.get(&task_id) {
+                    let mut output = session.output_lines.join("\n");
+                    if !session.partial_line.is_empty() {
+                        output.push('\n');
+                        output.push_str(&session.partial_line);
+                    }
+                    return iced::clipboard::write(output);
+                }
+                Task::none()
+            }
+
+            Message::MonitorStopSession { task_id } => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let _ = tx.blocking_send(ScudCommand::StopSession { task_id });
                 }
                 Task::none()
             }
@@ -1030,9 +1207,10 @@ impl DescartesGui {
                 if self.state.settings.recent_projects.len()
                     > self.state.settings.max_recent_projects
                 {
-                    self.state.settings.recent_projects.truncate(
-                        self.state.settings.max_recent_projects,
-                    );
+                    self.state
+                        .settings
+                        .recent_projects
+                        .truncate(self.state.settings.max_recent_projects);
                 }
                 // Reload everything for the new project
                 Task::batch([
@@ -1097,6 +1275,15 @@ impl DescartesGui {
 
             // Ralph lifecycle
             Message::StartRalph { tag, harness } => {
+                // Check if there are any actionable tasks
+                let has_actionable = self.state.waves.iter().any(|wave| {
+                    wave.iter()
+                        .any(|t| t.status.to_lowercase() != "done")
+                });
+                if !has_actionable {
+                    self.error = Some("No actionable tasks — all tasks are done.".to_string());
+                    return Task::none();
+                }
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
                     let model = self.state.launch_config.model.clone();
@@ -1138,7 +1325,357 @@ impl DescartesGui {
                 Task::none()
             }
 
-            Message::Tick => Task::none(),
+            // Generate view handlers
+            Message::ScanPrdDirectory => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::ScanPrdFiles).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::PrdFilesLoaded(files) => {
+                self.state.generate_state.prd_files = files;
+                Task::none()
+            }
+
+            Message::SelectPrd(path) => {
+                self.state.generate_state.selected_prd = Some(path.clone());
+                self.state.generate_state.prd_content = None;
+                Task::perform(
+                    async move {
+                        tokio::fs::read_to_string(&path)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::PrdContentLoaded,
+                )
+            }
+
+            Message::PrdContentLoaded(result) => {
+                match result {
+                    Ok(content) => {
+                        self.state.generate_state.prd_content = Some(content);
+                    }
+                    Err(e) => {
+                        self.state.generate_state.prd_content =
+                            Some(format!("Error loading file: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SetGenerateTag(tag) => {
+                self.state.generate_state.tag_input = tag;
+                Task::none()
+            }
+
+            Message::SetGenerateNumTasks(input) => {
+                self.state.generate_state.num_tasks_input = input.clone();
+                if let Ok(n) = input.parse::<u32>() {
+                    if (1..=100).contains(&n) {
+                        self.state.generate_state.num_tasks = n;
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SetGenerateNoExpand(val) => {
+                self.state.generate_state.no_expand = val;
+                Task::none()
+            }
+
+            Message::SetGenerateNoCheckDeps(val) => {
+                self.state.generate_state.no_check_deps = val;
+                Task::none()
+            }
+
+            Message::SetGenerateAppend(val) => {
+                self.state.generate_state.append = val;
+                Task::none()
+            }
+
+            Message::StartGenerate => {
+                if let (Some(ref tx), Some(ref prd_file)) = (
+                    &self.scud_command_tx,
+                    &self.state.generate_state.selected_prd,
+                ) {
+                    let tx = tx.clone();
+                    let prd_file = prd_file.clone();
+                    let tag = self.state.generate_state.tag_input.clone();
+                    let num_tasks = self.state.generate_state.num_tasks;
+                    let no_expand = self.state.generate_state.no_expand;
+                    let no_check_deps = self.state.generate_state.no_check_deps;
+                    let append = self.state.generate_state.append;
+                    self.state.generate_state.generating = true;
+                    self.state.generate_state.generate_status = None;
+                    return Task::perform(
+                        async move {
+                            let _ = tx
+                                .send(ScudCommand::RunGenerate {
+                                    prd_file,
+                                    tag,
+                                    num_tasks,
+                                    no_expand,
+                                    no_check_deps,
+                                    append,
+                                })
+                                .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::GenerateCompleted(result) => {
+                self.state.generate_state.generating = false;
+                match result {
+                    Ok(()) => {
+                        self.state.generate_state.generate_status =
+                            Some("Generation complete!".to_string());
+                        // Switch to Tags view to see the result
+                        self.view = ViewMode::Tags;
+                        return Task::done(Message::LoadTagExplorer);
+                    }
+                    Err(e) => {
+                        self.state.generate_state.generate_status =
+                            Some(format!("Failed: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::GenerateStatus(status) => {
+                self.state.generate_state.generate_status = Some(status);
+                Task::none()
+            }
+
+            // Tag explorer handlers
+            Message::LoadTagExplorer => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::LoadTagSummaries).await;
+                            let _ = tx.send(ScudCommand::LoadArchives).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::TagSummariesLoaded(summaries) => {
+                self.state.tag_explorer.tags = summaries;
+                Task::none()
+            }
+
+            Message::ArchivesLoaded(archives) => {
+                self.state.tag_explorer.archives = archives;
+                Task::none()
+            }
+
+            Message::SetActiveTag(tag) => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::SetActiveTag { tag }).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::ActiveTagChanged(tag) => {
+                self.state.active_tag = Some(tag.clone());
+                self.state.launch_config.tag = tag;
+                // Refresh tag explorer and waves
+                Task::batch([
+                    Task::done(Message::LoadTagExplorer),
+                    Task::done(Message::RefreshTasks),
+                ])
+            }
+
+            Message::TagExplorerArchiveTag(tag) => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::ArchiveTag { tag }).await;
+                        },
+                        |_| Message::LoadTagExplorer,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::RestoreArchive { filename } => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx
+                                .send(ScudCommand::RestoreArchive { filename })
+                                .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::ArchiveRestored(result) => {
+                match result {
+                    Ok(tags) => {
+                        self.state.output_buffer.push_str(&format!(
+                            "Restored tags: {}\n",
+                            tags.join(", ")
+                        ));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to restore archive: {}", e));
+                    }
+                }
+                Task::done(Message::LoadTagExplorer)
+            }
+
+            // Backpressure config handlers
+            Message::LoadBackpressureConfig => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::LoadBackpressureConfig).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::BackpressureConfigLoaded {
+                commands,
+                stop_on_failure,
+                timeout_secs,
+                is_auto_detected,
+            } => {
+                self.state.backpressure = BackpressureState {
+                    commands,
+                    stop_on_failure,
+                    timeout_secs,
+                    timeout_input: timeout_secs.to_string(),
+                    is_auto_detected,
+                    loaded: true,
+                    new_command_input: String::new(),
+                    dirty: false,
+                    status: None,
+                };
+                Task::none()
+            }
+
+            Message::SetBackpressureStopOnFailure(val) => {
+                self.state.backpressure.stop_on_failure = val;
+                self.state.backpressure.dirty = true;
+                self.state.backpressure.status = None;
+                Task::none()
+            }
+
+            Message::SetBackpressureTimeout(input) => {
+                self.state.backpressure.timeout_input = input.clone();
+                if let Ok(n) = input.parse::<u64>() {
+                    if (1..=3600).contains(&n) {
+                        self.state.backpressure.timeout_secs = n;
+                        self.state.backpressure.dirty = true;
+                        self.state.backpressure.status = None;
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SetBackpressureNewCommand(input) => {
+                self.state.backpressure.new_command_input = input;
+                Task::none()
+            }
+
+            Message::AddBackpressureCommand => {
+                let cmd = self.state.backpressure.new_command_input.trim().to_string();
+                if !cmd.is_empty() {
+                    self.state.backpressure.commands.push(cmd);
+                    self.state.backpressure.new_command_input.clear();
+                    self.state.backpressure.dirty = true;
+                    self.state.backpressure.status = None;
+                }
+                Task::none()
+            }
+
+            Message::RemoveBackpressureCommand(index) => {
+                if index < self.state.backpressure.commands.len() {
+                    self.state.backpressure.commands.remove(index);
+                    self.state.backpressure.dirty = true;
+                    self.state.backpressure.status = None;
+                }
+                Task::none()
+            }
+
+            Message::SaveBackpressureConfig => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    let commands = self.state.backpressure.commands.clone();
+                    let stop_on_failure = self.state.backpressure.stop_on_failure;
+                    let timeout_secs = self.state.backpressure.timeout_secs;
+                    return Task::perform(
+                        async move {
+                            let _ = tx
+                                .send(ScudCommand::SaveBackpressureConfig {
+                                    commands,
+                                    stop_on_failure,
+                                    timeout_secs,
+                                })
+                                .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::BackpressureConfigSaved(result) => {
+                match result {
+                    Ok(()) => {
+                        self.state.backpressure.dirty = false;
+                        self.state.backpressure.is_auto_detected = false;
+                        self.state.backpressure.status = Some("Saved".to_string());
+                    }
+                    Err(e) => {
+                        self.state.backpressure.status = Some(format!("Error: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            Message::DetectBackpressureCommands => {
+                // Re-detect by clearing the config section and reloading
+                self.state.backpressure.loaded = false;
+                Task::done(Message::LoadBackpressureConfig)
+            }
+
+            Message::Tick => {
+                // Periodic refresh: reload tasks and tags from storage
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tag = self.state.active_tag.clone();
+                    let _ = tx.try_send(ScudCommand::LoadTasks { tag });
+                    let _ = tx.try_send(ScudCommand::LoadAvailableTags);
+                }
+                Task::none()
+            }
         }
     }
 
@@ -1160,18 +1697,26 @@ impl DescartesGui {
                 ..Default::default()
             });
 
-            let header = views::header::view(self.view, self.state.agent_status, self.state.headless_sessions.len());
+            let header = views::header::view(
+                self.view,
+                self.state.agent_status,
+                self.state.headless_sessions.len(),
+            );
             let content = match self.view {
-                ViewMode::Waves => views::waves::view(&self.state.waves, &self.state.active_tag, &self.state.available_tags),
-                ViewMode::Launch => views::launch::view(
+                ViewMode::Waves => views::waves::view(
+                    &self.state.waves,
+                    &self.state.active_tag,
                     self.state.agent_status,
-                    &self.state.current_task,
                     &self.state.launch_config,
                     &self.state.available_harnesses,
-                    &self.state.available_tags,
                     &self.state.available_agents,
                     &self.state.available_models,
                 ),
+                ViewMode::Generate => views::generate::view(
+                    &self.state.generate_state,
+                    &self.state.working_directory,
+                ),
+                ViewMode::Tags => views::tags::view(&self.state.tag_explorer),
                 ViewMode::Agents => views::agents::view(
                     &self.state.agent_configs,
                     &self.state.available_harnesses,
@@ -1190,26 +1735,37 @@ impl DescartesGui {
                     self.state.agent_status,
                     &self.state.ralph_progress,
                 ),
-                ViewMode::Settings => views::settings::view(
-                    &self.state.settings,
-                    &self.state.working_directory,
-                ),
+                ViewMode::Settings => {
+                    views::settings::view(
+                        &self.state.settings,
+                        &self.state.working_directory,
+                        &self.state.backpressure,
+                    )
+                }
             };
 
             column![error_banner, header, content].spacing(10).into()
         } else {
-            let header = views::header::view(self.view, self.state.agent_status, self.state.headless_sessions.len());
+            let header = views::header::view(
+                self.view,
+                self.state.agent_status,
+                self.state.headless_sessions.len(),
+            );
             let content = match self.view {
-                ViewMode::Waves => views::waves::view(&self.state.waves, &self.state.active_tag, &self.state.available_tags),
-                ViewMode::Launch => views::launch::view(
+                ViewMode::Waves => views::waves::view(
+                    &self.state.waves,
+                    &self.state.active_tag,
                     self.state.agent_status,
-                    &self.state.current_task,
                     &self.state.launch_config,
                     &self.state.available_harnesses,
-                    &self.state.available_tags,
                     &self.state.available_agents,
                     &self.state.available_models,
                 ),
+                ViewMode::Generate => views::generate::view(
+                    &self.state.generate_state,
+                    &self.state.working_directory,
+                ),
+                ViewMode::Tags => views::tags::view(&self.state.tag_explorer),
                 ViewMode::Agents => views::agents::view(
                     &self.state.agent_configs,
                     &self.state.available_harnesses,
@@ -1228,10 +1784,13 @@ impl DescartesGui {
                     self.state.agent_status,
                     &self.state.ralph_progress,
                 ),
-                ViewMode::Settings => views::settings::view(
-                    &self.state.settings,
-                    &self.state.working_directory,
-                ),
+                ViewMode::Settings => {
+                    views::settings::view(
+                        &self.state.settings,
+                        &self.state.working_directory,
+                        &self.state.backpressure,
+                    )
+                }
             };
 
             column![header, content].spacing(10).into()
@@ -1249,9 +1808,9 @@ impl DescartesGui {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        // Create subscription to receive ScudEvents from the bridge
+        // ScudEvent subscription from the bridge
         let rx = self.scud_event_rx.clone();
-        Subscription::run_with(ScudEventReceiver(rx), |ScudEventReceiver(rx)| {
+        let scud_events = Subscription::run_with(ScudEventReceiver(rx), |ScudEventReceiver(rx)| {
             let rx = rx.clone();
             async_stream::stream! {
                 // Take the receiver from the mutex (only happens once)
@@ -1266,7 +1825,12 @@ impl DescartesGui {
                     }
                 }
             }
-        })
+        });
+
+        // Periodic timer to refresh tasks/tags from underlying files
+        let timer = iced::time::every(Duration::from_secs(5)).map(|_| Message::Tick);
+
+        Subscription::batch([scud_events, timer])
     }
 
     fn theme(&self) -> Theme {
@@ -1411,7 +1975,10 @@ fn save_agent_config(working_dir: &std::path::Path, config: &AgentConfig) {
         "harness".to_string(),
         toml::Value::String(config.harness.clone()),
     );
-    model_section.insert("model".to_string(), toml::Value::String(config.model.clone()));
+    model_section.insert(
+        "model".to_string(),
+        toml::Value::String(config.model.clone()),
+    );
     existing_toml.insert("model".to_string(), toml::Value::Table(model_section));
 
     // Write back
@@ -1574,9 +2141,6 @@ mod tests {
         let mut app = test_app();
         assert_eq!(app.view, ViewMode::Waves);
 
-        let _ = app.update(Message::SwitchView(ViewMode::Launch));
-        assert_eq!(app.view, ViewMode::Launch);
-
         let _ = app.update(Message::SwitchView(ViewMode::Output));
         assert_eq!(app.view, ViewMode::Output);
     }
@@ -1683,10 +2247,7 @@ mod tests {
         }));
         assert_eq!(app.state.agent_status, AgentStatus::Running);
 
-        // Switch to Launch view
-        let _ = app.update(Message::SwitchView(ViewMode::Launch));
-
-        // Render and find the Pause button
+        // Render and find the Pause button (in Waves view launch controls)
         let mut ui = simulator(app.view());
         let pause_result = ui.click("Pause");
         assert!(
@@ -1724,16 +2285,14 @@ mod tests {
             tag: "test".into(),
             total_waves: 1,
         }));
-        let _ = app.update(Message::SwitchView(ViewMode::Launch));
 
         let mut ui = simulator(app.view());
-        let cancel_result = ui.click("Cancel");
-        assert!(cancel_result.is_ok(), "Cancel button should exist");
+        let stop_result = ui.click("Stop");
+        assert!(stop_result.is_ok(), "Stop button should exist when running");
 
         for message in ui.into_messages() {
             let _ = app.update(message);
         }
-        assert_eq!(app.state.agent_status, AgentStatus::Idle);
     }
 
     /// Test error banner dismiss interaction
@@ -1890,15 +2449,7 @@ mod tests {
         assert_eq!(app.state.agent_status, AgentStatus::Running);
         assert_eq!(app.state.current_task, Some("1".into()));
 
-        // Step 3: Navigate to Launch view
-        let mut ui = simulator(app.view());
-        let _ = ui.click("Launch");
-        for msg in ui.into_messages() {
-            let _ = app.update(msg);
-        }
-        assert_eq!(app.view, ViewMode::Launch);
-
-        // Step 4: Pause the agent
+        // Step 3: Pause the agent (controls are in Waves view)
         let mut ui = simulator(app.view());
         let _ = ui.click("Pause");
         for msg in ui.into_messages() {
@@ -2266,9 +2817,7 @@ mod tests {
         app.state.launch_config.harness = "opencode".into();
         app.state.launch_config.round_size = 5;
 
-        // Switch to agents view
-        let _ = app.update(Message::SwitchView(ViewMode::Launch));
-
+        // Render the Waves view (launch controls are at the bottom)
         let mut ui = simulator(app.view());
 
         // When idle, Start Swarm button should be present
@@ -2333,12 +2882,11 @@ mod tests {
         assert!(app.state.output_buffer.contains("archived"));
     }
 
-    /// Test tag picker appears in waves view header
+    /// Test waves view shows active tag with Change button
     #[test]
-    fn test_waves_view_has_archive_button() {
+    fn test_waves_view_has_change_tag_button() {
         let mut app = test_app();
         app.state.active_tag = Some("feature".into());
-        app.state.available_tags = vec!["feature".into(), "bugfix".into()];
 
         // Load some tasks so the view renders fully
         let waves = vec![vec![TaskInfo {
@@ -2351,23 +2899,22 @@ mod tests {
 
         let mut ui = simulator(app.view());
 
-        // Archive button should be clickable when a tag is active
-        let archive_result = ui.click("Archive");
+        // Change button should be clickable when a tag is active
+        let change_result = ui.click("Change");
         assert!(
-            archive_result.is_ok(),
-            "Archive button should be clickable when tag is active"
+            change_result.is_ok(),
+            "Change button should be clickable when tag is active"
         );
 
-        // Verify it emits ArchiveTag message
-        let mut saw_archive = false;
+        // Verify it emits SwitchView(Tags) message
+        let mut saw_switch = false;
         for msg in ui.into_messages() {
-            if let Message::ArchiveTag { tag } = &msg {
-                saw_archive = true;
-                assert_eq!(tag, "feature");
+            if let Message::SwitchView(ViewMode::Tags) = &msg {
+                saw_switch = true;
             }
             let _ = app.update(msg);
         }
-        assert!(saw_archive, "Should emit ArchiveTag message");
+        assert!(saw_switch, "Should emit SwitchView(Tags) message");
     }
 
     // =============================================================
@@ -2469,7 +3016,10 @@ mod tests {
             task_title: "First task".into(),
         }));
         assert_eq!(app.state.ralph_progress.current_iteration, 1);
-        assert_eq!(app.state.ralph_progress.current_task_id, Some("task-1".into()));
+        assert_eq!(
+            app.state.ralph_progress.current_task_id,
+            Some("task-1".into())
+        );
         assert_eq!(app.state.ralph_progress.phase, RalphPhase::Executing);
 
         // RalphValidationStarted
@@ -2550,11 +3100,13 @@ mod tests {
         let mut app = test_app();
         app.state.launch_config.execution_mode = ExecutionMode::Ralph;
         app.state.launch_config.tag = "feature".into();
-        let _ = app.update(Message::SwitchView(ViewMode::Launch));
 
         let mut ui = simulator(app.view());
         let click_result = ui.click("Start Ralph");
-        assert!(click_result.is_ok(), "Start Ralph button should exist in Ralph mode");
+        assert!(
+            click_result.is_ok(),
+            "Start Ralph button should exist in Ralph mode"
+        );
 
         let mut saw_start_ralph = false;
         for msg in ui.into_messages() {
@@ -2588,7 +3140,228 @@ mod tests {
 
         // Check that validation output was appended to session
         let session = app.state.headless_sessions.get("task-1").unwrap();
-        assert!(session.output_lines.iter().any(|l| l.contains("VALIDATION")));
-        assert!(session.output_lines.iter().any(|l| l.contains("cargo test failed")));
+        assert!(session
+            .output_lines
+            .iter()
+            .any(|l| l.contains("VALIDATION")));
+        assert!(session
+            .output_lines
+            .iter()
+            .any(|l| l.contains("cargo test failed")));
+    }
+
+    // =============================================================
+    // Generate + Tags Tests
+    // =============================================================
+
+    /// Test GenerateState defaults
+    #[test]
+    fn test_generate_state_defaults() {
+        let state = state::GenerateState::default();
+        assert_eq!(state.num_tasks, 10);
+        assert_eq!(state.num_tasks_input, "10");
+        assert!(!state.generating);
+        assert!(!state.no_expand);
+        assert!(!state.no_check_deps);
+        assert!(!state.append);
+        assert!(state.prd_files.is_empty());
+        assert!(state.selected_prd.is_none());
+        assert!(state.tag_input.is_empty());
+    }
+
+    /// Test generate config update messages
+    #[test]
+    fn test_generate_config_updates() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::SetGenerateTag("my-tag".into()));
+        assert_eq!(app.state.generate_state.tag_input, "my-tag");
+
+        let _ = app.update(Message::SetGenerateNumTasks("15".into()));
+        assert_eq!(app.state.generate_state.num_tasks, 15);
+        assert_eq!(app.state.generate_state.num_tasks_input, "15");
+
+        // Out of range input preserves text but doesn't update num
+        let _ = app.update(Message::SetGenerateNumTasks("200".into()));
+        assert_eq!(app.state.generate_state.num_tasks, 15);
+        assert_eq!(app.state.generate_state.num_tasks_input, "200");
+
+        let _ = app.update(Message::SetGenerateNoExpand(true));
+        assert!(app.state.generate_state.no_expand);
+
+        let _ = app.update(Message::SetGenerateNoCheckDeps(true));
+        assert!(app.state.generate_state.no_check_deps);
+
+        let _ = app.update(Message::SetGenerateAppend(true));
+        assert!(app.state.generate_state.append);
+    }
+
+    /// Test tag summaries loaded populates tag explorer
+    #[test]
+    fn test_tag_summaries_loaded() {
+        let mut app = test_app();
+
+        let summaries = vec![
+            TagSummary {
+                name: "alpha".into(),
+                total_tasks: 5,
+                done_count: 2,
+                pending_count: 2,
+                in_progress_count: 1,
+                failed_count: 0,
+                is_active: true,
+            },
+            TagSummary {
+                name: "beta".into(),
+                total_tasks: 3,
+                done_count: 0,
+                pending_count: 3,
+                in_progress_count: 0,
+                failed_count: 0,
+                is_active: false,
+            },
+        ];
+
+        let _ = app.update(Message::TagSummariesLoaded(summaries));
+        assert_eq!(app.state.tag_explorer.tags.len(), 2);
+        assert_eq!(app.state.tag_explorer.tags[0].name, "alpha");
+        assert!(app.state.tag_explorer.tags[0].is_active);
+    }
+
+    /// Test archives loaded populates tag explorer
+    #[test]
+    fn test_archives_loaded() {
+        let mut app = test_app();
+
+        let archives = vec![ArchiveEntry {
+            filename: "2026-01-15_alpha.scg".into(),
+            date: "2026-01-15".into(),
+            tag: Some("alpha".into()),
+            task_count: 5,
+        }];
+
+        let _ = app.update(Message::ArchivesLoaded(archives));
+        assert_eq!(app.state.tag_explorer.archives.len(), 1);
+        assert_eq!(
+            app.state.tag_explorer.archives[0].filename,
+            "2026-01-15_alpha.scg"
+        );
+    }
+
+    /// Test SwitchView(Generate) triggers ScanPrdDirectory
+    #[test]
+    fn test_switch_to_generate_scans() {
+        let mut app = test_app();
+
+        // SwitchView to Generate returns a Task (ScanPrdDirectory)
+        // Without bridge it just does nothing, but the view switches
+        let _ = app.update(Message::SwitchView(ViewMode::Generate));
+        assert_eq!(app.view, ViewMode::Generate);
+    }
+
+    /// Test SwitchView(Tags) triggers LoadTagExplorer
+    #[test]
+    fn test_switch_to_tags_loads() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::SwitchView(ViewMode::Tags));
+        assert_eq!(app.view, ViewMode::Tags);
+    }
+
+    /// Test GenerateCompleted success sets generating=false
+    #[test]
+    fn test_generate_completed_success() {
+        let mut app = test_app();
+        app.state.generate_state.generating = true;
+
+        let _ = app.update(Message::GenerateCompleted(Ok(())));
+        assert!(!app.state.generate_state.generating);
+        assert_eq!(app.view, ViewMode::Tags);
+    }
+
+    /// Test GenerateCompleted failure
+    #[test]
+    fn test_generate_completed_failure() {
+        let mut app = test_app();
+        app.state.generate_state.generating = true;
+
+        let _ = app.update(Message::GenerateCompleted(Err("generation failed".into())));
+        assert!(!app.state.generate_state.generating);
+        assert!(app
+            .state
+            .generate_state
+            .generate_status
+            .as_ref()
+            .unwrap()
+            .contains("failed"));
+    }
+
+    /// Test ActiveTagChanged updates both active_tag and launch_config
+    #[test]
+    fn test_active_tag_changed_refreshes() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::ActiveTagChanged("new-tag".into()));
+        assert_eq!(app.state.active_tag, Some("new-tag".into()));
+        assert_eq!(app.state.launch_config.tag, "new-tag");
+    }
+
+    /// Test PrdFilesLoaded updates generate state
+    #[test]
+    fn test_prd_files_loaded() {
+        let mut app = test_app();
+
+        let files = vec![
+            std::path::PathBuf::from("/tmp/prd1.md"),
+            std::path::PathBuf::from("/tmp/prd2.md"),
+        ];
+        let _ = app.update(Message::PrdFilesLoaded(files));
+        assert_eq!(app.state.generate_state.prd_files.len(), 2);
+    }
+
+    /// Test ArchiveRestored success
+    #[test]
+    fn test_archive_restored_success() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::ArchiveRestored(Ok(vec!["alpha".into()])));
+        assert!(app.state.output_buffer.contains("alpha"));
+    }
+
+    /// Test ArchiveRestored failure
+    #[test]
+    fn test_archive_restored_failure() {
+        let mut app = test_app();
+
+        let _ = app.update(Message::ArchiveRestored(Err("not found".into())));
+        assert!(app.error.is_some());
+        assert!(app.error.as_ref().unwrap().contains("not found"));
+    }
+
+    /// Test Generate and Tags nav buttons appear in header
+    #[test]
+    fn test_ui_navigation_to_generate_and_tags() {
+        let mut app = test_app();
+
+        let mut ui = simulator(app.view());
+
+        // Click Generate tab
+        let gen_result = ui.click("Generate");
+        assert!(gen_result.is_ok(), "Generate nav button should exist");
+
+        for msg in ui.into_messages() {
+            let _ = app.update(msg);
+        }
+        assert_eq!(app.view, ViewMode::Generate);
+
+        // Click Tags tab
+        let mut ui = simulator(app.view());
+        let tags_result = ui.click("Tags");
+        assert!(tags_result.is_ok(), "Tags nav button should exist");
+
+        for msg in ui.into_messages() {
+            let _ = app.update(msg);
+        }
+        assert_eq!(app.view, ViewMode::Tags);
     }
 }

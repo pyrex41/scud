@@ -14,7 +14,8 @@ use crate::Message;
 pub enum ViewMode {
     #[default]
     Waves,
-    Launch,
+    Generate,
+    Tags,
     Agents,
     Output,
     Monitor,
@@ -37,9 +38,12 @@ pub fn view<'a>(
         button(text("Waves").size(theme::font_size::BODY))
             .on_press(Message::SwitchView(ViewMode::Waves))
             .style(theme::nav_button(current_view == ViewMode::Waves)),
-        button(text("Launch").size(theme::font_size::BODY))
-            .on_press(Message::SwitchView(ViewMode::Launch))
-            .style(theme::nav_button(current_view == ViewMode::Launch)),
+        button(text("Generate").size(theme::font_size::BODY))
+            .on_press(Message::SwitchView(ViewMode::Generate))
+            .style(theme::nav_button(current_view == ViewMode::Generate)),
+        button(text("Tags").size(theme::font_size::BODY))
+            .on_press(Message::SwitchView(ViewMode::Tags))
+            .style(theme::nav_button(current_view == ViewMode::Tags)),
         button(text("Agents").size(theme::font_size::BODY))
             .on_press(Message::SwitchView(ViewMode::Agents))
             .style(theme::nav_button(current_view == ViewMode::Agents)),

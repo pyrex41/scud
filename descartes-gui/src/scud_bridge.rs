@@ -12,6 +12,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use scud_core::{compute_waves, Phase, Storage, Task, TaskStatus};
+use scud::storage::Storage as CliStorage;
 
 use crate::state::RalphConfig;
 
@@ -100,27 +101,75 @@ pub enum ScudEvent {
     /// Tag archived successfully
     TagArchived { tag: String },
 
+    /// PRD files discovered from scanning
+    PrdFilesFound(Vec<PathBuf>),
+
+    /// Generate pipeline status update
+    GenerateStatus(String),
+
+    /// Generate pipeline completed
+    GenerateCompleted(Result<(), String>),
+
+    /// Tag summaries loaded for the tag explorer
+    TagSummariesLoaded(Vec<crate::state::TagSummary>),
+
+    /// Archives loaded for the tag explorer
+    ArchivesLoaded(Vec<crate::state::ArchiveEntry>),
+
+    /// Active tag changed
+    ActiveTagChanged(String),
+
+    /// Archive restored
+    ArchiveRestored(Result<Vec<String>, String>),
+
+    /// Backpressure config loaded
+    BackpressureConfigLoaded {
+        commands: Vec<String>,
+        stop_on_failure: bool,
+        timeout_secs: u64,
+        is_auto_detected: bool,
+    },
+
+    /// Backpressure config saved
+    BackpressureConfigSaved(Result<(), String>),
+
     // Ralph mode events
     /// Ralph loop started
     RalphStarted { tag: String, max_iterations: usize },
 
     /// A new Ralph iteration began (one task)
-    RalphIterationStarted { iteration: usize, task_id: String, task_title: String },
+    RalphIterationStarted {
+        iteration: usize,
+        task_id: String,
+        task_title: String,
+    },
 
     /// Backpressure validation started for a task
     RalphValidationStarted { task_id: String },
 
     /// Backpressure validation completed
-    RalphValidationCompleted { task_id: String, passed: bool, output: String },
+    RalphValidationCompleted {
+        task_id: String,
+        passed: bool,
+        output: String,
+    },
 
     /// Repair agent spawned for a failed validation
     RalphRepairStarted { task_id: String, attempt: usize },
 
     /// A Ralph iteration completed (task done or failed)
-    RalphIterationCompleted { iteration: usize, task_id: String, success: bool },
+    RalphIterationCompleted {
+        iteration: usize,
+        task_id: String,
+        success: bool,
+    },
 
     /// Ralph loop finished
-    RalphCompleted { iterations: usize, completed: usize, failed: usize },
+    RalphCompleted {
+        iterations: usize,
+        completed: usize,
+        failed: usize,
+    },
 }
 
 /// Commands to send to SCUD
@@ -179,6 +228,7 @@ pub enum ScudCommand {
         task_id: String,
         harness: String,
         session_id: String,
+        terminal_app: String,
     },
 
     /// Start Ralph mode execution (sequential, backpressure-driven)
@@ -191,6 +241,44 @@ pub enum ScudCommand {
 
     /// Stop a running Ralph loop
     StopRalph,
+
+    /// Stop a specific headless session by killing its process
+    StopSession { task_id: String },
+
+    /// Scan directories for PRD markdown files
+    ScanPrdFiles,
+
+    /// Run generate pipeline
+    RunGenerate {
+        prd_file: PathBuf,
+        tag: String,
+        num_tasks: u32,
+        no_expand: bool,
+        no_check_deps: bool,
+        append: bool,
+    },
+
+    /// Load tag summaries for the tag explorer
+    LoadTagSummaries,
+
+    /// Load archives for the tag explorer
+    LoadArchives,
+
+    /// Set the active tag
+    SetActiveTag { tag: String },
+
+    /// Restore an archive
+    RestoreArchive { filename: String },
+
+    /// Load backpressure configuration (from config or auto-detect)
+    LoadBackpressureConfig,
+
+    /// Save backpressure configuration to .scud/config.toml
+    SaveBackpressureConfig {
+        commands: Vec<String>,
+        stop_on_failure: bool,
+        timeout_secs: u64,
+    },
 }
 
 /// JSON event format from SCUD CLI when running with --json-events
@@ -291,11 +379,8 @@ pub struct ScudBridge {
     /// Receiver for commands from GUI
     command_rx: mpsc::Receiver<ScudCommand>,
 
-    /// Handle to current swarm process (for cancellation)
-    swarm_handle: Option<tokio::process::Child>,
-
-    /// Whether the swarm is currently paused
-    paused: bool,
+    /// Cancellation flag for swarm mode
+    swarm_cancelled: Arc<AtomicBool>,
 
     /// Stream store for headless session management
     stream_store: StreamStore,
@@ -313,8 +398,7 @@ impl ScudBridge {
         Self {
             event_tx,
             command_rx,
-            swarm_handle: None,
-            paused: false,
+            swarm_cancelled: Arc::new(AtomicBool::new(false)),
             stream_store: StreamStore::new(),
             working_dir: std::env::current_dir().unwrap_or_default(),
             ralph_cancelled: Arc::new(AtomicBool::new(false)),
@@ -331,8 +415,7 @@ impl ScudBridge {
         Self {
             event_tx,
             command_rx,
-            swarm_handle: None,
-            paused: false,
+            swarm_cancelled: Arc::new(AtomicBool::new(false)),
             stream_store: StreamStore::new(),
             working_dir,
             ralph_cancelled: Arc::new(AtomicBool::new(false)),
@@ -393,17 +476,36 @@ impl ScudBridge {
                     } else {
                         Some(model)
                     };
-                    self.run_swarm(&tag, &harness, round_size, model_override)
+                    // Reset cancellation and spawn as background task
+                    // so the command loop stays responsive
+                    self.swarm_cancelled.store(false, Ordering::SeqCst);
+                    let event_tx = self.event_tx.clone();
+                    let stream_store = self.stream_store.clone();
+                    let working_dir = self.working_dir.clone();
+                    let cancelled = self.swarm_cancelled.clone();
+                    tokio::spawn(async move {
+                        Self::run_swarm_bg(
+                            &tag,
+                            &harness,
+                            round_size,
+                            model_override,
+                            event_tx,
+                            stream_store,
+                            working_dir,
+                            cancelled,
+                        )
                         .await;
+                    });
                 }
                 ScudCommand::PauseSwarm => {
-                    self.pause_swarm().await;
+                    info!("PauseSwarm received (pause not yet supported for background swarm)");
                 }
                 ScudCommand::ResumeSwarm => {
-                    self.resume_swarm().await;
+                    info!("ResumeSwarm received (resume not yet supported for background swarm)");
                 }
                 ScudCommand::StopSwarm => {
-                    self.stop_swarm().await;
+                    info!("StopSwarm received, setting cancellation flag");
+                    self.swarm_cancelled.store(true, Ordering::SeqCst);
                 }
                 ScudCommand::RunTask {
                     task_id,
@@ -430,8 +532,10 @@ impl ScudBridge {
                     task_id,
                     harness,
                     session_id,
+                    terminal_app,
                 } => {
-                    self.attach_session(&task_id, &harness, &session_id).await;
+                    self.attach_session(&task_id, &harness, &session_id, &terminal_app)
+                        .await;
                 }
                 ScudCommand::StartRalph {
                     tag,
@@ -451,6 +555,46 @@ impl ScudBridge {
                     info!("StopRalph received, setting cancellation flag");
                     self.ralph_cancelled.store(true, Ordering::SeqCst);
                 }
+                ScudCommand::StopSession { task_id } => {
+                    self.stop_session(&task_id).await;
+                }
+                ScudCommand::ScanPrdFiles => {
+                    self.scan_prd_files().await;
+                }
+                ScudCommand::RunGenerate {
+                    prd_file,
+                    tag,
+                    num_tasks,
+                    no_expand,
+                    no_check_deps,
+                    append,
+                } => {
+                    self.run_generate(&prd_file, &tag, num_tasks, no_expand, no_check_deps, append)
+                        .await;
+                }
+                ScudCommand::LoadTagSummaries => {
+                    self.load_tag_summaries().await;
+                }
+                ScudCommand::LoadArchives => {
+                    self.load_archives().await;
+                }
+                ScudCommand::SetActiveTag { tag } => {
+                    self.set_active_tag(&tag).await;
+                }
+                ScudCommand::RestoreArchive { filename } => {
+                    self.restore_archive(&filename).await;
+                }
+                ScudCommand::LoadBackpressureConfig => {
+                    self.load_backpressure_config().await;
+                }
+                ScudCommand::SaveBackpressureConfig {
+                    commands,
+                    stop_on_failure,
+                    timeout_secs,
+                } => {
+                    self.save_backpressure_config(commands, stop_on_failure, timeout_secs)
+                        .await;
+                }
             }
         }
 
@@ -461,14 +605,29 @@ impl ScudBridge {
     ///
     /// Uses Storage to load the active Phase, converts tasks to TaskInfo,
     /// and also computes waves so the Waves view shows proper groupings.
+    ///
+    /// When tag is None, loads the active group and also reports the active tag
+    /// back to the GUI via ActiveTagChanged so the GUI state stays in sync.
     async fn load_tasks(&self, tag: Option<String>) {
         debug!("Loading tasks via scud-core (tag: {:?})", tag);
 
         // Run blocking storage operations in a spawn_blocking task
-        // Returns (flat task list, computed waves)
-        let result = tokio::task::spawn_blocking(
-            move || -> Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>), String> {
+        // Returns (flat task list, computed waves, resolved tag name)
+        let working_dir = self.working_dir.clone();
+        #[allow(clippy::type_complexity)]
+        let result: Result<Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String>, _> = tokio::task::spawn_blocking(
+            move || -> Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String> {
                 let storage = Storage::new(None);
+
+                // Resolve the active tag name only on initial load (tag=None)
+                // so the GUI knows which tag is active. When tag is Some,
+                // the GUI already knows - don't re-emit to avoid loops.
+                let resolved_tag = if tag.is_none() {
+                    let cli_storage = CliStorage::new(Some(working_dir));
+                    cli_storage.get_active_group().ok().flatten()
+                } else {
+                    None
+                };
 
                 let phase = if let Some(ref tag) = tag {
                     storage.load_group(tag).map_err(|e| e.to_string())?
@@ -505,13 +664,20 @@ impl ScudBridge {
                     .filter(|wave: &Vec<TaskInfo>| !wave.is_empty())
                     .collect();
 
-                Ok((all_tasks, waves))
+                Ok((all_tasks, waves, resolved_tag))
             },
         )
         .await;
 
         match result {
-            Ok(Ok((task_infos, waves))) => {
+            Ok(Ok((task_infos, waves, resolved_tag))) => {
+                // If we resolved the active tag, notify the GUI so it stays in sync
+                if let Some(tag) = resolved_tag {
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::ActiveTagChanged(tag))
+                        .await;
+                }
                 let _ = self.event_tx.send(ScudEvent::TasksLoaded(task_infos)).await;
                 if !waves.is_empty() {
                     let _ = self.event_tx.send(ScudEvent::WavesComputed(waves)).await;
@@ -711,76 +877,6 @@ impl ScudBridge {
         }
     }
 
-    /// Pause the currently running swarm
-    async fn pause_swarm(&mut self) {
-        if self.paused {
-            info!("Swarm is already paused");
-            return;
-        }
-
-        self.paused = true;
-        info!("Pausing swarm execution");
-
-        // Emit event to notify GUI
-        let _ = self
-            .event_tx
-            .send(ScudEvent::Output("Swarm execution paused".to_string()))
-            .await;
-
-        // If we have a process handle, send SIGSTOP to pause it
-        #[cfg(unix)]
-        if let Some(ref handle) = self.swarm_handle {
-            if let Some(pid) = handle.id() {
-                // Send SIGSTOP to pause the process group
-                unsafe {
-                    libc::kill(-(pid as i32), libc::SIGSTOP);
-                }
-                info!("Sent SIGSTOP to swarm process group {}", pid);
-            }
-        }
-    }
-
-    /// Resume a paused swarm
-    async fn resume_swarm(&mut self) {
-        if !self.paused {
-            info!("Swarm is not paused");
-            return;
-        }
-
-        self.paused = false;
-        info!("Resuming swarm execution");
-
-        // Emit event to notify GUI
-        let _ = self
-            .event_tx
-            .send(ScudEvent::Output("Swarm execution resumed".to_string()))
-            .await;
-
-        // If we have a process handle, send SIGCONT to resume it
-        #[cfg(unix)]
-        if let Some(ref handle) = self.swarm_handle {
-            if let Some(pid) = handle.id() {
-                // Send SIGCONT to resume the process group
-                unsafe {
-                    libc::kill(-(pid as i32), libc::SIGCONT);
-                }
-                info!("Sent SIGCONT to swarm process group {}", pid);
-            }
-        }
-    }
-
-    /// Stop the currently running swarm
-    async fn stop_swarm(&mut self) {
-        self.paused = false;
-        if let Some(ref mut handle) = self.swarm_handle {
-            info!("Stopping swarm process");
-            if let Err(e) = handle.kill().await {
-                warn!("Failed to kill swarm process: {}", e);
-            }
-            self.swarm_handle = None;
-        }
-    }
-
     /// Mark a task as complete using direct library calls
     async fn complete_task(&self, task_id: &str) {
         let task_id = task_id.to_string();
@@ -894,7 +990,7 @@ impl ScudBridge {
         info!("Archiving tag '{}'", tag);
 
         let result = tokio::process::Command::new("scud")
-            .args(["clean", "--tag", &tag])
+            .args(["clean", "--tag", &tag, "--force"])
             .output()
             .await;
 
@@ -904,9 +1000,7 @@ impl ScudBridge {
                     info!("Tag '{}' archived successfully", tag_for_event);
                     let _ = self
                         .event_tx
-                        .send(ScudEvent::TagArchived {
-                            tag: tag_for_event,
-                        })
+                        .send(ScudEvent::TagArchived { tag: tag_for_event })
                         .await;
                     // Reload tags after archiving
                     self.load_available_tags().await;
@@ -935,7 +1029,13 @@ impl ScudBridge {
     /// Attach to a session in interactive terminal mode
     ///
     /// Opens a new terminal window with the harness's resume command.
-    async fn attach_session(&self, task_id: &str, harness_name: &str, session_id: &str) {
+    async fn attach_session(
+        &self,
+        task_id: &str,
+        harness_name: &str,
+        session_id: &str,
+        terminal_app: &str,
+    ) {
         info!(
             "Attaching to session {} for task {} (harness: {})",
             session_id, task_id, harness_name
@@ -944,7 +1044,11 @@ impl ScudBridge {
         // Build the command based on harness type
         let cmd_args: Vec<String> = match harness_name {
             "claude" => {
-                vec!["claude".to_string(), "--resume".to_string(), session_id.to_string()]
+                vec![
+                    "claude".to_string(),
+                    "--resume".to_string(),
+                    session_id.to_string(),
+                ]
             }
             "opencode" => {
                 vec![
@@ -956,7 +1060,11 @@ impl ScudBridge {
                 ]
             }
             "cursor" => {
-                vec!["cursor-agent".to_string(), "--resume".to_string(), session_id.to_string()]
+                vec![
+                    "cursor-agent".to_string(),
+                    "--resume".to_string(),
+                    session_id.to_string(),
+                ]
             }
             _ => {
                 error!("Unknown harness for attach: {}", harness_name);
@@ -971,17 +1079,38 @@ impl ScudBridge {
             }
         };
 
-        // Open in a new terminal using open -a Terminal on macOS
-        // The command is: open -a Terminal -- <binary> <args>...
+        // Open in user's preferred terminal, cd to working directory first
         #[cfg(target_os = "macos")]
         {
-            let script = format!(
-                "tell application \"Terminal\"\n\
-                    activate\n\
-                    do script \"{}\"\n\
-                end tell",
-                cmd_args.join(" ").replace("\"", "\\\"")
+            let working_dir_str = self.working_dir.display().to_string();
+            let shell_cmd = format!(
+                "cd '{}' && {}",
+                working_dir_str.replace("'", "'\\''"),
+                cmd_args.join(" ")
             );
+
+            // Build AppleScript based on terminal app
+            let script = if terminal_app.contains("iTerm") {
+                // iTerm2 uses its own AppleScript dictionary
+                format!(
+                    "tell application \"{}\"\n\
+                        activate\n\
+                        create window with default profile command \"{}\"\n\
+                    end tell",
+                    terminal_app,
+                    shell_cmd.replace("\\", "\\\\").replace("\"", "\\\"")
+                )
+            } else {
+                // Terminal.app and others that support `do script`
+                format!(
+                    "tell application \"{}\"\n\
+                        activate\n\
+                        do script \"{}\"\n\
+                    end tell",
+                    terminal_app,
+                    shell_cmd.replace("\\", "\\\\").replace("\"", "\\\"")
+                )
+            };
 
             let result = tokio::process::Command::new("osascript")
                 .arg("-e")
@@ -1063,16 +1192,64 @@ impl ScudBridge {
         }
     }
 
-    /// Run swarm execution using headless runners for each task
+    /// Stop a specific headless session by killing its process
+    async fn stop_session(&self, task_id: &str) {
+        info!("Stopping session for task {}", task_id);
+
+        if let Some(pid) = self.stream_store.get_pid(task_id) {
+            // Send SIGTERM to gracefully stop the process
+            let result = std::process::Command::new("kill")
+                .arg(pid.to_string())
+                .status();
+
+            match result {
+                Ok(status) if status.success() => {
+                    info!("Sent SIGTERM to PID {} for task {}", pid, task_id);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::TaskCompleted {
+                            task_id: task_id.to_string(),
+                            success: false,
+                        })
+                        .await;
+                }
+                Ok(_) | Err(_) => {
+                    warn!("Failed to kill PID {} for task {}", pid, task_id);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::Error(format!(
+                            "Failed to stop session for task {}",
+                            task_id
+                        )))
+                        .await;
+                }
+            }
+        } else {
+            warn!("No PID found for task {}", task_id);
+            let _ = self
+                .event_tx
+                .send(ScudEvent::Error(format!(
+                    "No running process found for task {}",
+                    task_id
+                )))
+                .await;
+        }
+    }
+
+    /// Run swarm execution as a background task.
     ///
     /// Spawns headless runners per-task so each task gets its own StreamStore
-    /// session visible in the Monitor view.
-    async fn run_swarm(
-        &mut self,
+    /// session visible in the Monitor view. Checks cancellation flag between waves.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_swarm_bg(
         tag: &str,
         harness_name: &str,
         round_size: usize,
         model: Option<String>,
+        event_tx: mpsc::Sender<ScudEvent>,
+        stream_store: StreamStore,
+        working_dir: PathBuf,
+        cancelled: Arc<AtomicBool>,
     ) {
         info!(
             "Starting headless swarm for tag '{}' with harness '{}' (round_size={})",
@@ -1084,8 +1261,7 @@ impl ScudBridge {
             Ok(h) => h,
             Err(e) => {
                 error!("Invalid harness: {}", e);
-                let _ = self
-                    .event_tx
+                let _ = event_tx
                     .send(ScudEvent::Error(format!("Invalid harness: {}", e)))
                     .await;
                 return;
@@ -1133,16 +1309,14 @@ impl ScudBridge {
             Ok(Ok((waves, phase))) => (waves, phase),
             Ok(Err(e)) => {
                 error!("Failed to compute waves: {}", e);
-                let _ = self
-                    .event_tx
+                let _ = event_tx
                     .send(ScudEvent::Error(format!("Failed to compute waves: {}", e)))
                     .await;
                 return;
             }
             Err(e) => {
                 error!("Task spawn error: {}", e);
-                let _ = self
-                    .event_tx
+                let _ = event_tx
                     .send(ScudEvent::Error(format!("Task spawn error: {}", e)))
                     .await;
                 return;
@@ -1150,8 +1324,7 @@ impl ScudBridge {
         };
 
         let total_waves = waves.len();
-        let _ = self
-            .event_tx
+        let _ = event_tx
             .send(ScudEvent::SwarmStarted {
                 tag: tag.to_string(),
                 total_waves,
@@ -1160,10 +1333,15 @@ impl ScudBridge {
 
         let mut all_success = true;
 
-        for (wave_idx, wave_tasks) in waves.into_iter().enumerate() {
+        'waves: for (wave_idx, wave_tasks) in waves.into_iter().enumerate() {
+            // Check cancellation before each wave
+            if cancelled.load(Ordering::SeqCst) {
+                info!("Swarm cancelled before wave {}", wave_idx);
+                break;
+            }
+
             let task_ids: Vec<String> = wave_tasks.iter().map(|t| t.id.clone()).collect();
-            let _ = self
-                .event_tx
+            let _ = event_tx
                 .send(ScudEvent::WaveStarted {
                     wave: wave_idx,
                     tasks: task_ids.clone(),
@@ -1172,6 +1350,12 @@ impl ScudBridge {
 
             // Process tasks in chunks of round_size
             for chunk in wave_tasks.chunks(round_size) {
+                // Check cancellation before each chunk
+                if cancelled.load(Ordering::SeqCst) {
+                    info!("Swarm cancelled during wave {}", wave_idx);
+                    break 'waves;
+                }
+
                 let mut handles = Vec::new();
 
                 for task in chunk {
@@ -1179,9 +1363,9 @@ impl ScudBridge {
                     let task_title = task.title.clone();
                     let task_description = task.description.clone();
                     let harness_copy = harness;
-                    let event_tx = self.event_tx.clone();
-                    let working_dir = self.working_dir.clone();
-                    let stream_store = self.stream_store.clone();
+                    let event_tx = event_tx.clone();
+                    let working_dir = working_dir.clone();
+                    let stream_store = stream_store.clone();
                     let tag_str = tag.to_string();
                     let model_override = model.clone();
 
@@ -1226,14 +1410,12 @@ impl ScudBridge {
                 }
             }
 
-            let _ = self
-                .event_tx
+            let _ = event_tx
                 .send(ScudEvent::WaveCompleted { wave: wave_idx })
                 .await;
         }
 
-        let _ = self
-            .event_tx
+        let _ = event_tx
             .send(ScudEvent::SwarmCompleted {
                 success: all_success,
             })
@@ -1246,12 +1428,7 @@ impl ScudBridge {
     /// Uses the scud-cli headless infrastructure for proper event parsing.
     /// Spawns the appropriate harness (Claude/OpenCode) and streams structured
     /// events (text deltas, tool calls, completion) back to the GUI.
-    async fn run_task(
-        &mut self,
-        task_id: &str,
-        harness_name: &str,
-        model: Option<String>,
-    ) {
+    async fn run_task(&mut self, task_id: &str, harness_name: &str, model: Option<String>) {
         info!(
             "Running task {} in headless mode with harness {}",
             task_id, harness_name
@@ -1536,25 +1713,23 @@ impl ScudBridge {
         };
 
         // Start session
-        let mut session: SessionHandle = match runner
-            .start(task_id, prompt, working_dir, model)
-            .await
-        {
-            Ok(s) => s,
-            Err(e) => {
-                error!(
-                    "Failed to start headless session for task {}: {}",
-                    task_id, e
-                );
-                let _ = event_tx
-                    .send(ScudEvent::TaskCompleted {
-                        task_id: task_id.to_string(),
-                        success: false,
-                    })
-                    .await;
-                return false;
-            }
-        };
+        let mut session: SessionHandle =
+            match runner.start(task_id, prompt, working_dir, model).await {
+                Ok(s) => s,
+                Err(e) => {
+                    error!(
+                        "Failed to start headless session for task {}: {}",
+                        task_id, e
+                    );
+                    let _ = event_tx
+                        .send(ScudEvent::TaskCompleted {
+                            task_id: task_id.to_string(),
+                            success: false,
+                        })
+                        .await;
+                    return false;
+                }
+            };
 
         // Store PID
         if let Some(pid) = session.pid() {
@@ -1645,6 +1820,499 @@ impl ScudBridge {
         task_success
     }
 
+    /// Scan directories for PRD markdown files
+    async fn scan_prd_files(&self) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || -> Vec<PathBuf> {
+            let excluded = [
+                "CLAUDE.md",
+                "AGENTS.md",
+                "README.md",
+                "CHANGELOG.md",
+                "IMPLEMENTATION_PLAN.md",
+            ];
+
+            let mut scan_dirs = vec![
+                working_dir.join(".scud/docs/prd"),
+                working_dir.join("thoughts/shared/prd"),
+                working_dir.join("docs"),
+                working_dir.clone(),
+            ];
+
+            // Load extra paths from .scud/config.toml
+            let config_path = working_dir.join(".scud/config.toml");
+            if let Ok(content) = fs::read_to_string(&config_path) {
+                if let Ok(table) = content.parse::<toml::Table>() {
+                    if let Some(gen) = table.get("generate").and_then(|v| v.as_table()) {
+                        if let Some(paths) = gen.get("prd_paths").and_then(|v| v.as_array()) {
+                            for p in paths {
+                                if let Some(s) = p.as_str() {
+                                    let path = Path::new(s);
+                                    let abs = if path.is_absolute() {
+                                        path.to_path_buf()
+                                    } else {
+                                        working_dir.join(path)
+                                    };
+                                    scan_dirs.push(abs);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut files = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+
+            for dir in &scan_dirs {
+                if !dir.is_dir() {
+                    continue;
+                }
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file()
+                            && path.extension().and_then(|e| e.to_str()) == Some("md")
+                        {
+                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                if excluded.contains(&name) {
+                                    continue;
+                                }
+                            }
+                            if seen.insert(path.clone()) {
+                                files.push(path);
+                            }
+                        }
+                    }
+                }
+            }
+
+            files.sort();
+            files
+        })
+        .await;
+
+        match result {
+            Ok(files) => {
+                let _ = self.event_tx.send(ScudEvent::PrdFilesFound(files)).await;
+            }
+            Err(e) => {
+                error!("Failed to scan PRD files: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to scan PRD files: {}", e)))
+                    .await;
+            }
+        }
+    }
+
+    /// Run generate pipeline via subprocess
+    async fn run_generate(
+        &self,
+        prd_file: &Path,
+        tag: &str,
+        num_tasks: u32,
+        no_expand: bool,
+        no_check_deps: bool,
+        append: bool,
+    ) {
+        let mut args = vec![
+            "generate".to_string(),
+            prd_file.display().to_string(),
+            "--tag".to_string(),
+            tag.to_string(),
+            "-n".to_string(),
+            num_tasks.to_string(),
+        ];
+        if no_expand {
+            args.push("--no-expand".to_string());
+        }
+        if no_check_deps {
+            args.push("--no-check-deps".to_string());
+        }
+        if append {
+            args.push("--append".to_string());
+        }
+
+        let tag_str = tag.to_string();
+        info!("Running generate: scud {}", args.join(" "));
+
+        let _ = self
+            .event_tx
+            .send(ScudEvent::GenerateStatus("Starting generate pipeline...".to_string()))
+            .await;
+
+        let result = tokio::process::Command::new("scud")
+            .args(&args)
+            .current_dir(&self.working_dir)
+            .output()
+            .await;
+
+        match result {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let combined = format!("{}{}", stdout, stderr);
+
+                if !combined.is_empty() {
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::GenerateStatus(combined))
+                        .await;
+                }
+
+                if output.status.success() {
+                    info!("Generate completed for tag '{}'", tag_str);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::GenerateCompleted(Ok(())))
+                        .await;
+                    // Reload tags after generating
+                    self.load_available_tags().await;
+                    self.load_tag_summaries().await;
+                } else {
+                    let err = format!(
+                        "Generate failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    error!("{}", err);
+                    let _ = self
+                        .event_tx
+                        .send(ScudEvent::GenerateCompleted(Err(err)))
+                        .await;
+                }
+            }
+            Err(e) => {
+                let err = format!("Failed to run scud generate: {}", e);
+                error!("{}", err);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::GenerateCompleted(Err(err)))
+                    .await;
+            }
+        }
+    }
+
+    /// Load tag summaries for the tag explorer
+    async fn load_tag_summaries(&self) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(
+            move || -> Result<Vec<crate::state::TagSummary>, String> {
+                let cli_storage = CliStorage::new(Some(working_dir));
+                let phases = cli_storage.load_tasks().map_err(|e| e.to_string())?;
+                let active_tag = cli_storage.get_active_group().ok().flatten();
+
+                let mut summaries: Vec<crate::state::TagSummary> = phases
+                    .iter()
+                    .map(|(name, phase)| {
+                        let mut done = 0;
+                        let mut pending = 0;
+                        let mut in_progress = 0;
+                        let mut failed = 0;
+
+                        for task in &phase.tasks {
+                            let status_str = task.status.as_str();
+                            match status_str {
+                                "done" => done += 1,
+                                "pending" => pending += 1,
+                                "in-progress" => in_progress += 1,
+                                "failed" => failed += 1,
+                                "blocked" => pending += 1,
+                                _ => pending += 1,
+                            }
+                        }
+
+                        crate::state::TagSummary {
+                            name: name.clone(),
+                            total_tasks: phase.tasks.len(),
+                            done_count: done,
+                            pending_count: pending,
+                            in_progress_count: in_progress,
+                            failed_count: failed,
+                            is_active: active_tag.as_deref() == Some(name.as_str()),
+                        }
+                    })
+                    .collect();
+
+                summaries.sort_by(|a, b| a.name.cmp(&b.name));
+                Ok(summaries)
+            },
+        )
+        .await;
+
+        match result {
+            Ok(Ok(summaries)) => {
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::TagSummariesLoaded(summaries))
+                    .await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to load tag summaries: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!(
+                        "Failed to load tag summaries: {}",
+                        e
+                    )))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+            }
+        }
+    }
+
+    /// Load archives for the tag explorer
+    async fn load_archives(&self) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(
+            move || -> Result<Vec<crate::state::ArchiveEntry>, String> {
+                let cli_storage = CliStorage::new(Some(working_dir));
+                let archives = cli_storage.list_archives().map_err(|e| e.to_string())?;
+
+                Ok(archives
+                    .into_iter()
+                    .map(|a| crate::state::ArchiveEntry {
+                        filename: a.filename,
+                        date: a.date,
+                        tag: a.tag,
+                        task_count: a.task_count,
+                    })
+                    .collect())
+            },
+        )
+        .await;
+
+        match result {
+            Ok(Ok(entries)) => {
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ArchivesLoaded(entries))
+                    .await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to load archives: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!("Failed to load archives: {}", e)))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+            }
+        }
+    }
+
+    /// Set the active tag
+    async fn set_active_tag(&self, tag: &str) {
+        let tag = tag.to_string();
+        let tag_for_event = tag.clone();
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let cli_storage = CliStorage::new(Some(working_dir));
+            cli_storage
+                .set_active_group(&tag)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {
+                info!("Active tag set to '{}'", tag_for_event);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ActiveTagChanged(tag_for_event))
+                    .await;
+                self.load_tag_summaries().await;
+                self.load_available_tags().await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to set active tag: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!(
+                        "Failed to set active tag: {}",
+                        e
+                    )))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+            }
+        }
+    }
+
+    /// Restore an archive
+    async fn restore_archive(&self, filename: &str) {
+        let filename = filename.to_string();
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(
+            move || -> Result<Vec<String>, String> {
+                let cli_storage = CliStorage::new(Some(working_dir));
+                cli_storage
+                    .restore_archive(&filename, false)
+                    .map_err(|e| e.to_string())
+            },
+        )
+        .await;
+
+        match result {
+            Ok(Ok(tags)) => {
+                info!("Archive restored: {:?}", tags);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ArchiveRestored(Ok(tags)))
+                    .await;
+                self.load_tag_summaries().await;
+                self.load_archives().await;
+                self.load_available_tags().await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to restore archive: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ArchiveRestored(Err(e)))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ArchiveRestored(Err(e.to_string())))
+                    .await;
+            }
+        }
+    }
+
+    /// Load backpressure configuration from .scud/config.toml or auto-detect
+    async fn load_backpressure_config(&self) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            // Check if config.toml has explicit backpressure section
+            let config_path = working_dir.join(".scud").join("config.toml");
+            let mut is_auto_detected = true;
+
+            if config_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&config_path) {
+                    if let Ok(config) = content.parse::<toml::Value>() {
+                        if let Some(swarm) = config.get("swarm") {
+                            if swarm.get("backpressure").is_some() {
+                                is_auto_detected = false;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let bp_config =
+                scud::backpressure::BackpressureConfig::load(Some(&working_dir)).unwrap_or_default();
+
+            (bp_config, is_auto_detected)
+        })
+        .await;
+
+        match result {
+            Ok((config, is_auto_detected)) => {
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::BackpressureConfigLoaded {
+                        commands: config.commands,
+                        stop_on_failure: config.stop_on_failure,
+                        timeout_secs: config.timeout_secs,
+                        is_auto_detected,
+                    })
+                    .await;
+            }
+            Err(e) => {
+                error!("Failed to load backpressure config: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::Error(format!(
+                        "Failed to load backpressure config: {}",
+                        e
+                    )))
+                    .await;
+            }
+        }
+    }
+
+    /// Save backpressure configuration to .scud/config.toml
+    async fn save_backpressure_config(
+        &self,
+        commands: Vec<String>,
+        stop_on_failure: bool,
+        timeout_secs: u64,
+    ) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let config_path = working_dir.join(".scud").join("config.toml");
+
+            // Ensure .scud directory exists
+            if let Some(parent) = config_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+
+            // Read existing config or start fresh
+            let mut doc = if config_path.exists() {
+                let content = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+                content
+                    .parse::<toml_edit::DocumentMut>()
+                    .map_err(|e| e.to_string())?
+            } else {
+                toml_edit::DocumentMut::new()
+            };
+
+            // Ensure [swarm] table exists
+            if !doc.contains_key("swarm") {
+                doc["swarm"] = toml_edit::Item::Table(toml_edit::Table::new());
+            }
+            let swarm = doc["swarm"].as_table_mut().ok_or("swarm is not a table")?;
+
+            // Set [swarm.backpressure] section
+            let mut bp_table = toml_edit::Table::new();
+            let mut cmd_array = toml_edit::Array::new();
+            for cmd in &commands {
+                cmd_array.push(cmd.as_str());
+            }
+            bp_table["commands"] = toml_edit::value(cmd_array);
+            bp_table["stop_on_failure"] = toml_edit::value(stop_on_failure);
+            bp_table["timeout_secs"] = toml_edit::value(timeout_secs as i64);
+
+            swarm["backpressure"] = toml_edit::Item::Table(bp_table);
+
+            std::fs::write(&config_path, doc.to_string()).map_err(|e| e.to_string())?;
+
+            Ok(())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {
+                info!("Backpressure config saved");
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::BackpressureConfigSaved(Ok(())))
+                    .await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to save backpressure config: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::BackpressureConfigSaved(Err(e)))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::BackpressureConfigSaved(Err(e.to_string())))
+                    .await;
+            }
+        }
+    }
+
     /// Run Ralph mode: sequential task execution with backpressure validation and repair
     async fn run_ralph(
         &mut self,
@@ -1686,11 +2354,17 @@ impl ScudBridge {
                     None
                 }
                 Ok(Err(e)) => {
-                    warn!("Failed to load backpressure config: {}, validation disabled", e);
+                    warn!(
+                        "Failed to load backpressure config: {}, validation disabled",
+                        e
+                    );
                     None
                 }
                 Err(e) => {
-                    warn!("Spawn error loading backpressure config: {}, validation disabled", e);
+                    warn!(
+                        "Spawn error loading backpressure config: {}, validation disabled",
+                        e
+                    );
                     None
                 }
             }
@@ -1918,10 +2592,13 @@ impl ScudBridge {
                             .await;
 
                         // Append validation output to session
-                        let _ = self.event_tx.send(ScudEvent::TaskOutput {
-                            task_id: task_id.clone(),
-                            text: format!("\n--- VALIDATION ---\n{}\n", output),
-                        }).await;
+                        let _ = self
+                            .event_tx
+                            .send(ScudEvent::TaskOutput {
+                                task_id: task_id.clone(),
+                                text: format!("\n--- VALIDATION ---\n{}\n", output),
+                            })
+                            .await;
 
                         // Repair loop
                         if !result.all_passed && ralph_config.repair {
@@ -1939,10 +2616,13 @@ impl ScudBridge {
                                     })
                                     .await;
 
-                                let _ = self.event_tx.send(ScudEvent::TaskOutput {
-                                    task_id: task_id.clone(),
-                                    text: format!("\n--- REPAIR ATTEMPT {} ---\n", attempt),
-                                }).await;
+                                let _ = self
+                                    .event_tx
+                                    .send(ScudEvent::TaskOutput {
+                                        task_id: task_id.clone(),
+                                        text: format!("\n--- REPAIR ATTEMPT {} ---\n", attempt),
+                                    })
+                                    .await;
 
                                 // Build repair prompt from failures
                                 let failure_details: Vec<String> = repair_results
@@ -2007,10 +2687,13 @@ impl ScudBridge {
                                                 output: out.clone(),
                                             })
                                             .await;
-                                        let _ = self.event_tx.send(ScudEvent::TaskOutput {
-                                            task_id: task_id.clone(),
-                                            text: format!("\n--- VALIDATION ---\n{}\n", out),
-                                        }).await;
+                                        let _ = self
+                                            .event_tx
+                                            .send(ScudEvent::TaskOutput {
+                                                task_id: task_id.clone(),
+                                                text: format!("\n--- VALIDATION ---\n{}\n", out),
+                                            })
+                                            .await;
 
                                         if r.all_passed {
                                             validation_passed = true;
