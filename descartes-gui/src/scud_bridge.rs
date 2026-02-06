@@ -1845,6 +1845,7 @@ impl ScudBridge {
                 working_dir.join(".scud/docs/prd"),
                 working_dir.join("thoughts/shared/prd"),
                 working_dir.join("docs"),
+                working_dir.join("prds"),
                 working_dir.clone(),
             ];
 
