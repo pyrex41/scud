@@ -2,8 +2,10 @@
 //!
 //! Browse PRD markdown files, preview them, configure and run `scud generate`.
 
-use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input, Column};
-use iced::{Alignment, Element, Length};
+use iced::widget::{
+    button, checkbox, column, container, row, scrollable, text, text_input, Column,
+};
+use iced::{Alignment, Background, Border, Element, Length};
 
 use crate::state::GenerateState;
 use crate::theme;
@@ -128,10 +130,69 @@ fn build_preview_panel(state: &GenerateState) -> Element<'_, Message> {
 
     let config_panel = build_config_panel(state);
 
-    column![preview, config_panel]
-        .spacing(theme::SPACING_MD)
-        .padding(theme::SPACING_MD)
-        .into()
+    // Streaming output panel (shown when generating or after completion)
+    if !state.generate_output_lines.is_empty() {
+        let output_panel = build_output_panel(state);
+        column![preview, config_panel, output_panel]
+            .spacing(theme::SPACING_MD)
+            .padding(theme::SPACING_MD)
+            .into()
+    } else {
+        column![preview, config_panel]
+            .spacing(theme::SPACING_MD)
+            .padding(theme::SPACING_MD)
+            .into()
+    }
+}
+
+/// Build the streaming output panel showing generate progress
+fn build_output_panel(state: &GenerateState) -> Element<'_, Message> {
+    let mut output_column = Column::new().spacing(2);
+
+    for line in &state.generate_output_lines {
+        output_column = output_column.push(
+            text(line)
+                .size(theme::font_size::SMALL)
+                .style(theme::secondary_text()),
+        );
+    }
+
+    let header_row = row![
+        text("Output")
+            .size(theme::font_size::BODY)
+            .style(theme::heading_text()),
+        text(format!("{} lines", state.generate_output_lines.len()))
+            .size(theme::font_size::CAPTION)
+            .style(theme::muted_text()),
+    ]
+    .spacing(theme::SPACING_SM)
+    .align_y(Alignment::Center);
+
+    container(
+        column![
+            header_row,
+            container(
+                scrollable(output_column)
+                    .height(Length::Fixed(200.0))
+            )
+            .padding(theme::SPACING_SM)
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(Background::Color(theme::surface::BASE)),
+                border: Border {
+                    color: theme::border::SUBTLE,
+                    width: 1.0,
+                    radius: theme::RADIUS_SMALL.into(),
+                },
+                ..Default::default()
+            }),
+        ]
+        .spacing(theme::SPACING_SM),
+    )
+    .padding(theme::SPACING_MD)
+    .width(Length::Fill)
+    .style(theme::panel_container())
+    .into()
 }
 
 /// Build the generate config panel at the bottom of the preview

@@ -23,8 +23,8 @@ mod views;
 use scud_bridge::{ScudBridge, ScudCommand, ScudEvent};
 use state::{
     AgentConfig, AgentStatus, AppState, ArchiveEntry, BackpressureState, ExecutionMode,
-    HeadlessSessionInfo, HeadlessSessionStatus, LaunchConfig, RalphPhase, SwarmDefaults,
-    SwarmProgress, TagSummary, TaskInfo,
+    HeadlessSessionInfo, HeadlessSessionStatus, LaunchConfig, LlmConfigState, RalphPhase,
+    SwarmDefaults, SwarmProgress, TagSummary, TaskInfo,
 };
 use views::ViewMode;
 
@@ -247,6 +247,34 @@ pub enum Message {
     BackpressureConfigSaved(Result<(), String>),
     DetectBackpressureCommands,
 
+    // Project initialization
+    InitProject,
+    ProjectInitialized(Result<(), String>),
+
+    // LLM config
+    LoadLlmConfig,
+    LlmConfigLoaded {
+        provider: String,
+        model: String,
+        smart_provider: String,
+        smart_model: String,
+        fast_provider: String,
+        fast_model: String,
+        max_tokens: String,
+    },
+    SetLlmProvider(String),
+    SetLlmModel(String),
+    SetLlmSmartProvider(String),
+    SetLlmSmartModel(String),
+    SetLlmFastProvider(String),
+    SetLlmFastModel(String),
+    SetLlmMaxTokens(String),
+    SaveLlmConfig,
+    LlmConfigSaved(Result<(), String>),
+
+    // Streaming generate output
+    GenerateOutputLine(String),
+
     Tick,
 }
 
@@ -275,6 +303,7 @@ impl DescartesGui {
                 let _ = init_tx.send(ScudCommand::LoadTasks { tag: None }).await;
                 let _ = init_tx.send(ScudCommand::LoadAvailableTags).await;
                 let _ = init_tx.send(ScudCommand::LoadAvailableAgents).await;
+                let _ = init_tx.send(ScudCommand::LoadLlmConfig).await;
             },
             |_| Message::Tick,
         );
@@ -317,10 +346,17 @@ impl DescartesGui {
                     ViewMode::Generate => Task::done(Message::ScanPrdDirectory),
                     ViewMode::Tags => Task::done(Message::LoadTagExplorer),
                     ViewMode::Settings => {
+                        let mut tasks = Vec::new();
                         if !self.state.backpressure.loaded {
-                            Task::done(Message::LoadBackpressureConfig)
-                        } else {
+                            tasks.push(Task::done(Message::LoadBackpressureConfig));
+                        }
+                        if !self.state.llm_config.loaded {
+                            tasks.push(Task::done(Message::LoadLlmConfig));
+                        }
+                        if tasks.is_empty() {
                             Task::none()
+                        } else {
+                            Task::batch(tasks)
                         }
                     }
                     _ => Task::none(),
@@ -911,6 +947,37 @@ impl DescartesGui {
                     ScudEvent::BackpressureConfigSaved(result) => {
                         return Task::done(Message::BackpressureConfigSaved(result));
                     }
+                    ScudEvent::GenerateOutputLine(line) => {
+                        return Task::done(Message::GenerateOutputLine(line));
+                    }
+                    ScudEvent::ProjectNotInitialized => {
+                        self.state.is_initialized = false;
+                    }
+                    ScudEvent::ProjectInitialized(result) => {
+                        return Task::done(Message::ProjectInitialized(result));
+                    }
+                    ScudEvent::LlmConfigLoaded {
+                        provider,
+                        model,
+                        smart_provider,
+                        smart_model,
+                        fast_provider,
+                        fast_model,
+                        max_tokens,
+                    } => {
+                        return Task::done(Message::LlmConfigLoaded {
+                            provider,
+                            model,
+                            smart_provider,
+                            smart_model,
+                            fast_provider,
+                            fast_model,
+                            max_tokens,
+                        });
+                    }
+                    ScudEvent::LlmConfigSaved(result) => {
+                        return Task::done(Message::LlmConfigSaved(result));
+                    }
                     // Ralph events
                     ScudEvent::RalphStarted {
                         tag,
@@ -1414,6 +1481,7 @@ impl DescartesGui {
                     let append = self.state.generate_state.append;
                     self.state.generate_state.generating = true;
                     self.state.generate_state.generate_status = None;
+                    self.state.generate_state.generate_output_lines.clear();
                     return Task::perform(
                         async move {
                             let _ = tx
@@ -1667,6 +1735,178 @@ impl DescartesGui {
                 Task::done(Message::LoadBackpressureConfig)
             }
 
+            // Project initialization
+            Message::InitProject => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::InitProject).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::ProjectInitialized(result) => {
+                match result {
+                    Ok(()) => {
+                        self.state.is_initialized = true;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to initialize project: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            // LLM config handlers
+            Message::LoadLlmConfig => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx.send(ScudCommand::LoadLlmConfig).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::LlmConfigLoaded {
+                provider,
+                model,
+                smart_provider,
+                smart_model,
+                fast_provider,
+                fast_model,
+                max_tokens,
+            } => {
+                self.state.llm_config = LlmConfigState {
+                    provider,
+                    model,
+                    smart_provider,
+                    smart_model,
+                    fast_provider,
+                    fast_model,
+                    max_tokens_input: max_tokens,
+                    loaded: true,
+                    dirty: false,
+                    status: None,
+                };
+                Task::none()
+            }
+
+            Message::SetLlmProvider(provider) => {
+                let default_model =
+                    scud::config::Config::default_model_for_provider(&provider).to_string();
+                self.state.llm_config.provider = provider;
+                self.state.llm_config.model = default_model;
+                self.state.llm_config.dirty = true;
+                self.state.llm_config.status = None;
+                Task::none()
+            }
+
+            Message::SetLlmModel(model) => {
+                self.state.llm_config.model = model;
+                self.state.llm_config.dirty = true;
+                self.state.llm_config.status = None;
+                Task::none()
+            }
+
+            Message::SetLlmSmartProvider(provider) => {
+                let default_model =
+                    scud::config::Config::default_model_for_provider(&provider).to_string();
+                self.state.llm_config.smart_provider = provider;
+                self.state.llm_config.smart_model = default_model;
+                self.state.llm_config.dirty = true;
+                self.state.llm_config.status = None;
+                Task::none()
+            }
+
+            Message::SetLlmSmartModel(model) => {
+                self.state.llm_config.smart_model = model;
+                self.state.llm_config.dirty = true;
+                self.state.llm_config.status = None;
+                Task::none()
+            }
+
+            Message::SetLlmFastProvider(provider) => {
+                let default_model =
+                    scud::config::Config::default_model_for_provider(&provider).to_string();
+                self.state.llm_config.fast_provider = provider;
+                self.state.llm_config.fast_model = default_model;
+                self.state.llm_config.dirty = true;
+                self.state.llm_config.status = None;
+                Task::none()
+            }
+
+            Message::SetLlmFastModel(model) => {
+                self.state.llm_config.fast_model = model;
+                self.state.llm_config.dirty = true;
+                self.state.llm_config.status = None;
+                Task::none()
+            }
+
+            Message::SetLlmMaxTokens(input) => {
+                self.state.llm_config.max_tokens_input = input;
+                self.state.llm_config.dirty = true;
+                self.state.llm_config.status = None;
+                Task::none()
+            }
+
+            Message::SaveLlmConfig => {
+                if let Some(ref tx) = self.scud_command_tx {
+                    let tx = tx.clone();
+                    let llm = &self.state.llm_config;
+                    let provider = llm.provider.clone();
+                    let model = llm.model.clone();
+                    let smart_provider = llm.smart_provider.clone();
+                    let smart_model = llm.smart_model.clone();
+                    let fast_provider = llm.fast_provider.clone();
+                    let fast_model = llm.fast_model.clone();
+                    let max_tokens = llm.max_tokens_input.clone();
+                    return Task::perform(
+                        async move {
+                            let _ = tx
+                                .send(ScudCommand::SaveLlmConfig {
+                                    provider,
+                                    model,
+                                    smart_provider,
+                                    smart_model,
+                                    fast_provider,
+                                    fast_model,
+                                    max_tokens,
+                                })
+                                .await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
+                Task::none()
+            }
+
+            Message::LlmConfigSaved(result) => {
+                match result {
+                    Ok(()) => {
+                        self.state.llm_config.dirty = false;
+                        self.state.llm_config.status = Some("Saved".to_string());
+                    }
+                    Err(e) => {
+                        self.state.llm_config.status = Some(format!("Error: {}", e));
+                    }
+                }
+                Task::none()
+            }
+
+            // Streaming generate output
+            Message::GenerateOutputLine(line) => {
+                self.state.generate_state.generate_output_lines.push(line);
+                Task::none()
+            }
+
             Message::Tick => {
                 // Periodic refresh: reload tasks and tags from storage
                 if let Some(ref tx) = self.scud_command_tx {
@@ -1711,6 +1951,7 @@ impl DescartesGui {
                     &self.state.available_harnesses,
                     &self.state.available_agents,
                     &self.state.available_models,
+                    self.state.is_initialized,
                 ),
                 ViewMode::Generate => views::generate::view(
                     &self.state.generate_state,
@@ -1740,6 +1981,7 @@ impl DescartesGui {
                         &self.state.settings,
                         &self.state.working_directory,
                         &self.state.backpressure,
+                        &self.state.llm_config,
                     )
                 }
             };
@@ -1760,6 +2002,7 @@ impl DescartesGui {
                     &self.state.available_harnesses,
                     &self.state.available_agents,
                     &self.state.available_models,
+                    self.state.is_initialized,
                 ),
                 ViewMode::Generate => views::generate::view(
                     &self.state.generate_state,
@@ -1789,6 +2032,7 @@ impl DescartesGui {
                         &self.state.settings,
                         &self.state.working_directory,
                         &self.state.backpressure,
+                        &self.state.llm_config,
                     )
                 }
             };

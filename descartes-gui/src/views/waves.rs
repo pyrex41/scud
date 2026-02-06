@@ -23,7 +23,13 @@ pub fn view<'a>(
     available_harnesses: &'a [String],
     available_agents: &'a [String],
     available_models: &'a HashMap<String, Vec<String>>,
+    is_initialized: bool,
 ) -> Element<'a, Message> {
+    // Show init banner if project is not initialized
+    if !is_initialized {
+        return build_init_banner();
+    }
+
     let mut waves_column = Column::new().spacing(theme::SPACING_LG);
 
     if waves.is_empty() {
@@ -508,6 +514,36 @@ fn with_selected_option(options: &[String], selected: &str) -> Vec<String> {
         values.insert(0, selected.to_string());
     }
     values
+}
+
+/// Build initialization banner for uninitialized projects
+fn build_init_banner() -> Element<'static, Message> {
+    let heading = text("Project not initialized")
+        .size(theme::font_size::HEADING)
+        .style(theme::heading_text());
+
+    let description = text(
+        "This directory doesn't have a .scud/ configuration. Initialize to get started.",
+    )
+    .size(theme::font_size::BODY)
+    .style(theme::secondary_text());
+
+    let init_button = button(
+        text("Initialize Project").size(theme::font_size::BODY),
+    )
+    .on_press(Message::InitProject)
+    .style(theme::primary_button());
+
+    container(
+        column![heading, description, init_button]
+            .spacing(theme::SPACING_LG)
+            .align_x(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .into()
 }
 
 fn agent_picker_options(

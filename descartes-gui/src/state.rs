@@ -254,6 +254,8 @@ pub struct GenerateState {
     pub no_expand: bool,
     pub no_check_deps: bool,
     pub append: bool,
+    /// Streaming output lines from generate subprocess
+    pub generate_output_lines: Vec<String>,
 }
 
 impl Default for GenerateState {
@@ -270,6 +272,7 @@ impl Default for GenerateState {
             no_expand: false,
             no_check_deps: false,
             append: false,
+            generate_output_lines: Vec::new(),
         }
     }
 }
@@ -300,6 +303,38 @@ pub struct ArchiveEntry {
 pub struct TagExplorerState {
     pub tags: Vec<TagSummary>,
     pub archives: Vec<ArchiveEntry>,
+}
+
+/// State for LLM configuration in settings
+#[derive(Debug, Clone)]
+pub struct LlmConfigState {
+    pub provider: String,
+    pub model: String,
+    pub smart_provider: String,
+    pub smart_model: String,
+    pub fast_provider: String,
+    pub fast_model: String,
+    pub max_tokens_input: String,
+    pub loaded: bool,
+    pub dirty: bool,
+    pub status: Option<String>,
+}
+
+impl Default for LlmConfigState {
+    fn default() -> Self {
+        Self {
+            provider: String::new(),
+            model: String::new(),
+            smart_provider: String::new(),
+            smart_model: String::new(),
+            fast_provider: String::new(),
+            fast_model: String::new(),
+            max_tokens_input: String::new(),
+            loaded: false,
+            dirty: false,
+            status: None,
+        }
+    }
 }
 
 /// State for backpressure configuration in settings
@@ -389,6 +424,10 @@ pub struct AppState {
     pub tag_explorer: TagExplorerState,
     /// Backpressure configuration state
     pub backpressure: BackpressureState,
+    /// LLM configuration state
+    pub llm_config: LlmConfigState,
+    /// Whether the project has been initialized (has .scud/ directory)
+    pub is_initialized: bool,
 }
 
 impl Default for AppState {
@@ -437,6 +476,8 @@ impl Default for AppState {
             generate_state: GenerateState::default(),
             tag_explorer: TagExplorerState::default(),
             backpressure: BackpressureState::default(),
+            llm_config: LlmConfigState::default(),
+            is_initialized: true,
         }
     }
 }

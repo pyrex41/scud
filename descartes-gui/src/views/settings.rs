@@ -6,18 +6,30 @@ use iced::widget::{button, column, container, pick_list, row, scrollable, text, 
 use iced::{Alignment, Background, Border, Element, Length};
 use std::path::Path;
 
-use crate::state::{AppSettings, BackpressureState};
+use crate::state::{AppSettings, BackpressureState, LlmConfigState};
 use crate::theme;
 use crate::Message;
 
 /// Available terminal applications on macOS
 const TERMINAL_APPS: &[&str] = &["Terminal", "iTerm", "Warp", "Alacritty", "Kitty"];
 
+/// Available LLM providers
+const LLM_PROVIDERS: &[&str] = &[
+    "xai",
+    "anthropic",
+    "openai",
+    "openrouter",
+    "claude-cli",
+    "codex",
+    "cursor",
+];
+
 /// Render the settings view
 pub fn view<'a>(
     settings: &AppSettings,
     working_directory: &Path,
     backpressure: &'a BackpressureState,
+    llm_config: &'a LlmConfigState,
 ) -> Element<'a, Message> {
     let label_width = Length::Fixed(160.0);
 
@@ -114,6 +126,9 @@ pub fn view<'a>(
     ]
     .spacing(theme::SPACING_MD);
 
+    // LLM Configuration section
+    let llm_section = build_llm_section(llm_config, label_width);
+
     // Backpressure section
     let backpressure_section = build_backpressure_section(backpressure, label_width);
 
@@ -123,6 +138,8 @@ pub fn view<'a>(
         recent_section,
         container(row![]).height(Length::Fixed(20.0)), // Spacer
         terminal_section,
+        container(row![]).height(Length::Fixed(20.0)), // Spacer
+        llm_section,
         container(row![]).height(Length::Fixed(20.0)), // Spacer
         backpressure_section,
     ]
@@ -135,6 +152,151 @@ pub fn view<'a>(
     )
     .height(Length::Fill)
     .into()
+}
+
+/// Build a provider/model row pair for LLM config
+fn llm_provider_model_row<'a>(
+    label: &'a str,
+    provider: &str,
+    model: &str,
+    on_provider: impl Fn(String) -> Message + 'a,
+    on_model: impl Fn(String) -> Message + 'a,
+    label_width: Length,
+) -> Element<'a, Message> {
+    let provider_options: Vec<String> = LLM_PROVIDERS.iter().map(|s| s.to_string()).collect();
+    let provider_picker = pick_list(
+        provider_options,
+        Some(provider.to_string()),
+        on_provider,
+    )
+    .width(Length::Fixed(140.0));
+
+    let model_options: Vec<String> = scud::config::Config::suggested_models_for_provider(provider)
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+    // Ensure current model is in the list
+    let model_options = {
+        let mut opts = model_options;
+        if !model.is_empty() && !opts.iter().any(|m| m == model) {
+            opts.insert(0, model.to_string());
+        }
+        opts
+    };
+    let model_picker = pick_list(
+        model_options,
+        Some(model.to_string()),
+        on_model,
+    )
+    .width(Length::Fixed(220.0));
+
+    row![
+        text(label)
+            .width(label_width)
+            .style(theme::secondary_text()),
+        provider_picker,
+        text("Model")
+            .width(Length::Fixed(50.0))
+            .style(theme::secondary_text()),
+        model_picker,
+    ]
+    .spacing(theme::SPACING_MD)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// Build the LLM configuration section
+fn build_llm_section(
+    state: &LlmConfigState,
+    label_width: Length,
+) -> Element<'_, Message> {
+    let mut section = Column::new().spacing(theme::SPACING_MD);
+
+    section = section.push(
+        text("LLM Configuration")
+            .size(theme::font_size::HEADING)
+            .style(theme::heading_text()),
+    );
+
+    if !state.loaded {
+        section = section.push(
+            text("Loading...")
+                .size(theme::font_size::BODY)
+                .style(theme::muted_text()),
+        );
+        return section.into();
+    }
+
+    // Default provider/model
+    section = section.push(llm_provider_model_row(
+        "Provider",
+        &state.provider,
+        &state.model,
+        Message::SetLlmProvider,
+        Message::SetLlmModel,
+        label_width,
+    ));
+
+    // Smart provider/model
+    section = section.push(llm_provider_model_row(
+        "Smart",
+        &state.smart_provider,
+        &state.smart_model,
+        Message::SetLlmSmartProvider,
+        Message::SetLlmSmartModel,
+        label_width,
+    ));
+
+    // Fast provider/model
+    section = section.push(llm_provider_model_row(
+        "Fast",
+        &state.fast_provider,
+        &state.fast_model,
+        Message::SetLlmFastProvider,
+        Message::SetLlmFastModel,
+        label_width,
+    ));
+
+    // Max tokens
+    let tokens_row = row![
+        text("Max tokens")
+            .width(label_width)
+            .style(theme::secondary_text()),
+        text_input("16000", &state.max_tokens_input)
+            .on_input(Message::SetLlmMaxTokens)
+            .width(Length::Fixed(100.0)),
+    ]
+    .spacing(theme::SPACING_MD)
+    .align_y(Alignment::Center);
+
+    section = section.push(tokens_row);
+
+    // Save button + status
+    let mut action_row = row![].spacing(theme::SPACING_SM).align_y(Alignment::Center);
+
+    if state.dirty {
+        action_row = action_row.push(
+            button("Save to config.toml")
+                .on_press(Message::SaveLlmConfig)
+                .style(theme::primary_button()),
+        );
+    } else {
+        action_row = action_row.push(
+            button("Save to config.toml").style(theme::ghost_button()),
+        );
+    }
+
+    if let Some(ref status) = state.status {
+        action_row = action_row.push(
+            text(status)
+                .size(theme::font_size::SMALL)
+                .style(theme::secondary_text()),
+        );
+    }
+
+    section = section.push(action_row);
+
+    section.into()
 }
 
 /// Build the backpressure configuration section

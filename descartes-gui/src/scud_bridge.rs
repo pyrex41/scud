@@ -133,6 +133,29 @@ pub enum ScudEvent {
     /// Backpressure config saved
     BackpressureConfigSaved(Result<(), String>),
 
+    /// A single line of generate output (streaming)
+    GenerateOutputLine(String),
+
+    /// Project is not initialized (no .scud/ directory)
+    ProjectNotInitialized,
+
+    /// Project was initialized successfully
+    ProjectInitialized(Result<(), String>),
+
+    /// LLM config loaded from .scud/config.toml
+    LlmConfigLoaded {
+        provider: String,
+        model: String,
+        smart_provider: String,
+        smart_model: String,
+        fast_provider: String,
+        fast_model: String,
+        max_tokens: String,
+    },
+
+    /// LLM config saved
+    LlmConfigSaved(Result<(), String>),
+
     // Ralph mode events
     /// Ralph loop started
     RalphStarted { tag: String, max_iterations: usize },
@@ -278,6 +301,23 @@ pub enum ScudCommand {
         commands: Vec<String>,
         stop_on_failure: bool,
         timeout_secs: u64,
+    },
+
+    /// Initialize the project (create .scud/ directory)
+    InitProject,
+
+    /// Load LLM configuration from .scud/config.toml
+    LoadLlmConfig,
+
+    /// Save LLM configuration to .scud/config.toml
+    SaveLlmConfig {
+        provider: String,
+        model: String,
+        smart_provider: String,
+        smart_model: String,
+        fast_provider: String,
+        fast_model: String,
+        max_tokens: String,
     },
 }
 
@@ -595,6 +635,32 @@ impl ScudBridge {
                     self.save_backpressure_config(commands, stop_on_failure, timeout_secs)
                         .await;
                 }
+                ScudCommand::InitProject => {
+                    self.init_project().await;
+                }
+                ScudCommand::LoadLlmConfig => {
+                    self.load_llm_config().await;
+                }
+                ScudCommand::SaveLlmConfig {
+                    provider,
+                    model,
+                    smart_provider,
+                    smart_model,
+                    fast_provider,
+                    fast_model,
+                    max_tokens,
+                } => {
+                    self.save_llm_config(
+                        provider,
+                        model,
+                        smart_provider,
+                        smart_model,
+                        fast_provider,
+                        fast_model,
+                        max_tokens,
+                    )
+                    .await;
+                }
             }
         }
 
@@ -619,9 +685,9 @@ impl ScudBridge {
             move || -> Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String> {
                 let storage = Storage::new(Some(working_dir.clone()));
 
-                // If storage isn't initialized, return empty results gracefully
+                // If storage isn't initialized, signal the GUI and return empty
                 if !storage.is_initialized() {
-                    return Ok((Vec::new(), Vec::new(), None));
+                    return Err("__not_initialized__".to_string());
                 }
 
                 // Resolve the active tag name only on initial load (tag=None)
@@ -687,6 +753,16 @@ impl ScudBridge {
                 if !waves.is_empty() {
                     let _ = self.event_tx.send(ScudEvent::WavesComputed(waves)).await;
                 }
+            }
+            Ok(Err(e)) if e == "__not_initialized__" => {
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ProjectNotInitialized)
+                    .await;
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::TasksLoaded(Vec::new()))
+                    .await;
             }
             Ok(Err(e)) => {
                 error!("Failed to load tasks: {}", e);
@@ -1916,7 +1992,7 @@ impl ScudBridge {
         }
     }
 
-    /// Run generate pipeline via subprocess
+    /// Run generate pipeline via subprocess with streaming output
     async fn run_generate(
         &self,
         prd_file: &Path,
@@ -1926,6 +2002,8 @@ impl ScudBridge {
         no_check_deps: bool,
         append: bool,
     ) {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
         let mut args = vec![
             "generate".to_string(),
             prd_file.display().to_string(),
@@ -1952,26 +2030,47 @@ impl ScudBridge {
             .send(ScudEvent::GenerateStatus("Starting generate pipeline...".to_string()))
             .await;
 
-        let result = tokio::process::Command::new("scud")
+        let child_result = tokio::process::Command::new("scud")
             .args(&args)
             .current_dir(&self.working_dir)
-            .output()
-            .await;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
 
-        match result {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}{}", stdout, stderr);
+        let mut child = match child_result {
+            Ok(child) => child,
+            Err(e) => {
+                let err = format!("Failed to run scud generate: {}", e);
+                error!("{}", err);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::GenerateCompleted(Err(err)))
+                    .await;
+                return;
+            }
+        };
 
-                if !combined.is_empty() {
-                    let _ = self
-                        .event_tx
-                        .send(ScudEvent::GenerateStatus(combined))
-                        .await;
-                }
+        // Stream stdout lines
+        if let Some(stdout) = child.stdout.take() {
+            let event_tx = self.event_tx.clone();
+            let mut reader = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                let _ = event_tx.send(ScudEvent::GenerateOutputLine(line.clone())).await;
+                let _ = event_tx.send(ScudEvent::GenerateStatus(line)).await;
+            }
+        }
 
-                if output.status.success() {
+        // Read any remaining stderr
+        let mut stderr_text = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            use tokio::io::AsyncReadExt;
+            let _ = stderr.read_to_string(&mut stderr_text).await;
+        }
+
+        // Wait for the process to exit
+        match child.wait().await {
+            Ok(status) => {
+                if status.success() {
                     info!("Generate completed for tag '{}'", tag_str);
                     let _ = self
                         .event_tx
@@ -1981,11 +2080,11 @@ impl ScudBridge {
                     self.load_available_tags().await;
                     self.load_tag_summaries().await;
                 } else {
-                    let err = format!(
-                        "Generate failed: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
+                    let err = format!("Generate failed: {}", stderr_text);
                     error!("{}", err);
+                    if !stderr_text.is_empty() {
+                        let _ = self.event_tx.send(ScudEvent::GenerateOutputLine(stderr_text.clone())).await;
+                    }
                     let _ = self
                         .event_tx
                         .send(ScudEvent::GenerateCompleted(Err(err)))
@@ -1993,7 +2092,7 @@ impl ScudBridge {
                 }
             }
             Err(e) => {
-                let err = format!("Failed to run scud generate: {}", e);
+                let err = format!("Failed to wait for scud generate: {}", e);
                 error!("{}", err);
                 let _ = self
                     .event_tx
@@ -2318,6 +2417,173 @@ impl ScudBridge {
                 let _ = self
                     .event_tx
                     .send(ScudEvent::BackpressureConfigSaved(Err(e.to_string())))
+                    .await;
+            }
+        }
+    }
+
+    /// Initialize the project by creating .scud/ directory structure
+    async fn init_project(&self) {
+        info!("Initializing project");
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let storage = CliStorage::new(Some(working_dir));
+            storage.initialize().map_err(|e| e.to_string())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {
+                info!("Project initialized successfully");
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ProjectInitialized(Ok(())))
+                    .await;
+                // Reload tasks and tags
+                self.load_tasks(None).await;
+                self.load_available_tags().await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to initialize project: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ProjectInitialized(Err(e)))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::ProjectInitialized(Err(e.to_string())))
+                    .await;
+            }
+        }
+    }
+
+    /// Load LLM configuration from .scud/config.toml
+    async fn load_llm_config(&self) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let config_path = working_dir.join(".scud").join("config.toml");
+            if config_path.exists() {
+                scud::config::Config::load(&config_path).ok()
+            } else {
+                None
+            }
+        })
+        .await;
+
+        match result {
+            Ok(Some(config)) => {
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::LlmConfigLoaded {
+                        provider: config.llm.provider,
+                        model: config.llm.model,
+                        smart_provider: config.llm.smart_provider,
+                        smart_model: config.llm.smart_model,
+                        fast_provider: config.llm.fast_provider,
+                        fast_model: config.llm.fast_model,
+                        max_tokens: config.llm.max_tokens.to_string(),
+                    })
+                    .await;
+            }
+            Ok(None) => {
+                // No config file, send defaults
+                let config = scud::config::Config::default();
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::LlmConfigLoaded {
+                        provider: config.llm.provider,
+                        model: config.llm.model,
+                        smart_provider: config.llm.smart_provider,
+                        smart_model: config.llm.smart_model,
+                        fast_provider: config.llm.fast_provider,
+                        fast_model: config.llm.fast_model,
+                        max_tokens: config.llm.max_tokens.to_string(),
+                    })
+                    .await;
+            }
+            Err(e) => {
+                error!("Failed to load LLM config: {}", e);
+            }
+        }
+    }
+
+    /// Save LLM configuration to .scud/config.toml using toml_edit to preserve other sections
+    #[allow(clippy::too_many_arguments)]
+    async fn save_llm_config(
+        &self,
+        provider: String,
+        model: String,
+        smart_provider: String,
+        smart_model: String,
+        fast_provider: String,
+        fast_model: String,
+        max_tokens: String,
+    ) {
+        let working_dir = self.working_dir.clone();
+        let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let config_path = working_dir.join(".scud").join("config.toml");
+
+            // Ensure .scud directory exists
+            if let Some(parent) = config_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+
+            // Read existing config or start fresh
+            let mut doc = if config_path.exists() {
+                let content = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+                content
+                    .parse::<toml_edit::DocumentMut>()
+                    .map_err(|e| e.to_string())?
+            } else {
+                toml_edit::DocumentMut::new()
+            };
+
+            // Ensure [llm] table exists
+            if !doc.contains_key("llm") {
+                doc["llm"] = toml_edit::Item::Table(toml_edit::Table::new());
+            }
+            let llm = doc["llm"].as_table_mut().ok_or("llm is not a table")?;
+
+            llm["provider"] = toml_edit::value(&provider);
+            llm["model"] = toml_edit::value(&model);
+            llm["smart_provider"] = toml_edit::value(&smart_provider);
+            llm["smart_model"] = toml_edit::value(&smart_model);
+            llm["fast_provider"] = toml_edit::value(&fast_provider);
+            llm["fast_model"] = toml_edit::value(&fast_model);
+
+            if let Ok(tokens) = max_tokens.parse::<i64>() {
+                llm["max_tokens"] = toml_edit::value(tokens);
+            }
+
+            std::fs::write(&config_path, doc.to_string()).map_err(|e| e.to_string())?;
+
+            Ok(())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {
+                info!("LLM config saved");
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::LlmConfigSaved(Ok(())))
+                    .await;
+            }
+            Ok(Err(e)) => {
+                error!("Failed to save LLM config: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::LlmConfigSaved(Err(e)))
+                    .await;
+            }
+            Err(e) => {
+                error!("Task spawn error: {}", e);
+                let _ = self
+                    .event_tx
+                    .send(ScudEvent::LlmConfigSaved(Err(e.to_string())))
                     .await;
             }
         }

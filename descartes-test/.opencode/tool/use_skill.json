@@ -1,0 +1,17 @@
+{
+  "name": "use_skill",
+  "description": "Use a specific skill",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "skill_name": {
+        "type": "string",
+        "description": "Name of the skill to use"
+      },
+      "parameters": {
+        "type": "object",
+        "description": "Parameters for the skill"
+      }
+    }
+  }
+}
