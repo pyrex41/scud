@@ -57,3 +57,7 @@ pub mod serve;
 
 // Claude Tasks sync (internal)
 pub mod sync_from_claude;
+
+// Direct API agent execution
+#[cfg(feature = "direct-api")]
+pub mod agent_exec;

@@ -18,6 +18,9 @@ pub enum Harness {
     OpenCode,
     /// Cursor Agent CLI
     Cursor,
+    /// Direct Anthropic API (no external CLI needed)
+    #[cfg(feature = "direct-api")]
+    DirectApi,
 }
 
 impl Harness {
@@ -27,6 +30,8 @@ impl Harness {
             "claude" | "claude-code" => Ok(Harness::Claude),
             "opencode" | "open-code" => Ok(Harness::OpenCode),
             "cursor" | "cursor-agent" => Ok(Harness::Cursor),
+            #[cfg(feature = "direct-api")]
+            "direct-api" | "direct" | "api" => Ok(Harness::DirectApi),
             other => anyhow::bail!("Unknown harness: '{}'. Supported: claude, opencode, cursor", other),
         }
     }
@@ -37,6 +42,8 @@ impl Harness {
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
             Harness::Cursor => "cursor",
+            #[cfg(feature = "direct-api")]
+            Harness::DirectApi => "direct-api",
         }
     }
 
@@ -46,6 +53,8 @@ impl Harness {
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
             Harness::Cursor => "agent",
+            #[cfg(feature = "direct-api")]
+            Harness::DirectApi => "scud",
         }
     }
 
@@ -81,6 +90,16 @@ impl Harness {
                     prompt_file.display()
                 )
             }
+            #[cfg(feature = "direct-api")]
+            Harness::DirectApi => {
+                let model_flag = model.map(|m| format!(" --model {}", m)).unwrap_or_default();
+                format!(
+                    r#"'{}' agent-exec --prompt-file '{}'{}"#,
+                    binary_path,
+                    prompt_file.display(),
+                    model_flag
+                )
+            }
         }
     }
 }
@@ -89,6 +108,8 @@ impl Harness {
 static CLAUDE_PATH: OnceLock<String> = OnceLock::new();
 static OPENCODE_PATH: OnceLock<String> = OnceLock::new();
 static CURSOR_PATH: OnceLock<String> = OnceLock::new();
+#[cfg(feature = "direct-api")]
+static SCUD_PATH: OnceLock<String> = OnceLock::new();
 
 /// Find the full path to a harness binary.
 /// Caches the result for subsequent calls.
@@ -97,6 +118,8 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
         Harness::Claude => &CLAUDE_PATH,
         Harness::OpenCode => &OPENCODE_PATH,
         Harness::Cursor => &CURSOR_PATH,
+        #[cfg(feature = "direct-api")]
+        Harness::DirectApi => &SCUD_PATH,
     };
 
     // Check if already cached
@@ -138,6 +161,12 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
             "/usr/local/bin/agent",
             "/usr/bin/agent",
         ],
+        #[cfg(feature = "direct-api")]
+        Harness::DirectApi => &[
+            "/opt/homebrew/bin/scud",
+            "/usr/local/bin/scud",
+            "/usr/bin/scud",
+        ],
     };
 
     for path in common_paths {
@@ -161,6 +190,11 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
             Harness::Cursor => vec![
                 format!("{}/.local/bin/agent", home),
             ],
+            #[cfg(feature = "direct-api")]
+            Harness::DirectApi => vec![
+                format!("{}/.local/bin/scud", home),
+                format!("{}/.cargo/bin/scud", home),
+            ],
         };
 
         for path in home_paths {
@@ -175,6 +209,8 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
         Harness::Claude => "Install with: npm install -g @anthropic-ai/claude-code",
         Harness::OpenCode => "Install with: curl -fsSL https://opencode.ai/install | bash",
         Harness::Cursor => "Install with: curl https://cursor.com/install -fsSL | bash",
+        #[cfg(feature = "direct-api")]
+        Harness::DirectApi => "Install with: cargo install scud-cli --features direct-api",
     };
 
     anyhow::bail!(
@@ -521,6 +557,12 @@ fn spawn_tmux_ralph(
         ),
         Harness::Cursor => format!(
             "'{binary_path}' -p \"$(cat '{prompt_file}')\"",
+            binary_path = binary_path,
+            prompt_file = prompt_file.display()
+        ),
+        #[cfg(feature = "direct-api")]
+        Harness::DirectApi => format!(
+            "'{binary_path}' agent-exec --prompt-file '{prompt_file}'",
             binary_path = binary_path,
             prompt_file = prompt_file.display()
         ),

@@ -32,6 +32,12 @@ scud (Rust Binary)
 │   ├── expand             # Break down complex tasks
 │   └── reanalyze-deps     # Analyze cross-tag dependencies
 │
+├── Agent Execution
+│   ├── spawn              # Spawn agents in tmux windows
+│   ├── ralph              # Sequential iteration loop
+│   ├── swarm              # Wave-based parallel execution
+│   └── agent-exec         # [direct-api] Direct API agentic loop
+│
 └── Storage (SCG)
     └── .scud/tasks/tasks.scg
 ```
@@ -56,12 +62,20 @@ Install directly via Cargo:
 cargo install scud-cli
 ```
 
+With direct API support (replaces `claude -p` harness with native API calls):
+
+```bash
+cargo install scud-cli --features direct-api
+```
+
 Or build from source:
 
 ```bash
 git clone https://github.com/pyrex41/scud.git
 cd scud/scud-cli
 cargo install --path .
+# Or with direct API support:
+cargo install --path . --features direct-api
 ```
 
 ### Verify Installation
@@ -281,6 +295,34 @@ max_tokens = 4096
 - Minimal token usage
 - Fast response times
 
+### Direct API Agentic Runner (Feature: `direct-api`)
+
+An optional feature that replaces the `claude -p` subprocess harness with direct Anthropic API calls. Instead of spawning an external CLI, scud runs its own agentic loop: send messages with tool definitions, execute tool_use blocks locally, return results, repeat.
+
+**Authentication:** Uses OAuth tokens from Claude Code's macOS Keychain (subscription billing), with fallback to `ANTHROPIC_API_KEY`.
+
+**Tools available to the agent:** Read, Write, Edit, Bash, Search (ripgrep), Find (fd)
+
+**Usage:**
+
+```bash
+# Build with the feature
+cargo build --features direct-api
+
+# Run directly
+scud agent-exec --prompt "Fix the failing tests"
+scud agent-exec --prompt-file /tmp/task-prompt.txt --model claude-sonnet-4-5-20250929
+
+# Use via ralph/swarm (set in .scud/config.toml)
+# [swarm]
+# use_direct_api = true
+
+# Or pass --harness direct-api to ralph/spawn/swarm commands
+scud ralph --harness direct-api --tag mytag
+```
+
+**Note:** This feature is gated behind `--features direct-api` because it relies on Claude Code OAuth token impersonation which may stop working if Anthropic changes requirements.
+
 ### Prompt Templates
 
 Located in `src/llm/prompts.rs`:
@@ -323,8 +365,11 @@ scud-cli/
 │   ├── storage/
 │   │   └── mod.rs           # JSON I/O
 │   └── llm/
-│       ├── client.rs        # Anthropic API
-│       └── prompts.rs       # Prompt templates
+│       ├── client.rs        # Anthropic API (text-in/text-out)
+│       ├── prompts.rs       # Prompt templates
+│       ├── oauth.rs         # [direct-api] OAuth token from Keychain
+│       ├── tools.rs         # [direct-api] Tool definitions & execution
+│       └── agent.rs         # [direct-api] Agentic loop engine
 ```
 
 ### Adding New Commands
@@ -375,6 +420,15 @@ The npm package builds the Rust binary during installation:
 - `bin/scud.js` is a thin wrapper that executes the binary
 - Requires Rust toolchain to be installed
 
+## Cargo Features
+
+| Feature | Description |
+|---------|-------------|
+| `direct-api` | Direct Anthropic API agentic runner (replaces `claude -p` harness) |
+| `real-llm` | Enable tests that make real LLM API calls |
+| `real-terminal` | Enable tests that use real terminal sessions (tmux/kitty) |
+| `zmq` | Enable ZeroMQ event publishing |
+
 ## Future Enhancements
 
 - [ ] Cross-compilation for multiple platforms
@@ -382,6 +436,7 @@ The npm package builds the Rust binary during installation:
 - [ ] Task export/import
 - [ ] Custom prompt templates
 - [ ] Integration tests with real API calls
+- [ ] Streaming support for direct-api agentic loop
 
 ## License
 

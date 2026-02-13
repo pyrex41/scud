@@ -18,6 +18,10 @@ pub struct SwarmConfig {
     pub round_size: usize,
     #[serde(default = "default_default_tag")]
     pub default_tag: Option<String>,
+    /// Use direct Anthropic API instead of CLI harnesses.
+    /// Requires `direct-api` Cargo feature.
+    #[serde(default)]
+    pub use_direct_api: bool,
 }
 
 fn default_swarm_harness() -> String {
@@ -38,6 +42,7 @@ impl Default for SwarmConfig {
             harness: default_swarm_harness(),
             round_size: default_round_size(),
             default_tag: default_default_tag(),
+            use_direct_api: false,
         }
     }
 }

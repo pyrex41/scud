@@ -210,6 +210,16 @@ pub async fn spawn_agent(
             c.arg(&config.prompt);
             c
         }
+        #[cfg(feature = "direct-api")]
+        Harness::DirectApi => {
+            let mut c = Command::new(binary_path);
+            c.arg("agent-exec");
+            c.arg("--prompt").arg(&config.prompt);
+            if let Some(ref model) = config.model {
+                c.arg("--model").arg(model);
+            }
+            c
+        }
     };
 
     // Set working directory and environment

@@ -925,6 +925,22 @@ enum Commands {
     #[command(hide = true)]
     SyncFromClaude,
 
+    /// Execute an agent loop using direct Anthropic API calls
+    #[cfg(feature = "direct-api")]
+    AgentExec {
+        /// Prompt text to send to the agent
+        #[arg(short, long)]
+        prompt: Option<String>,
+
+        /// File containing the prompt
+        #[arg(long)]
+        prompt_file: Option<std::path::PathBuf>,
+
+        /// Model to use (default: claude-sonnet-4-5-20250929)
+        #[arg(short, long)]
+        model: Option<String>,
+    },
+
     // /// Start interactive REPL for task management - temporarily disabled
     // Repl,
 }
@@ -1516,6 +1532,12 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Commands::SyncFromClaude => commands::sync_from_claude::run(cli.project),
+        #[cfg(feature = "direct-api")]
+        Commands::AgentExec {
+            prompt,
+            prompt_file,
+            model,
+        } => commands::agent_exec::run(prompt, prompt_file, model).await,
         // Commands::Repl => commands::repl::run(), // temporarily disabled
     }
 }

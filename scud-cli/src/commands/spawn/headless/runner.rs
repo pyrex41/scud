@@ -20,56 +20,121 @@ use crate::commands::spawn::terminal::{find_harness_binary, Harness};
 /// Boxed async result type for dyn-compatible async trait methods
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Process backing a headless session - either an OS child process or a tokio task
+pub enum SessionProcess {
+    /// Standard child process (Claude, OpenCode, Cursor harnesses)
+    Child(Child),
+    /// Tokio task (direct API runner)
+    #[cfg(feature = "direct-api")]
+    Task(tokio::task::JoinHandle<()>),
+}
+
 /// Handle to a running headless session
 pub struct SessionHandle {
     /// Task ID this session is for
     pub task_id: String,
     /// Harness session ID (for continuation)
     pub session_id: Option<String>,
-    /// Child process
-    child: Child,
+    /// Backing process or task
+    process: SessionProcess,
     /// Event receiver
     pub events: mpsc::Receiver<StreamEvent>,
 }
 
 impl SessionHandle {
-    /// Wait for the session to complete
-    pub async fn wait(mut self) -> Result<bool> {
-        let status = self.child.wait().await?;
-        Ok(status.success())
+    /// Create a SessionHandle backed by a child process
+    pub fn from_child(task_id: String, child: Child, events: mpsc::Receiver<StreamEvent>) -> Self {
+        Self {
+            task_id,
+            session_id: None,
+            process: SessionProcess::Child(child),
+            events,
+        }
     }
-    
-    /// Interrupt the session (send SIGINT)
-    pub fn interrupt(&mut self) -> Result<()> {
-        #[cfg(unix)]
-        {
-            if let Some(pid) = self.child.id() {
-                // Send SIGINT using kill command (avoids nix dependency)
-                let _ = std::process::Command::new("kill")
-                    .arg("-INT")
-                    .arg(pid.to_string())
-                    .status();
+
+    /// Create a SessionHandle backed by a tokio task
+    #[cfg(feature = "direct-api")]
+    pub fn from_task(
+        task_id: String,
+        events: mpsc::Receiver<StreamEvent>,
+        handle: tokio::task::JoinHandle<()>,
+    ) -> Self {
+        Self {
+            task_id,
+            session_id: None,
+            process: SessionProcess::Task(handle),
+            events,
+        }
+    }
+
+    /// Wait for the session to complete
+    pub async fn wait(self) -> Result<bool> {
+        match self.process {
+            SessionProcess::Child(mut child) => {
+                let status = child.wait().await?;
+                Ok(status.success())
+            }
+            #[cfg(feature = "direct-api")]
+            SessionProcess::Task(handle) => {
+                let _ = handle.await;
+                Ok(true)
             }
         }
+    }
 
-        #[cfg(not(unix))]
-        {
-            // On non-Unix, just kill the process
-            let _ = self.child.start_kill();
+    /// Interrupt the session (send SIGINT)
+    pub fn interrupt(&mut self) -> Result<()> {
+        match &mut self.process {
+            SessionProcess::Child(child) => {
+                #[cfg(unix)]
+                {
+                    if let Some(pid) = child.id() {
+                        // Send SIGINT using kill command (avoids nix dependency)
+                        let _ = std::process::Command::new("kill")
+                            .arg("-INT")
+                            .arg(pid.to_string())
+                            .status();
+                    }
+                }
+
+                #[cfg(not(unix))]
+                {
+                    // On non-Unix, just kill the process
+                    let _ = child.start_kill();
+                }
+
+                Ok(())
+            }
+            #[cfg(feature = "direct-api")]
+            SessionProcess::Task(handle) => {
+                handle.abort();
+                Ok(())
+            }
         }
-
-        Ok(())
     }
 
     /// Kill the session immediately
     pub fn kill(&mut self) -> Result<()> {
-        self.child.start_kill()?;
-        Ok(())
+        match &mut self.process {
+            SessionProcess::Child(child) => {
+                child.start_kill()?;
+                Ok(())
+            }
+            #[cfg(feature = "direct-api")]
+            SessionProcess::Task(handle) => {
+                handle.abort();
+                Ok(())
+            }
+        }
     }
 
     /// Get the process ID
     pub fn pid(&self) -> Option<u32> {
-        self.child.id()
+        match &self.process {
+            SessionProcess::Child(child) => child.id(),
+            #[cfg(feature = "direct-api")]
+            SessionProcess::Task(_) => None,
+        }
     }
 }
 
@@ -219,12 +284,7 @@ impl HeadlessRunner for ClaudeHeadless {
                 let _ = tx.send(StreamEvent::complete(true)).await;
             });
 
-            Ok(SessionHandle {
-                task_id: task_id_clone,
-                session_id: None, // Will be set when we parse session_id from events
-                child,
-                events: rx,
-            })
+            Ok(SessionHandle::from_child(task_id_clone, child, rx))
         })
     }
 
@@ -494,12 +554,7 @@ impl HeadlessRunner for OpenCodeHeadless {
                 let _ = tx.send(StreamEvent::complete(true)).await;
             });
 
-            Ok(SessionHandle {
-                task_id: task_id.to_string(),
-                session_id: None,
-                child,
-                events: rx,
-            })
+            Ok(SessionHandle::from_child(task_id.to_string(), child, rx))
         })
     }
 
@@ -590,12 +645,7 @@ impl HeadlessRunner for CursorHeadless {
                 let _ = tx.send(StreamEvent::complete(true)).await;
             });
 
-            Ok(SessionHandle {
-                task_id: task_id.to_string(),
-                session_id: None,
-                child,
-                events: rx,
-            })
+            Ok(SessionHandle::from_child(task_id.to_string(), child, rx))
         })
     }
 
@@ -621,6 +671,8 @@ pub enum AnyRunner {
     Claude(ClaudeHeadless),
     OpenCode(OpenCodeHeadless),
     Cursor(CursorHeadless),
+    #[cfg(feature = "direct-api")]
+    DirectApi(super::direct_api::DirectApiRunner),
 }
 
 impl AnyRunner {
@@ -630,6 +682,10 @@ impl AnyRunner {
             Harness::Claude => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
             Harness::OpenCode => Ok(AnyRunner::OpenCode(OpenCodeHeadless::new()?)),
             Harness::Cursor => Ok(AnyRunner::Cursor(CursorHeadless::new()?)),
+            #[cfg(feature = "direct-api")]
+            Harness::DirectApi => Ok(AnyRunner::DirectApi(
+                super::direct_api::DirectApiRunner::new(),
+            )),
         }
     }
 
@@ -645,6 +701,10 @@ impl AnyRunner {
             AnyRunner::Claude(runner) => runner.start(task_id, prompt, working_dir, model).await,
             AnyRunner::OpenCode(runner) => runner.start(task_id, prompt, working_dir, model).await,
             AnyRunner::Cursor(runner) => runner.start(task_id, prompt, working_dir, model).await,
+            #[cfg(feature = "direct-api")]
+            AnyRunner::DirectApi(runner) => {
+                runner.start(task_id, prompt, working_dir, model).await
+            }
         }
     }
 
@@ -654,6 +714,8 @@ impl AnyRunner {
             AnyRunner::Claude(runner) => runner.interactive_command(session_id),
             AnyRunner::OpenCode(runner) => runner.interactive_command(session_id),
             AnyRunner::Cursor(runner) => runner.interactive_command(session_id),
+            #[cfg(feature = "direct-api")]
+            AnyRunner::DirectApi(runner) => runner.interactive_command(session_id),
         }
     }
 
@@ -663,6 +725,8 @@ impl AnyRunner {
             AnyRunner::Claude(runner) => runner.harness(),
             AnyRunner::OpenCode(runner) => runner.harness(),
             AnyRunner::Cursor(runner) => runner.harness(),
+            #[cfg(feature = "direct-api")]
+            AnyRunner::DirectApi(runner) => runner.harness(),
         }
     }
 }
