@@ -43,7 +43,7 @@ regex = "1"       # Pattern matching for error parsing
 walkdir = "2.5"   # Directory traversal for extension discovery
 zmq = { version = "0.10", optional = true }  # ZeroMQ for event publishing
 zeromq = "0.4"    # Alternative ZeroMQ crate for client connections
-scud-core.workspace = true  # Core SCUD types and utilities
+scud-task-core.workspace = true  # Core SCUD types and utilities
 tracing = "0.1"   # Logging framework
 
 # TUI dependencies
