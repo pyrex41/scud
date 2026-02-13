@@ -1,8 +1,7 @@
-//! DirectApiRunner - HeadlessRunner implementation using direct Anthropic API calls.
+//! DirectApiRunner - HeadlessRunner implementation using direct API calls.
 //!
-//! Runs an agentic loop via the Anthropic Messages API instead of spawning
-//! an external CLI process. Uses OAuth tokens from Claude Code's keychain
-//! or ANTHROPIC_API_KEY for authentication.
+//! Runs an agentic loop via the Anthropic Messages API or OpenAI-compatible
+//! Chat Completions APIs instead of spawning an external CLI process.
 
 use anyhow::Result;
 use std::path::Path;
@@ -12,11 +11,13 @@ use super::events::StreamEvent;
 use super::runner::{BoxFuture, HeadlessRunner, SessionHandle};
 use crate::commands::spawn::terminal::Harness;
 use crate::llm::agent;
+use crate::llm::provider::AgentProvider;
 
-/// HeadlessRunner that calls the Anthropic API directly.
+/// HeadlessRunner that calls LLM APIs directly.
 pub struct DirectApiRunner {
     model: Option<String>,
     max_tokens: u32,
+    provider: AgentProvider,
 }
 
 impl DirectApiRunner {
@@ -24,6 +25,7 @@ impl DirectApiRunner {
         Self {
             model: None,
             max_tokens: 16_000,
+            provider: AgentProvider::Anthropic,
         }
     }
 
@@ -34,6 +36,11 @@ impl DirectApiRunner {
 
     pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
         self.max_tokens = max_tokens;
+        self
+    }
+
+    pub fn with_provider(mut self, provider: AgentProvider) -> Self {
+        self.provider = provider;
         self
     }
 }
@@ -54,6 +61,7 @@ impl HeadlessRunner for DirectApiRunner {
             let prompt = prompt.to_string();
             let working_dir = working_dir.to_path_buf();
             let task_id_owned = task_id.to_string();
+            let provider = self.provider.clone();
 
             let tx_clone = tx.clone();
             let handle = tokio::spawn(async move {
@@ -64,6 +72,7 @@ impl HeadlessRunner for DirectApiRunner {
                     model.as_deref(),
                     max_tokens,
                     tx_clone,
+                    &provider,
                 )
                 .await
                 {

@@ -676,6 +676,14 @@ pub enum AnyRunner {
 }
 
 impl AnyRunner {
+    /// Create a DirectApi runner with an explicit provider
+    #[cfg(feature = "direct-api")]
+    pub fn new_direct_api(provider: crate::llm::provider::AgentProvider) -> Self {
+        AnyRunner::DirectApi(
+            super::direct_api::DirectApiRunner::new().with_provider(provider),
+        )
+    }
+
     /// Create a runner for the specified harness
     pub fn new(harness: Harness) -> Result<Self> {
         match harness {

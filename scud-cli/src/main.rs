@@ -925,20 +925,24 @@ enum Commands {
     #[command(hide = true)]
     SyncFromClaude,
 
-    /// Execute an agent loop using direct Anthropic API calls
+    /// Execute an agent loop using direct API calls (Anthropic, OpenAI, xAI, etc.)
     #[cfg(feature = "direct-api")]
     AgentExec {
         /// Prompt text to send to the agent
-        #[arg(short, long)]
+        #[arg(long)]
         prompt: Option<String>,
 
         /// File containing the prompt
         #[arg(long)]
         prompt_file: Option<std::path::PathBuf>,
 
-        /// Model to use (default: claude-sonnet-4-5-20250929)
+        /// Model to use (default depends on provider)
         #[arg(short, long)]
         model: Option<String>,
+
+        /// LLM provider: anthropic, openai, xai, openrouter, opencode-zen
+        #[arg(long)]
+        provider: Option<String>,
     },
 
     // /// Start interactive REPL for task management - temporarily disabled
@@ -1537,7 +1541,8 @@ async fn main() -> Result<()> {
             prompt,
             prompt_file,
             model,
-        } => commands::agent_exec::run(prompt, prompt_file, model).await,
+            provider,
+        } => commands::agent_exec::run(prompt, prompt_file, model, provider).await,
         // Commands::Repl => commands::repl::run(), // temporarily disabled
     }
 }

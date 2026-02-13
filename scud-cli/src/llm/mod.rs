@@ -6,6 +6,8 @@ pub mod agent;
 #[cfg(feature = "direct-api")]
 pub mod oauth;
 #[cfg(feature = "direct-api")]
+pub mod provider;
+#[cfg(feature = "direct-api")]
 pub mod tools;
 
 pub use client::{LLMClient, ModelInfo};

@@ -18,10 +18,13 @@ pub struct SwarmConfig {
     pub round_size: usize,
     #[serde(default = "default_default_tag")]
     pub default_tag: Option<String>,
-    /// Use direct Anthropic API instead of CLI harnesses.
+    /// Use direct API instead of CLI harnesses.
     /// Requires `direct-api` Cargo feature.
     #[serde(default)]
     pub use_direct_api: bool,
+    /// Provider for direct API mode: anthropic, openai, xai, openrouter, opencode-zen
+    #[serde(default = "default_direct_api_provider")]
+    pub direct_api_provider: String,
 }
 
 fn default_swarm_harness() -> String {
@@ -36,6 +39,10 @@ fn default_default_tag() -> Option<String> {
     None
 }
 
+fn default_direct_api_provider() -> String {
+    std::env::var("SCUD_DIRECT_API_PROVIDER").unwrap_or_else(|_| "anthropic".to_string())
+}
+
 impl Default for SwarmConfig {
     fn default() -> Self {
         SwarmConfig {
@@ -43,6 +50,7 @@ impl Default for SwarmConfig {
             round_size: default_round_size(),
             default_tag: default_default_tag(),
             use_direct_api: false,
+            direct_api_provider: default_direct_api_provider(),
         }
     }
 }
@@ -152,6 +160,7 @@ impl Config {
             "xai" => "XAI_API_KEY",
             "openai" => "OPENAI_API_KEY",
             "openrouter" => "OPENROUTER_API_KEY",
+            "opencode-zen" | "opencode" | "zen" => "OPENCODE_API_KEY",
             "claude-cli" => "NONE", // Claude CLI doesn't need API key
             "codex" => "NONE",      // Codex CLI doesn't need API key
             "cursor" => "NONE",     // Cursor Agent CLI doesn't need API key
