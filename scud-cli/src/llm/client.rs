@@ -168,7 +168,11 @@ impl LLMClient {
             "codex" => self.complete_codex_cli(prompt, model_override).await,
             "cursor" => self.complete_cursor_cli(prompt, model_override).await,
             "anthropic" => {
-                self.complete_anthropic_with_model(prompt, model_override)
+                self.complete_anthropic_api_key(prompt, model_override)
+                    .await
+            }
+            "anthropic-oauth" => {
+                self.complete_anthropic_oauth(prompt, model_override)
                     .await
             }
             "xai" | "openai" | "openrouter" => {
@@ -179,13 +183,15 @@ impl LLMClient {
         }
     }
 
-    async fn complete_anthropic_with_model(
+    /// Anthropic API with standard API key (ANTHROPIC_API_KEY)
+    async fn complete_anthropic_api_key(
         &self,
         prompt: &str,
         model_override: Option<&str>,
     ) -> Result<String> {
         let model = model_override.unwrap_or(&self.config.llm.model);
-        let credential = oauth::resolve_anthropic_credential()?;
+        let api_key = env::var("ANTHROPIC_API_KEY")
+            .context("ANTHROPIC_API_KEY environment variable not set")?;
 
         let request = AnthropicRequest {
             model: model.to_string(),
@@ -196,25 +202,66 @@ impl LLMClient {
             }],
         };
 
-        let mut request_builder = self
+        let response = self
             .client
             .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &api_key)
             .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json");
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send request to Anthropic API")?;
 
-        match &credential {
-            oauth::ApiCredential::OAuth(token) => {
-                request_builder = request_builder
-                    .header("authorization", format!("Bearer {}", token))
-                    .header("anthropic-beta", "oauth-2025-04-20")
-                    .header("user-agent", "SCUD-CLI/1.0");
-            }
-            oauth::ApiCredential::ApiKey(key) => {
-                request_builder = request_builder.header("x-api-key", key);
-            }
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Anthropic API error ({}): {}", status, error_text);
         }
 
-        let response = request_builder
+        let api_response: AnthropicResponse = response
+            .json()
+            .await
+            .context("Failed to parse Anthropic API response")?;
+
+        Ok(api_response
+            .content
+            .first()
+            .map(|c| c.text.clone())
+            .unwrap_or_default())
+    }
+
+    /// Anthropic API with Claude Code OAuth token from macOS Keychain
+    async fn complete_anthropic_oauth(
+        &self,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> Result<String> {
+        let model = model_override.unwrap_or(&self.config.llm.model);
+        let creds = oauth::read_claude_oauth()?
+            .context("No Claude Code OAuth credentials found in Keychain. Log in with `claude` CLI first.")?;
+
+        if !oauth::is_token_valid(&creds) {
+            anyhow::bail!("Claude Code OAuth token expired. Re-login with `claude` CLI.");
+        }
+
+        let request = AnthropicRequest {
+            model: model.to_string(),
+            max_tokens: self.config.llm.max_tokens,
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            }],
+        };
+
+        let response = self
+            .client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("authorization", format!("Bearer {}", creds.access_token))
+            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .header("content-type", "application/json")
+            .header("user-agent", "SCUD-CLI/1.0")
             .json(&request)
             .send()
             .await

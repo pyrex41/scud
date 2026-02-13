@@ -157,6 +157,7 @@ impl Config {
     pub fn api_key_env_var_for_provider(provider: &str) -> &str {
         match provider {
             "anthropic" => "ANTHROPIC_API_KEY",
+            "anthropic-oauth" => "NONE", // Uses Claude Code OAuth from Keychain
             "xai" => "XAI_API_KEY",
             "openai" => "OPENAI_API_KEY",
             "openrouter" => "OPENROUTER_API_KEY",
@@ -174,9 +175,12 @@ impl Config {
             &self.llm.smart_provider,
             &self.llm.fast_provider,
         ];
-        providers
-            .iter()
-            .any(|p| !matches!(p.as_str(), "claude-cli" | "codex" | "cursor"))
+        providers.iter().any(|p| {
+            !matches!(
+                p.as_str(),
+                "claude-cli" | "codex" | "cursor" | "anthropic-oauth"
+            )
+        })
     }
 
     pub fn api_endpoint(&self) -> &str {
