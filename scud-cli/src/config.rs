@@ -197,6 +197,7 @@ impl Config {
         match provider {
             "xai" => "xai/grok-code-fast-1",
             "anthropic" => "claude-sonnet-4-5-20250929",
+            "anthropic-oauth" => "claude-opus-4-6",
             "openai" => "o3-mini",
             "openrouter" => "anthropic/claude-sonnet-4.5",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
@@ -220,6 +221,12 @@ impl Config {
                 "claude-opus-4-5-20251101",
                 "claude-haiku-4-5-20251001",
                 "claude-opus-4-1-20250805",
+            ],
+            "anthropic-oauth" => vec![
+                "claude-opus-4-6",
+                "claude-sonnet-4-5-20250929",
+                "claude-opus-4-5-20251101",
+                "claude-haiku-4-5-20251001",
             ],
             "openai" => vec![
                 "gpt-5.2-high",
