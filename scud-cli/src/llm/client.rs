@@ -4,6 +4,7 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::config::Config;
+use crate::llm::oauth;
 use crate::storage::Storage;
 
 // Anthropic API structures
@@ -61,7 +62,6 @@ struct OpenAIMessageResponse {
 
 pub struct LLMClient {
     config: Config,
-    api_key: String,
     client: reqwest::Client,
 }
 
@@ -89,18 +89,8 @@ impl LLMClient {
     pub fn new() -> Result<Self> {
         let storage = Storage::new(None);
         let config = storage.load_config()?;
-
-        let api_key = if config.requires_api_key() {
-            env::var(config.api_key_env_var()).with_context(|| {
-                format!("{} environment variable not set", config.api_key_env_var())
-            })?
-        } else {
-            String::new() // Claude CLI doesn't need API key
-        };
-
         Ok(LLMClient {
             config,
-            api_key,
             client: reqwest::Client::new(),
         })
     }
@@ -108,18 +98,8 @@ impl LLMClient {
     pub fn new_with_project_root(project_root: PathBuf) -> Result<Self> {
         let storage = Storage::new(Some(project_root));
         let config = storage.load_config()?;
-
-        let api_key = if config.requires_api_key() {
-            env::var(config.api_key_env_var()).with_context(|| {
-                format!("{} environment variable not set", config.api_key_env_var())
-            })?
-        } else {
-            String::new() // Claude CLI doesn't need API key
-        };
-
         Ok(LLMClient {
             config,
-            api_key,
             client: reqwest::Client::new(),
         })
     }
@@ -205,6 +185,8 @@ impl LLMClient {
         model_override: Option<&str>,
     ) -> Result<String> {
         let model = model_override.unwrap_or(&self.config.llm.model);
+        let credential = oauth::resolve_anthropic_credential()?;
+
         let request = AnthropicRequest {
             model: model.to_string(),
             max_tokens: self.config.llm.max_tokens,
@@ -214,12 +196,25 @@ impl LLMClient {
             }],
         };
 
-        let response = self
+        let mut request_builder = self
             .client
-            .post(self.config.api_endpoint())
-            .header("x-api-key", &self.api_key)
+            .post("https://api.anthropic.com/v1/messages")
             .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
+            .header("content-type", "application/json");
+
+        match &credential {
+            oauth::ApiCredential::OAuth(token) => {
+                request_builder = request_builder
+                    .header("authorization", format!("Bearer {}", token))
+                    .header("anthropic-beta", "oauth-2025-04-20")
+                    .header("user-agent", "SCUD-CLI/1.0");
+            }
+            oauth::ApiCredential::ApiKey(key) => {
+                request_builder = request_builder.header("x-api-key", key);
+            }
+        }
+
+        let response = request_builder
             .json(&request)
             .send()
             .await
@@ -267,6 +262,11 @@ impl LLMClient {
             _ => "https://api.x.ai/v1/chat/completions",
         };
 
+        // Resolve API key for this specific provider
+        let env_var = Config::api_key_env_var_for_provider(provider);
+        let api_key = env::var(env_var)
+            .with_context(|| format!("{} environment variable not set", env_var))?;
+
         let request = OpenAIRequest {
             model: model_for_api.to_string(),
             max_tokens: self.config.llm.max_tokens,
@@ -279,7 +279,7 @@ impl LLMClient {
         let mut request_builder = self
             .client
             .post(endpoint)
-            .header("authorization", format!("Bearer {}", self.api_key))
+            .header("authorization", format!("Bearer {}", api_key))
             .header("content-type", "application/json");
 
         // OpenRouter requires additional headers
