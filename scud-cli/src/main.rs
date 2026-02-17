@@ -116,6 +116,9 @@ enum SpawnAgentsCommands {
         #[arg(long)]
         all: bool,
     },
+
+    /// Update spawn agents to match current configuration
+    UpdateFromConfig,
 }
 
 #[derive(Subcommand)]
@@ -1090,6 +1093,9 @@ async fn main() -> Result<()> {
                 } => commands::config::spawn_agents_add(cli.project, name, all, interactive),
                 SpawnAgentsCommands::Remove { name, all } => {
                     commands::config::spawn_agents_remove(cli.project, name, all)
+                }
+                SpawnAgentsCommands::UpdateFromConfig => {
+                    commands::config::spawn_agents_update_from_config(cli.project)
                 }
             },
         },

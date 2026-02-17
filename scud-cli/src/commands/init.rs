@@ -280,7 +280,8 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
         let provider = provider_name.to_lowercase();
         if !matches!(
             provider.as_str(),
-            "xai" | "anthropic"
+            "xai"
+                | "anthropic"
                 | "anthropic-oauth"
                 | "openai"
                 | "openrouter"
@@ -389,6 +390,16 @@ pub fn run(project_root: Option<PathBuf>, provider_arg: Option<String>) -> Resul
             format!("  Could not install spawn agents: {}", e).yellow()
         );
         println!("  You can install them later with: scud config spawn-agents add --all");
+    } else {
+        // Update spawn agents to match the configured providers/models
+        if let Err(e) =
+            config_cmd::spawn_agents_update_from_config(Some(storage.project_root().to_path_buf()))
+        {
+            println!(
+                "{}",
+                format!("  Could not update spawn agents: {}", e).yellow()
+            );
+        }
     }
 
     // Update CLAUDE.md with SCUD instructions

@@ -66,10 +66,7 @@ const EMBEDDED_SPAWN_AGENTS: &[(&str, &str)] = &[
         "repairer",
         include_str!("../assets/spawn-agents/repairer.toml"),
     ),
-    (
-        "tester",
-        include_str!("../assets/spawn-agents/tester.toml"),
-    ),
+    ("tester", include_str!("../assets/spawn-agents/tester.toml")),
 ];
 
 /// SCUD agent definitions (legacy - keeping for compatibility)
@@ -1364,11 +1361,7 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
         .and_then(|m| m.as_str())
         .unwrap_or("default");
 
-    println!(
-        "\n{} {}",
-        "Configuring:".blue().bold(),
-        agent_name.cyan()
-    );
+    println!("\n{} {}", "Configuring:".blue().bold(), agent_name.cyan());
     println!("  Current harness: {}", current_harness.yellow());
     println!("  Current model: {}", current_model.yellow());
     println!();
@@ -1396,19 +1389,11 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
             "o3-mini",
             "custom...",
         ],
-        "cursor" => vec![
-            "claude-4-opus",
-            "claude-4-sonnet",
-            "gpt-5",
-            "custom...",
-        ],
+        "cursor" => vec!["claude-4-opus", "claude-4-sonnet", "gpt-5", "custom..."],
         _ => vec!["default", "custom..."],
     };
 
-    let current_model_idx = models
-        .iter()
-        .position(|m| *m == current_model)
-        .unwrap_or(0);
+    let current_model_idx = models.iter().position(|m| *m == current_model).unwrap_or(0);
     let model_selection = Select::new()
         .with_prompt("Select model")
         .items(&models)
@@ -1441,6 +1426,90 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
     println!("{}", "✅ Agent configuration saved!".green().bold());
     println!("  Harness: {}", new_harness.cyan());
     println!("  Model: {}", new_model.cyan());
+
+    Ok(())
+}
+
+/// Update installed spawn agents to match the configured providers/models
+/// This ensures that when users choose xai/opencode during init, all agents use it
+pub fn spawn_agents_update_from_config(project_root: Option<PathBuf>) -> Result<()> {
+    let agents_dir = get_spawn_agents_dir(project_root.clone());
+    let storage = Storage::new(project_root);
+    let config = storage.load_config()?;
+
+    if !agents_dir.exists() {
+        return Ok(()); // No agents installed yet
+    }
+
+    // Categorize agents by complexity level
+    let smart_agents = [
+        "analyzer",
+        "planner",
+        "researcher",
+        "reviewer",
+        "outside-generalist",
+    ];
+    let fast_agents = ["builder", "fast-builder", "repairer"];
+
+    println!(
+        "{}",
+        "Updating spawn agents to match configuration...".blue()
+    );
+
+    let mut updated = 0;
+
+    // Update smart agents to use smart provider/model
+    for agent_name in &smart_agents {
+        let agent_file = agents_dir.join(format!("{}.toml", agent_name));
+        if agent_file.exists() {
+            update_agent_config(&agent_file, &config.smart_provider(), &config.smart_model())?;
+            updated += 1;
+            println!("  {} {} (smart model)", "✓".green(), agent_name);
+        }
+    }
+
+    // Update fast agents to use fast provider/model
+    for agent_name in &fast_agents {
+        let agent_file = agents_dir.join(format!("{}.toml", agent_name));
+        if agent_file.exists() {
+            update_agent_config(&agent_file, &config.fast_provider(), &config.fast_model())?;
+            updated += 1;
+            println!("  {} {} (fast model)", "✓".green(), agent_name);
+        }
+    }
+
+    if updated > 0 {
+        println!(
+            "\n{}",
+            format!(
+                "✅ Updated {} spawn agent(s) to match your configuration",
+                updated
+            )
+            .green()
+            .bold()
+        );
+    }
+
+    Ok(())
+}
+
+/// Update a single agent config file with new harness and model
+fn update_agent_config(agent_path: &PathBuf, harness: &str, model: &str) -> Result<()> {
+    let content = fs::read_to_string(agent_path)?;
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+    // Find and update the harness and model lines
+    for line in &mut lines {
+        if line.trim().starts_with("harness = ") {
+            *line = format!("harness = \"{}\"", harness);
+        } else if line.trim().starts_with("model = ") {
+            *line = format!("model = \"{}\"", model);
+        }
+    }
+
+    // Write back the updated content
+    let new_content = lines.join("\n") + "\n";
+    fs::write(agent_path, new_content)?;
 
     Ok(())
 }
