@@ -56,22 +56,25 @@ cargo build --release
 ```
 
 ### Basic Usage
-
-#### SCUD CLI Workflow
 ```bash
-# Initialize project
+# Initialize SCUD project
 scud init
 
-# Generate tasks from PRD (AI-powered parsing)
+# Generate tasks from PRD (full pipeline: parse → expand → validate)
 scud generate docs/feature.md --tag my-feature
 
-# View parallel execution plan
-scud waves --tag my-feature
+# Or just parse PRD into initial tasks
+scud parse docs/feature.md --tag my-feature
 
-# Work on tasks
+# View tasks and dependencies
+scud list --tag my-feature
+scud waves --tag my-feature    # Show parallel execution plan
+
+# Find and work on next ready task
 scud next --tag my-feature
 scud set-status 1 in-progress
-# ... do the work ...
+
+# When done, mark complete
 scud set-status 1 done
 
 # Visualize in browser
@@ -250,16 +253,15 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 
 ## Commands
 
-### Setup
+### Setup & Orientation
 ```bash
 scud init                          # Initialize SCUD in current directory
-scud warmup                        # Quick session orientation
+scud warmup                        # Quick session orientation (recent commits, active tasks)
+scud tags                          # List/set active phase tags
 ```
 
 ### Core Commands (Instant)
 ```bash
-scud tags                          # List all tags
-scud tags <tag>                    # Set active tag
 scud list [--tag <tag>]            # List tasks
 scud show <id>                     # Show task details
 scud next [--tag <tag>]            # Find next ready task
@@ -274,31 +276,45 @@ scud view                          # Open task viewer in browser
 scud mermaid [--tag <tag>]         # Generate Mermaid diagram
 ```
 
-### AI Commands (Requires XAI_API_KEY)
+### AI Commands (Requires API Key)
 ```bash
 scud generate <file> --tag <tag>   # Full pipeline: parse → expand → validate
-scud parse <file> --tag <tag>      # Parse PRD/doc into tasks (step 1 only)
-scud analyze-complexity            # Analyze task complexity
-scud expand --all                  # Break down complex tasks
+scud parse <file> --tag <tag>      # Parse PRD/doc into initial tasks
+scud expand [--task <id>]          # Break down complex tasks into subtasks
+scud analyze-complexity            # Analyze task complexity (AI-powered)
 scud check-deps --tag <tag>        # Validate task dependencies
+scud reanalyze-deps                # Suggest cross-tag dependencies
 ```
 
-Default model: `grok-code-fast-1`. Configure with `scud config set-provider <provider> --model <model>`.
+Default provider: `xai`, model: `xai/grok-code-fast-1`. Configure with `scud config`.
 
 Project guidance files in `.scud/guidance/*.md` are automatically included in AI prompts.
 
 ### Swarm Commands (Parallel Execution)
 ```bash
-scud swarm --tag <tag>             # Run parallel agents on ready tasks
-scud swarm --swarm-mode beads      # Continuous polling mode (fluid execution)
-scud swarm --swarm-mode wave       # Wave-based batching (default)
-scud swarm --round-size 5          # Max concurrent agents per round
-scud swarm --no-worktree           # Run in-place (skip salvo worktree)
-scud swarm --stale-timeout 600     # Stale agent timeout in seconds
-scud swarm retro [session-id]      # View retrospective timeline
+scud swarm --tag <tag>             # Run wave-based parallel execution
+scud swarm --swarm-mode beads      # Continuous polling mode
+scud swarm --swarm-mode tmux       # Tmux-based spawning (default)
+scud swarm --round-size 5          # Max tasks per round (default: 5)
+scud swarm --harness opencode      # AI harness: claude, opencode
+scud swarm --dry-run               # Show plan without executing
+scud swarm --review                # Enable code review after each wave
+
+# Swarm monitoring and retrospectives
+scud retro [session-id]            # View session retrospective
+scud watch --session <session>     # Watch running swarm via events
+
+### Agent Spawning Commands
+```bash
+scud spawn --tag <tag>             # Spawn parallel agents in tmux
+scud monitor --session <session>   # Monitor running spawn session
+scud sessions                      # List active spawn sessions
+scud attach <task-id>              # Attach to running agent
+scud restart <task-id>             # Restart failed task
+scud run <prompt>                  # Run single AI agent with prompt
 ```
 
-### Salvo Worktrees (Parallel Isolation)
+### Salvo Commands (Worktree Isolation)
 ```bash
 scud salvo list                    # List all salvo worktrees
 scud salvo sync <tag>              # Sync worktree status back to main
@@ -307,11 +323,11 @@ scud salvo remove <tag>            # Remove worktree and git branch
 
 ### Transcript Commands
 ```bash
-scud transcript search <query>     # Search across transcript content
+scud transcript search <query>     # Search transcript content in database
 scud transcript stats              # Show aggregate statistics
-scud transcript list               # List recent transcript sessions
-scud transcript view [--session]   # View transcript summary
-scud transcript import             # Bulk import project transcripts
+scud transcript list               # List available transcripts
+scud transcript view [--session]   # View transcript (latest if no session)
+scud transcript import             # Import all transcripts for project
 ```
 
 ### Orchestrator Commands
@@ -319,8 +335,8 @@ scud transcript import             # Bulk import project transcripts
 scud assign <id> <name>            # Assign task to a developer
 scud who-is [--tag <tag>]          # See who's working on what
 scud next-batch [--limit 5]        # Get multiple ready tasks
-scud doctor [--tag <tag>]          # Diagnose stuck task states
-scud doctor --ext                  # Scan and validate extensions
+scud doctor workflow [--tag <tag>] # Diagnose stuck task states
+scud doctor scan-ext               # Scan and validate extensions
 ```
 
 ### Utilities
@@ -377,18 +393,19 @@ See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns
 
 ### Combined CLI + GUI Workflow
 ```bash
-# Use CLI for initial setup and AI parsing
+# Use CLI for project setup and task generation
 scud init
 scud generate docs/feature.md --tag my-project
 scud waves --tag my-project
 
-# Use GUI for visual task management and execution
+# Use GUI for visual task management
 descartes-gui
-# In GUI: View waves, start tasks, monitor agents
+# In GUI: View task waves, start agents, monitor progress
 
-# Use CLI for detailed work and commits
+# Use CLI for detailed development work
 scud next --tag my-project
-scud commit -m "Completed user authentication"
+scud log 1 "Implemented JWT authentication with refresh tokens"
+scud commit -m "Add JWT authentication system"
 ```
 
 ---
@@ -412,12 +429,12 @@ scud commit -m "Completed user authentication"
 - Real-time progress tracking
 
 **Orchestrator-Ready:**
-- Spawn parallel Claude agents via tmux
-- Salvo worktrees isolate parallel tag execution
-- SQLite stores events, transcripts, and session history
-- Live progress with heartbeat and orphan detection
-- Task locking prevents conflicts
-- Doctor command finds stale work
+- Parallel agent spawning via tmux or headless modes
+- Salvo worktrees for isolated parallel execution
+- SQLite event storage with transcripts and session history
+- Swarm execution with wave-based or continuous modes
+- Live monitoring with retrospective analysis
+- Task assignment and progress tracking
 
 ---
 
