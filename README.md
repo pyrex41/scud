@@ -8,7 +8,7 @@
 
 A fast, AI-powered task management system with both CLI and desktop GUI interfaces. Parse PRDs into tasks, track dependencies, visualize parallel execution waves, and orchestrate AI agents.
 
-SCUD focuses on core task management while providing advanced features for team orchestration and complex workflows.
+SCUD focuses on core task management while providing experimental advanced features for team orchestration and complex workflows.
 
 ## Components
 
@@ -243,7 +243,7 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 
 **Swarm & Orchestration:**
 - [Orchestrator Pattern](docs/orchestrator.md) - Swarm modes and multi-agent workflows
-- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task orchestration and advanced features
+- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task orchestration (includes experimental features)
 
 **Development:**
 - [Development Logs](log_docs/) - Implementation details & history
@@ -312,16 +312,18 @@ scud watch --session <session>     # Watch running swarm via live events
 - **headless**: Runs agents in background without terminal sessions
 - **beads**: Continuous polling - starts new agents as tasks become ready
 
-### Advanced Features
+### Advanced Features (Experimental)
 
-#### Worktree Isolation (Salvo)
+These features are under active development and may change significantly.
+
+#### Worktree Isolation (Salvo) - Experimental
 ```bash
 scud salvo list                    # List isolated worktrees
 scud salvo sync <tag>              # Sync worktree back to main
 scud salvo remove <tag>            # Remove worktree and branch
 ```
 
-#### Transcript Management
+#### Transcript Management - Experimental
 ```bash
 scud transcript search <query>     # Search conversation logs
 scud transcript stats              # Show transcript statistics
@@ -330,11 +332,13 @@ scud transcript view [--session]   # View conversation transcript
 scud transcript import             # Import project transcripts
 ```
 
-#### Team Orchestration
+#### Team Orchestration - Experimental
 ```bash
 scud assign <id> <name>            # Assign task to team member
 scud who-is [--tag <tag>]          # See who's working on what
 scud next-batch [--limit 5]        # Get multiple tasks at once
+scud doctor workflow [--tag <tag>] # Diagnose stuck task states
+scud doctor scan-ext               # Scan and validate extensions
 ```
 
 ### Utilities
@@ -433,7 +437,7 @@ scud commit -m "Add JWT authentication system"
 - SQLite event storage and session history
 - Swarm execution with wave-based or continuous modes
 - Live monitoring with retrospective analysis
-- Advanced worktree isolation and transcript management
+- Experimental: Advanced worktree isolation and transcript management
 
 ---
 
