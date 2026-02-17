@@ -8,6 +8,8 @@
 
 A fast, AI-powered task management system with both CLI and desktop GUI interfaces. Parse PRDs into tasks, track dependencies, visualize parallel execution waves, and orchestrate AI agents.
 
+SCUD focuses on core task management while providing advanced features for team orchestration and complex workflows.
+
 ## Components
 
 ### 🚀 SCUD CLI
@@ -133,32 +135,29 @@ Group related tasks together (e.g., `auth-system`, `payment-flow`). Each tag has
 
 SCUD supports two execution strategies for parallel agent orchestration:
 
-**Wave Mode** (default): Batches ready tasks into waves, spawns agents, waits for completion, then validates before next wave.
+**Execution Modes:**
+
+**Wave Mode** (default): Batches ready tasks into waves, spawns agents in parallel, waits for completion, validates with backpressure, then proceeds to next wave.
 ```bash
-scud swarm --tag my-feature --swarm-mode wave
+scud swarm --tag my-feature  # Default wave mode with tmux
+scud swarm --tag my-feature --headless  # Wave mode without tmux sessions
 ```
 
-**Beads Mode**: Continuous polling for ready tasks. Spawns agents immediately when dependencies complete—no waiting for batch boundaries.
+**Beads Mode**: Continuous polling - spawns agents immediately when tasks become ready, without waiting for batch boundaries.
 ```bash
 scud swarm --tag my-feature --swarm-mode beads
 ```
 
-Both modes support tmux-based terminal spawning with live monitoring, SQLite event logging, and automatic salvo worktree provisioning. See [docs/orchestrator.md](docs/orchestrator.md) for details.
+**Terminal Management:**
+- **tmux mode** (default): Spawns interactive tmux sessions for each agent with live monitoring
+- **headless mode**: Runs agents in background processes without terminal sessions
+- **Monitor sessions**: Use `scud monitor --session <name>` to watch running swarms
 
-### Salvo Worktrees
+All modes include SQLite event logging, backpressure validation, and salvo worktree isolation. See [docs/orchestrator.md](docs/orchestrator.md) for details.
 
-When swarming a tag, SCUD automatically provisions an isolated git worktree so parallel swarms on different tags don't conflict:
+### Parallel Execution
 
-```bash
-scud swarm --tag backend     # Auto-creates ../myproject.salvo.backend/
-scud swarm --tag frontend    # Auto-creates ../myproject.salvo.frontend/
-# Both run in parallel without conflicts
-
-scud salvo list              # See all active worktrees
-scud salvo remove backend    # Clean up when done
-```
-
-Each worktree gets a filtered task file with full detail for its tag and collapsed stubs for others. Results auto-sync back to main on completion. See [docs/orchestrator.md](docs/orchestrator.md) for details.
+SCUD supports multiple execution strategies for parallel AI agent orchestration.
 
 ---
 
@@ -225,7 +224,7 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 - **Visual task management** - Drag-and-drop task organization
 
 ### Orchestrator Support
-- **Parallel agents** - spawn multiple Claude instances via tmux
+- **Parallel agents** - spawn multiple AI agents via tmux or headless execution
 - **Salvo worktrees** - automatic git worktree isolation per tag
 - **SQLite event storage** - queryable event logs, transcript search, session history
 - **Transcript capture** - real-time import of Claude Code conversation logs
@@ -243,8 +242,8 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 - [Descartes GUI](descartes-gui/README.md) - Desktop interface guide
 
 **Swarm & Orchestration:**
-- [Orchestrator Pattern](docs/orchestrator.md) - Swarm modes, salvo worktrees, transcripts, and multi-agent workflows
-- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task locking & orchestration
+- [Orchestrator Pattern](docs/orchestrator.md) - Swarm modes and multi-agent workflows
+- [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task orchestration and advanced features
 
 **Development:**
 - [Development Logs](log_docs/) - Implementation details & history
@@ -293,50 +292,49 @@ Project guidance files in `.scud/guidance/*.md` are automatically included in AI
 ### Swarm Commands (Parallel Execution)
 ```bash
 scud swarm --tag <tag>             # Run wave-based parallel execution
-scud swarm --swarm-mode beads      # Continuous polling mode
-scud swarm --swarm-mode tmux       # Tmux-based spawning (default)
+scud swarm --swarm-mode tmux       # Tmux-based spawning (default - interactive)
+scud swarm --swarm-mode headless   # Headless mode (no terminals/sessions)
+scud swarm --swarm-mode beads      # Continuous polling mode (fluid execution)
+scud swarm --headless              # Shorthand for --swarm-mode headless
 scud swarm --round-size 5          # Max tasks per round (default: 5)
-scud swarm --harness opencode      # AI harness: claude, opencode
-scud swarm --dry-run               # Show plan without executing
+scud swarm --harness opencode      # AI harness: claude, opencode (default: claude)
+scud swarm --dry-run               # Show execution plan without spawning
 scud swarm --review                # Enable code review after each wave
+scud swarm --no-validate           # Skip backpressure validation
 
 # Swarm monitoring and retrospectives
-scud retro [session-id]            # View session retrospective
-scud watch --session <session>     # Watch running swarm via events
-
-### Agent Spawning Commands
-```bash
-scud spawn --tag <tag>             # Spawn parallel agents in tmux
-scud monitor --session <session>   # Monitor running spawn session
-scud sessions                      # List active spawn sessions
-scud attach <task-id>              # Attach to running agent
-scud restart <task-id>             # Restart failed task
-scud run <prompt>                  # Run single AI agent with prompt
+scud retro [session-id]            # View session retrospective/timeline
+scud watch --session <session>     # Watch running swarm via live events
 ```
 
-### Salvo Commands (Worktree Isolation)
+**Execution Modes:**
+- **tmux** (default): Spawns agents in tmux sessions with live monitoring
+- **headless**: Runs agents in background without terminal sessions
+- **beads**: Continuous polling - starts new agents as tasks become ready
+
+### Advanced Features
+
+#### Worktree Isolation (Salvo)
 ```bash
-scud salvo list                    # List all salvo worktrees
-scud salvo sync <tag>              # Sync worktree status back to main
-scud salvo remove <tag>            # Remove worktree and git branch
+scud salvo list                    # List isolated worktrees
+scud salvo sync <tag>              # Sync worktree back to main
+scud salvo remove <tag>            # Remove worktree and branch
 ```
 
-### Transcript Commands
+#### Transcript Management
 ```bash
-scud transcript search <query>     # Search transcript content in database
-scud transcript stats              # Show aggregate statistics
+scud transcript search <query>     # Search conversation logs
+scud transcript stats              # Show transcript statistics
 scud transcript list               # List available transcripts
-scud transcript view [--session]   # View transcript (latest if no session)
-scud transcript import             # Import all transcripts for project
+scud transcript view [--session]   # View conversation transcript
+scud transcript import             # Import project transcripts
 ```
 
-### Orchestrator Commands
+#### Team Orchestration
 ```bash
-scud assign <id> <name>            # Assign task to a developer
+scud assign <id> <name>            # Assign task to team member
 scud who-is [--tag <tag>]          # See who's working on what
-scud next-batch [--limit 5]        # Get multiple ready tasks
-scud doctor workflow [--tag <tag>] # Diagnose stuck task states
-scud doctor scan-ext               # Scan and validate extensions
+scud next-batch [--limit 5]        # Get multiple tasks at once
 ```
 
 ### Utilities
@@ -398,13 +396,15 @@ scud init
 scud generate docs/feature.md --tag my-project
 scud waves --tag my-project
 
-# Use GUI for visual task management
+# Use GUI for visual task management and execution
 descartes-gui
 # In GUI: View task waves, start agents, monitor progress
 
 # Use CLI for detailed development work
 scud next --tag my-project
-scud log 1 "Implemented JWT authentication with refresh tokens"
+scud set-status 1 in-progress
+# ... implement the feature ...
+scud set-status 1 done
 scud commit -m "Add JWT authentication system"
 ```
 
@@ -430,11 +430,10 @@ scud commit -m "Add JWT authentication system"
 
 **Orchestrator-Ready:**
 - Parallel agent spawning via tmux or headless modes
-- Salvo worktrees for isolated parallel execution
-- SQLite event storage with transcripts and session history
+- SQLite event storage and session history
 - Swarm execution with wave-based or continuous modes
 - Live monitoring with retrospective analysis
-- Task assignment and progress tracking
+- Advanced worktree isolation and transcript management
 
 ---
 
@@ -480,15 +479,6 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ├── agents/                   # Extension manifests (experimental)
 │   └── *.toml                # Custom agent definitions
 └── logs/                     # Task log entries
-
-# Salvo worktrees (created alongside project directory)
-../<project>.salvo.<tag>/     # Isolated worktree per tag
-├── .scud/
-│   ├── tasks/tasks.scg       # Filtered: full detail for tag, stubs for others
-│   ├── config.toml           # Copied from main
-│   ├── active-tag            # Set to target tag
-│   └── guidance/             # Copied from main
-└── ...                       # Full project checkout on salvo/<tag> branch
 ```
 
 ### Project Guidance
