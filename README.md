@@ -1,68 +1,98 @@
 # SCUD Task Manager
 
 <p align="center">
-  <img src="scud.jpeg" alt="SCUD" width="400">
+  <img src="README_SCREENSHOT.png" alt="SCUD Task Manager" width="600">
 </p>
 
 > *Inspired by the SCUD short-range ballistic missile system—lightweight, flexible, and powerful. Like its namesake, SCUD can be deployed quickly in a variety of contexts, delivering results with minimal overhead.*
 
-A fast, AI-powered task management system. Parse PRDs into tasks, track dependencies, and visualize parallel execution waves.
+A fast, AI-powered task management system with both CLI and desktop GUI interfaces. Parse PRDs into tasks, track dependencies, visualize parallel execution waves, and orchestrate AI agents.
+
+## Components
+
+### 🚀 SCUD CLI
+Fast, lightweight command-line interface for task management and AI orchestration.
+
+### 🖥️ Descartes GUI
+Desktop application for visual task management and real-time AI agent control.
 
 ---
 
 ## Quick Start
 
+### Choose Your Interface
+
+#### CLI Interface (SCUD)
+For developers who prefer terminal workflows and scripting.
+
+#### GUI Interface (Descartes)
+For visual task management and real-time agent control.
+
 ### Install
 
-**From crates.io (recommended):**
+#### SCUD CLI
 ```bash
+# From crates.io (recommended)
 cargo install scud-cli
 scud init
-```
 
-**From source:**
-```bash
-# Clone the repository
+# From source
 git clone https://github.com/pyrex41/scud.git
-cd scud
-
-# Build the CLI
+cd scud/scud-cli
 cargo build --release
-
-# Install globally (optional)
-./target/release/scud install
-
-# Or use directly
 ./target/release/scud init
 ```
 
-**Quick install script:**
+#### Descartes GUI
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pyrex41/scud/main/install.sh | bash
+# From crates.io (recommended)
+cargo install descartes-gui
+
+# From source
+git clone https://github.com/pyrex41/scud.git
+cd scud/descartes-gui
+cargo build --release
+./target/release/descartes-gui
 ```
 
 ### Basic Usage
+
+#### SCUD CLI Workflow
 ```bash
-# Generate tasks from a PRD or feature doc (parse → expand → validate)
+# Initialize project
+scud init
+
+# Generate tasks from PRD (AI-powered parsing)
 scud generate docs/feature.md --tag my-feature
 
-# View tasks and dependencies
-scud list --tag my-feature
-scud waves --tag my-feature    # Show parallel execution plan
+# View parallel execution plan
+scud waves --tag my-feature
 
-# Find and work on next ready task
+# Work on tasks
 scud next --tag my-feature
 scud set-status 1 in-progress
-
-# When done, mark complete
+# ... do the work ...
 scud set-status 1 done
 
 # Visualize in browser
 scud view
 ```
 
-**Quick reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
-**Orchestrator pattern:** [docs/orchestrator.md](docs/orchestrator.md)
+#### Descartes GUI Workflow
+```bash
+# Initialize SCUD first (GUI reads from SCUD data)
+scud init
+scud generate docs/feature.md --tag my-feature
+
+# Launch GUI
+descartes-gui
+
+# In GUI: View waves, start tasks, monitor progress
+```
+
+**SCUD CLI Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
+**Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
+**Descartes GUI Details:** [descartes-gui/README.md](descartes-gui/README.md)
 
 ---
 
@@ -129,6 +159,44 @@ Each worktree gets a filtered task file with full detail for its tag and collaps
 
 ---
 
+## Descartes GUI
+
+The desktop GUI provides a visual interface for task management and AI agent orchestration, complementing the SCUD CLI.
+
+### Features
+
+#### Wave Visualization
+- **Interactive waves**: Click to start tasks in parallel execution waves
+- **Dependency awareness**: Visual representation of task relationships
+- **Status tracking**: Real-time progress indicators
+
+#### Agent Control
+- **One-click execution**: Start agents directly from the GUI
+- **Real-time control**: Pause, resume, or cancel running agents
+- **Live monitoring**: Stream agent output and progress
+
+#### Task Management
+- **Visual task board**: Drag-and-drop task organization
+- **Status updates**: Mark tasks complete directly in the interface
+- **Progress tracking**: Overall project completion statistics
+
+### Setup
+```bash
+# Install GUI
+cargo install descartes-gui
+
+# Initialize SCUD project first
+scud init
+scud generate docs/feature.md --tag my-project
+
+# Launch GUI
+descartes-gui
+```
+
+The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendly interface for the same underlying task management system.
+
+---
+
 ## Key Features
 
 ### Pure Rust CLI
@@ -147,6 +215,12 @@ Each worktree gets a filtered task file with full detail for its tag and collaps
 - **Mermaid diagrams** - dependency graph visualization
 - **Real-time stats** - progress tracking
 
+### Desktop GUI (Descartes)
+- **Wave visualization** - Interactive task waves with one-click execution
+- **Real-time agent control** - Pause, resume, cancel running agents
+- **Live output streaming** - Monitor agent progress in real-time
+- **Visual task management** - Drag-and-drop task organization
+
 ### Orchestrator Support
 - **Parallel agents** - spawn multiple Claude instances via tmux
 - **Salvo worktrees** - automatic git worktree isolation per tag
@@ -161,8 +235,9 @@ Each worktree gets a filtered task file with full detail for its tag and collaps
 ## Documentation
 
 **Getting Started:**
-- [Quick Reference](docs/reference/QUICK_REFERENCE.md) - Command cheat sheet
+- [Quick Reference](docs/reference/QUICK_REFERENCE.md) - SCUD CLI command cheat sheet
 - [SCG Format Spec](docs/reference/SCG_FORMAT_SPEC.md) - Task file format
+- [Descartes GUI](descartes-gui/README.md) - Desktop interface guide
 
 **Swarm & Orchestration:**
 - [Orchestrator Pattern](docs/orchestrator.md) - Swarm modes, salvo worktrees, transcripts, and multi-agent workflows
@@ -300,6 +375,22 @@ scud view
 
 See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns.
 
+### Combined CLI + GUI Workflow
+```bash
+# Use CLI for initial setup and AI parsing
+scud init
+scud generate docs/feature.md --tag my-project
+scud waves --tag my-project
+
+# Use GUI for visual task management and execution
+descartes-gui
+# In GUI: View waves, start tasks, monitor agents
+
+# Use CLI for detailed work and commits
+scud next --tag my-project
+scud commit -m "Completed user authentication"
+```
+
 ---
 
 ## Why SCUD?
@@ -332,14 +423,24 @@ See [docs/orchestrator.md](docs/orchestrator.md) for parallel execution patterns
 
 ## Requirements
 
+### SCUD CLI
 - **Rust toolchain** (for building from source)
 - **xAI API key** (for AI features only; core commands work offline)
 
+### Descartes GUI
+- **Rust toolchain** (for building from source)
+- **System libraries** (Linux: `libxkbcommon-dev libwayland-dev`)
+
+### API Keys
 ```bash
+# For SCUD CLI AI features
 export XAI_API_KEY=xai-...
+
+# For Descartes GUI (Claude models)
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Alternative providers: Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`), OpenRouter (`OPENROUTER_API_KEY`). Configure with `scud config`.
+**Alternative providers:** Anthropic (`ANTHROPIC_API_KEY`), OpenAI (`OPENAI_API_KEY`), OpenRouter (`OPENROUTER_API_KEY`). Configure with `scud config`.
 
 ---
 
@@ -397,16 +498,35 @@ All `.md` files in this folder are automatically loaded when running `scud parse
 
 ## Development
 
+### Building Both Components
+
 ```bash
-# Build Rust CLI
+# Clone repository
+git clone https://github.com/pyrex41/scud.git
+cd scud
+
+# Build SCUD CLI
 cd scud-cli
 cargo build --release
+./target/release/scud install  # Optional: install globally
 
-# Install globally
-./target/release/scud install
+# Build Descartes GUI
+cd ../descartes-gui
+cargo build --release
 
-# Or use directly from build directory
+# Test both
 ./target/release/scud init
+./target/release/descartes-gui
+```
+
+### System Dependencies
+
+**macOS:** No additional dependencies required.
+
+**Linux:**
+```bash
+# For Descartes GUI
+sudo apt install libxkbcommon-dev libwayland-dev
 ```
 
 **Publishing:** See [PUBLISHING.md](PUBLISHING.md) for CI/CD setup and release process.
@@ -427,11 +547,12 @@ MIT
 
 ## Learn More
 
-- **Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
+- **SCUD CLI Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
 - **SCG Format:** [docs/reference/SCG_FORMAT_SPEC.md](docs/reference/SCG_FORMAT_SPEC.md)
 - **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
 - **Parallel Features:** [docs/features/PARALLEL_FEATURES.md](docs/features/PARALLEL_FEATURES.md)
+- **Descartes GUI:** [descartes-gui/README.md](descartes-gui/README.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
-- **Descartes (AI Orchestration):** [github.com/pyrex41/descartes](https://github.com/pyrex41/descartes)
+- **Related:** [github.com/pyrex41/descartes](https://github.com/pyrex41/descartes)
 
 **Happy building!**
