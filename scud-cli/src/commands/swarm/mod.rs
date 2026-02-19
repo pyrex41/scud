@@ -691,7 +691,8 @@ pub async fn run(
                         &working_dir,
                         round_idx,
                         harness,
-                    )?
+                    )
+                    .await?
                 }
                 SwarmMode::Server => {
                     // Server mode: use OpenCode Server for agent orchestration
@@ -700,7 +701,8 @@ pub async fn run(
                         round_tasks,
                         &working_dir,
                         round_idx,
-                    )?
+                    )
+                    .await?
                 }
                 SwarmMode::Headless => {
                     // Headless mode: use spawn's headless infrastructure for streaming JSON
@@ -1283,9 +1285,9 @@ fn execute_round(
 }
 
 /// Execute a round using extension-based subprocesses (no tmux)
-fn execute_round_extensions(
+async fn execute_round_extensions<'a>(
     storage: &Storage,
-    tasks: &[TaskInfo],
+    tasks: &[TaskInfo<'a>],
     working_dir: &std::path::Path,
     round_idx: usize,
     default_harness: Harness,
@@ -1306,11 +1308,7 @@ fn execute_round_extensions(
         }
     }
 
-    // Run async execution using tokio runtime
-    let handle = tokio::runtime::Handle::current();
-    let result = handle.block_on(async {
-        session::execute_wave_async(&wave_agents, working_dir, round_idx, default_harness).await
-    })?;
+    let result = session::execute_wave_async(&wave_agents, working_dir, round_idx, default_harness).await?;
 
     // Print results
     for agent_result in &result.agent_results {
@@ -1352,9 +1350,9 @@ fn execute_round_extensions(
 }
 
 /// Execute a round using OpenCode Server mode
-fn execute_round_server(
+async fn execute_round_server<'a>(
     storage: &Storage,
-    tasks: &[TaskInfo],
+    tasks: &[TaskInfo<'a>],
     working_dir: &std::path::Path,
     round_idx: usize,
 ) -> Result<RoundState> {
@@ -1370,10 +1368,6 @@ fn execute_round_server(
             }
         }
     }
-
-    // Run async execution using tokio runtime
-    let handle = tokio::runtime::Handle::current();
-    let result = handle.block_on(async {
         // Create event channel
         let (event_tx, _event_rx) = mpsc::channel(1000);
 
@@ -1413,11 +1407,10 @@ fn execute_round_server(
         // Collect results
         let results = orchestrator.wait_all().await;
 
-        // Cleanup
-        orchestrator.cleanup().await;
+    // Cleanup
+    orchestrator.cleanup().await;
 
-        Ok::<_, anyhow::Error>(results)
-    })?;
+    let result = results;
 
     // Build round state from results
     let mut round_state = RoundState::new(round_idx);
