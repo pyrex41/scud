@@ -1,0 +1,23 @@
+// Human gate pipeline: implement → review with approve/fix choices
+digraph human_gate {
+    graph [goal="Implement and review a feature with human approval"]
+
+    start [shape=Mdiamond]
+
+    implement [shape=box, label="Implement Feature"
+        prompt="Implement: $goal\nWrite clean code with tests."]
+
+    review [shape=hexagon, label="Human Review"
+        prompt="Review the implementation. Choose to approve or request fixes."]
+
+    fix [shape=box, label="Apply Fixes"
+        prompt="Apply the reviewer's feedback and fix the issues."
+        max_retries=3]
+
+    finish [shape=Msquare, label="Done"]
+
+    start -> implement -> review
+    review -> finish [label="Approve"]
+    review -> fix [label="Fix"]
+    fix -> review
+}

@@ -1,0 +1,10 @@
+// Quick test pipeline with fast tool command
+digraph quick_test {
+    graph [goal="Test the pipeline engine"]
+
+    start [shape=Mdiamond, label="Start"]
+    echo_step [shape=parallelogram, label="Echo Test", tool_command="echo 'hello from attractor'"]
+    finish [shape=Msquare, label="Done"]
+
+    start -> echo_step -> finish
+}

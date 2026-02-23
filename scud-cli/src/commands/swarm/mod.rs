@@ -1374,20 +1374,27 @@ async fn execute_round_server<'a>(
         // Create orchestrator
         let mut orchestrator = AgentOrchestrator::new(event_tx.clone()).await?;
 
+        // Resolve model from config
+        let config_path = working_dir.join(".scud").join("config.toml");
+        let config = crate::config::Config::load(&config_path).unwrap_or_default();
+        let model_str = config.swarm_model().to_string();
+        let provider_str = config.swarm.direct_api_provider.clone();
+
         // Spawn all agents
         for info in tasks {
             let prompt = generate_server_prompt(info.task, &info.tag, working_dir);
 
-            // Use xAI/Grok as default for server mode
-            let model = Some(("xai", "grok-3"));
+            let model = Some((provider_str.as_str(), model_str.as_str()));
 
             match orchestrator.spawn_agent(info.task, &info.tag, &prompt, model).await {
                 Ok(_) => {
                     println!(
-                        "    {} Spawned: {} | {} [server/grok-3]",
+                        "    {} Spawned: {} | {} [server/{}/{}]",
                         "✓".green(),
                         info.task.id.cyan(),
                         info.task.title.dimmed(),
+                        provider_str,
+                        model_str,
                     );
                 }
                 Err(e) => {

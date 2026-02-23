@@ -1424,6 +1424,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
+name = "fixedbitset"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
+
+[[package]]
 name = "flate2"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3428,6 +3434,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "petgraph"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
+dependencies = [
+ "fixedbitset",
+ "indexmap",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4042,9 +4058,10 @@ dependencies = [
 
 [[package]]
 name = "scud-cli"
-version = "1.64.0"
+version = "1.64.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "atty",
  "chrono",
  "clap",
@@ -4060,7 +4077,9 @@ dependencies = [
  "indicatif",
  "mockall",
  "notify",
+ "petgraph",
  "pin-project-lite",
+ "rand",
  "ratatui",
  "regex",
  "reqwest",
@@ -4072,6 +4091,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
+ "tokio-util",
  "toml",
  "tracing",
  "uuid",
@@ -4083,7 +4103,7 @@ dependencies = [
 
 [[package]]
 name = "scud-task-core"
-version = "1.64.0"
+version = "1.64.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4800,6 +4820,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

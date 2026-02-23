@@ -928,6 +928,12 @@ enum Commands {
     #[command(hide = true)]
     SyncFromClaude,
 
+    /// Run Attractor pipelines (DOT-based AI workflow graphs)
+    Attractor {
+        #[command(subcommand)]
+        command: AttractorCommands,
+    },
+
     /// Execute an agent loop using direct API calls (Anthropic, OpenAI, xAI, etc.)
     #[cfg(feature = "direct-api")]
     AgentExec {
@@ -950,6 +956,65 @@ enum Commands {
 
     // /// Start interactive REPL for task management - temporarily disabled
     // Repl,
+}
+
+#[derive(Subcommand)]
+enum AttractorCommands {
+    /// Execute an Attractor pipeline
+    Run {
+        /// Path to the DOT pipeline file
+        file: PathBuf,
+
+        /// Resume from a checkpoint file
+        #[arg(long)]
+        resume: Option<PathBuf>,
+
+        /// Run without human interaction (auto-approve gates)
+        #[arg(long)]
+        headless: bool,
+
+        /// Use simulated backend (no LLM calls)
+        #[arg(long)]
+        simulated: bool,
+
+        /// Directory for run output (default: same as pipeline file)
+        #[arg(long)]
+        runs_dir: Option<PathBuf>,
+
+        /// Model to use (overrides pipeline defaults)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Provider to use (overrides pipeline defaults)
+        #[arg(long)]
+        provider: Option<String>,
+    },
+
+    /// Validate a pipeline without executing it
+    Validate {
+        /// Path to the DOT pipeline file
+        file: PathBuf,
+    },
+
+    /// Import a pipeline from another format
+    Import {
+        /// Source file path
+        file: PathBuf,
+
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Export a pipeline to another format
+    Export {
+        /// Source pipeline file
+        file: PathBuf,
+
+        /// Output format (default: dot)
+        #[arg(long, default_value = "dot")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -1541,6 +1606,35 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
+        Commands::Attractor { command } => match command {
+            AttractorCommands::Run {
+                file,
+                resume,
+                headless,
+                simulated,
+                runs_dir,
+                model,
+                provider,
+            } => {
+                commands::attractor::run::run(
+                    &file,
+                    resume.as_deref(),
+                    headless,
+                    simulated,
+                    model.as_deref(),
+                    provider.as_deref(),
+                    runs_dir.as_deref(),
+                )
+                .await
+            }
+            AttractorCommands::Validate { file } => commands::attractor::validate::run(&file),
+            AttractorCommands::Import { file, output } => {
+                commands::attractor::import::run(&file, output.as_deref())
+            }
+            AttractorCommands::Export { file, format } => {
+                commands::attractor::export::run(&file, &format)
+            }
+        },
         Commands::SyncFromClaude => commands::sync_from_claude::run(cli.project),
         #[cfg(feature = "direct-api")]
         Commands::AgentExec {
