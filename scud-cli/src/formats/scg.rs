@@ -10,6 +10,44 @@ use crate::models::{IdFormat, Phase, Priority, Task, TaskStatus};
 const FORMAT_VERSION: &str = "v1";
 const HEADER_PREFIX: &str = "# SCUD Graph";
 
+// --- Pipeline extension types ---
+
+/// Result of parsing an SCG file, including optional pipeline metadata.
+#[derive(Debug)]
+pub struct ScgParseResult {
+    pub phase: Phase,
+    pub pipeline: Option<ScgPipeline>,
+}
+
+/// Pipeline-specific data parsed from an SCG file in `mode pipeline`.
+#[derive(Debug, Clone, Default)]
+pub struct ScgPipeline {
+    pub goal: Option<String>,
+    pub model_stylesheet: Option<String>,
+    pub node_attrs: HashMap<String, PipelineNodeAttrs>,
+    pub edge_attrs: Vec<ScgEdgeAttrs>,
+}
+
+/// Per-node pipeline attributes from the `@pipeline` section.
+#[derive(Debug, Clone, Default)]
+pub struct PipelineNodeAttrs {
+    pub handler_type: String,
+    pub max_retries: u32,
+    pub retry_target: Option<String>,
+    pub goal_gate: bool,
+    pub timeout: Option<String>,
+}
+
+/// Extended edge attributes for pipeline mode.
+#[derive(Debug, Clone)]
+pub struct ScgEdgeAttrs {
+    pub from: String,
+    pub to: String,
+    pub label: String,
+    pub condition: String,
+    pub weight: i32,
+}
+
 /// Status code mapping
 fn status_to_code(status: &TaskStatus) -> char {
     match status {
@@ -118,8 +156,13 @@ fn split_by_pipe(line: &str) -> Vec<String> {
     parts
 }
 
-/// Parse SCG format into Phase
+/// Parse SCG format into Phase (backwards-compatible wrapper).
 pub fn parse_scg(content: &str) -> Result<Phase> {
+    parse_scg_result(content).map(|r| r.phase)
+}
+
+/// Parse SCG format into ScgParseResult, capturing pipeline metadata if present.
+pub fn parse_scg_result(content: &str) -> Result<ScgParseResult> {
     let mut lines = content.lines().peekable();
 
     // Parse header
@@ -148,6 +191,13 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
     type AssignmentInfo = (Option<String>, Option<String>, Option<String>);
     let mut assignments: HashMap<String, AssignmentInfo> = HashMap::new();
     let mut agent_types: HashMap<String, String> = HashMap::new();
+
+    // Pipeline-specific accumulators
+    let mut is_pipeline = false;
+    let mut pipeline_goal: Option<String> = None;
+    let mut pipeline_stylesheet: Option<String> = None;
+    let mut pipeline_node_attrs: HashMap<String, PipelineNodeAttrs> = HashMap::new();
+    let mut pipeline_edge_attrs: Vec<ScgEdgeAttrs> = Vec::new();
 
     // Track current section
     let mut current_section: Option<&str> = None;
@@ -183,6 +233,7 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
                 "@assignments" => "assignments",
                 "@agents" => "agents",
                 "@details" => "details",
+                "@pipeline" => "pipeline",
                 _ => continue,
             });
             continue;
@@ -216,6 +267,18 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
                         "id_format" => {
                             phase.id_format = IdFormat::parse(value);
                         }
+                        "mode" => {
+                            if value == "pipeline" {
+                                is_pipeline = true;
+                            }
+                        }
+                        "goal" => {
+                            pipeline_goal = Some(value.to_string());
+                        }
+                        "model_stylesheet" => {
+                            // Capture everything after "model_stylesheet "
+                            pipeline_stylesheet = Some(value.to_string());
+                        }
                         _ => {
                             // Ignore other meta fields (e.g., "updated")
                         }
@@ -242,9 +305,60 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
                 }
             }
             Some("edges") => {
-                // Parse "dependent -> dependency"
-                if let Some((dependent, dependency)) = trimmed.split_once("->") {
-                    edges.push((dependent.trim().to_string(), dependency.trim().to_string()));
+                if is_pipeline {
+                    // Pipeline mode: "from -> to [| label | condition | weight]"
+                    if let Some((from_part, rest)) = trimmed.split_once("->") {
+                        let from = from_part.trim().to_string();
+                        // The rest may contain pipe-delimited fields
+                        let parts = split_by_pipe(rest);
+                        let to = parts[0].trim().to_string();
+                        let label = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+                        let condition = parts.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+                        let weight: i32 = parts.get(3).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+                        pipeline_edge_attrs.push(ScgEdgeAttrs {
+                            from,
+                            to,
+                            label,
+                            condition,
+                            weight,
+                        });
+                    }
+                } else {
+                    // Standard mode: "dependent -> dependency"
+                    if let Some((dependent, dependency)) = trimmed.split_once("->") {
+                        edges.push((dependent.trim().to_string(), dependency.trim().to_string()));
+                    }
+                }
+            }
+            Some("pipeline") => {
+                // Parse "id | handler_type | max_retries | retry_target | goal_gate | timeout"
+                let parts = split_by_pipe(trimmed);
+                if parts.len() >= 2 {
+                    let id = parts[0].clone();
+                    let handler_type = parts[1].clone();
+                    let max_retries: u32 = parts.get(2).and_then(|s| {
+                        let s = s.trim();
+                        if s.is_empty() { None } else { s.parse().ok() }
+                    }).unwrap_or(0);
+                    let retry_target = parts.get(3).and_then(|s| {
+                        let s = s.trim();
+                        if s.is_empty() { None } else { Some(s.to_string()) }
+                    });
+                    let goal_gate = parts.get(4).map(|s| {
+                        let s = s.trim();
+                        s == "true"
+                    }).unwrap_or(false);
+                    let timeout = parts.get(5).and_then(|s| {
+                        let s = s.trim();
+                        if s.is_empty() { None } else { Some(s.to_string()) }
+                    });
+                    pipeline_node_attrs.insert(id, PipelineNodeAttrs {
+                        handler_type,
+                        max_retries,
+                        retry_target,
+                        goal_gate,
+                        timeout,
+                    });
                 }
             }
             Some("parents") => {
@@ -310,10 +424,12 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
         &mut details,
     );
 
-    // Apply edges (dependencies)
-    for (dependent, dependency) in edges {
-        if let Some(task) = tasks.get_mut(&dependent) {
-            task.dependencies.push(dependency);
+    // Apply edges (dependencies) — only in non-pipeline mode
+    if !is_pipeline {
+        for (dependent, dependency) in edges {
+            if let Some(task) = tasks.get_mut(&dependent) {
+                task.dependencies.push(dependency);
+            }
         }
     }
 
@@ -364,7 +480,19 @@ pub fn parse_scg(content: &str) -> Result<Phase> {
     // Sort tasks by ID for consistent ordering
     phase.tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
 
-    Ok(phase)
+    // Build pipeline if in pipeline mode
+    let pipeline = if is_pipeline {
+        Some(ScgPipeline {
+            goal: pipeline_goal,
+            model_stylesheet: pipeline_stylesheet,
+            node_attrs: pipeline_node_attrs,
+            edge_attrs: pipeline_edge_attrs,
+        })
+    } else {
+        None
+    };
+
+    Ok(ScgParseResult { phase, pipeline })
 }
 
 /// Natural sort for task IDs with UUID fallback
@@ -522,6 +650,146 @@ pub fn serialize_scg(phase: &Phase) -> String {
     }
 
     // Details section
+    let tasks_with_details: Vec<_> = sorted_tasks
+        .iter()
+        .filter(|t| !t.description.is_empty() || t.details.is_some() || t.test_strategy.is_some())
+        .collect();
+
+    if !tasks_with_details.is_empty() {
+        output.push_str("@details\n");
+        for task in tasks_with_details {
+            if !task.description.is_empty() {
+                output.push_str(&format!("{} | description |\n", task.id));
+                for line in task.description.lines() {
+                    output.push_str(&format!("  {}\n", line));
+                }
+            }
+            if let Some(ref details) = task.details {
+                output.push_str(&format!("{} | details |\n", task.id));
+                for line in details.lines() {
+                    output.push_str(&format!("  {}\n", line));
+                }
+            }
+            if let Some(ref test_strategy) = task.test_strategy {
+                output.push_str(&format!("{} | test_strategy |\n", task.id));
+                for line in test_strategy.lines() {
+                    output.push_str(&format!("  {}\n", line));
+                }
+            }
+        }
+    }
+
+    output
+}
+
+/// Serialize a pipeline-mode SCG from a ScgParseResult.
+pub fn serialize_scg_pipeline(result: &ScgParseResult) -> String {
+    let phase = &result.phase;
+    let pipeline = result.pipeline.as_ref().expect("serialize_scg_pipeline requires pipeline data");
+
+    let mut output = String::new();
+
+    // Header
+    output.push_str(&format!("{} {}\n", HEADER_PREFIX, FORMAT_VERSION));
+    output.push_str(&format!("# Phase: {}\n\n", phase.name));
+
+    // Meta section with pipeline fields
+    output.push_str("@meta {\n");
+    output.push_str(&format!("  name {}\n", phase.name));
+    output.push_str("  mode pipeline\n");
+    if let Some(ref goal) = pipeline.goal {
+        output.push_str(&format!("  goal {}\n", goal));
+    }
+    if let Some(ref stylesheet) = pipeline.model_stylesheet {
+        output.push_str(&format!("  model_stylesheet {}\n", stylesheet));
+    }
+    output.push_str("}\n\n");
+
+    // Sort tasks for consistent output
+    let mut sorted_tasks = phase.tasks.clone();
+    sorted_tasks.sort_by(|a, b| natural_sort_ids(&a.id, &b.id));
+
+    // Nodes section
+    output.push_str("@nodes\n");
+    output.push_str("# id | title | status | complexity | priority\n");
+    for task in &sorted_tasks {
+        output.push_str(&format!(
+            "{} | {} | {} | {} | {}\n",
+            task.id,
+            escape_text(&task.title),
+            status_to_code(&task.status),
+            task.complexity,
+            priority_to_code(&task.priority)
+        ));
+    }
+    output.push('\n');
+
+    // Edges section (pipeline style: from -> to | label | condition | weight)
+    if !pipeline.edge_attrs.is_empty() {
+        output.push_str("@edges\n");
+        output.push_str("# from -> to [| label | condition | weight]\n");
+        for edge in &pipeline.edge_attrs {
+            let has_extras = !edge.label.is_empty() || !edge.condition.is_empty() || edge.weight != 0;
+            if has_extras {
+                output.push_str(&format!(
+                    "{} -> {} | {} | {} | {}\n",
+                    edge.from, edge.to, edge.label, edge.condition, edge.weight
+                ));
+            } else {
+                output.push_str(&format!("{} -> {}\n", edge.from, edge.to));
+            }
+        }
+        output.push('\n');
+    }
+
+    // Pipeline section
+    if !pipeline.node_attrs.is_empty() {
+        output.push_str("@pipeline\n");
+        output.push_str("# id | handler_type | max_retries | retry_target | goal_gate | timeout\n");
+
+        // Sort by task order
+        let task_ids: Vec<&str> = sorted_tasks.iter().map(|t| t.id.as_str()).collect();
+        let mut sorted_attrs: Vec<_> = pipeline.node_attrs.iter().collect();
+        sorted_attrs.sort_by(|(a, _), (b, _)| {
+            let a_pos = task_ids.iter().position(|id| id == a).unwrap_or(usize::MAX);
+            let b_pos = task_ids.iter().position(|id| id == b).unwrap_or(usize::MAX);
+            a_pos.cmp(&b_pos)
+        });
+
+        for (id, attrs) in sorted_attrs {
+            let retry_target = attrs.retry_target.as_deref().unwrap_or("");
+            let goal_gate = if attrs.goal_gate { "true" } else { "" };
+            let timeout = attrs.timeout.as_deref().unwrap_or("");
+
+            // Trim trailing empty fields
+            if !timeout.is_empty() {
+                output.push_str(&format!(
+                    "{} | {} | {} | {} | {} | {}\n",
+                    id, attrs.handler_type, attrs.max_retries, retry_target, goal_gate, timeout
+                ));
+            } else if !goal_gate.is_empty() {
+                output.push_str(&format!(
+                    "{} | {} | {} | {} | {}\n",
+                    id, attrs.handler_type, attrs.max_retries, retry_target, goal_gate
+                ));
+            } else if !retry_target.is_empty() {
+                output.push_str(&format!(
+                    "{} | {} | {} | {}\n",
+                    id, attrs.handler_type, attrs.max_retries, retry_target
+                ));
+            } else if attrs.max_retries > 0 {
+                output.push_str(&format!(
+                    "{} | {} | {}\n",
+                    id, attrs.handler_type, attrs.max_retries
+                ));
+            } else {
+                output.push_str(&format!("{} | {}\n", id, attrs.handler_type));
+            }
+        }
+        output.push('\n');
+    }
+
+    // Details section (same as standard SCG)
     let tasks_with_details: Vec<_> = sorted_tasks
         .iter()
         .filter(|t| !t.description.is_empty() || t.details.is_some() || t.test_strategy.is_some())

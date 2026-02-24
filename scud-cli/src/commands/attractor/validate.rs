@@ -6,15 +6,24 @@ use std::path::Path;
 
 use crate::attractor::dot_parser::parse_dot;
 use crate::attractor::graph::PipelineGraph;
+use crate::attractor::scg_bridge;
 use crate::attractor::transforms::apply_transforms;
 use crate::attractor::validator::{self, Severity};
+use crate::formats::parse_scg_result;
 
-/// Validate a pipeline DOT file.
+/// Validate a pipeline file (.scg or .dot).
 pub fn run(file: &Path) -> Result<()> {
-    let dot_source = std::fs::read_to_string(file)
+    let source = std::fs::read_to_string(file)
         .context(format!("Failed to read: {}", file.display()))?;
-    let dot_graph = parse_dot(&dot_source).context("Failed to parse DOT file")?;
-    let mut pipeline = PipelineGraph::from_dot(&dot_graph).context("Failed to build pipeline graph")?;
+
+    let is_scg = file.extension().and_then(|e| e.to_str()) == Some("scg");
+    let mut pipeline = if is_scg {
+        let result = parse_scg_result(&source).context("Failed to parse SCG file")?;
+        scg_bridge::pipeline_from_scg(&result).context("Failed to build pipeline graph from SCG")?
+    } else {
+        let dot_graph = parse_dot(&source).context("Failed to parse DOT file")?;
+        PipelineGraph::from_dot(&dot_graph).context("Failed to build pipeline graph")?
+    };
 
     apply_transforms(&mut pipeline);
 

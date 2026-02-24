@@ -1,0 +1,45 @@
+# SCUD Graph v1
+# Phase: build-api
+
+@meta {
+  name build-api
+  mode pipeline
+  goal Build a REST API
+  model_stylesheet * { model: "claude-3-haiku"; reasoning_effort: "medium" }
+}
+
+@nodes
+# id | title | status | complexity | priority
+start | Start | P | 0 | M
+design | Design API Schema | P | 5 | H
+review | Approve Design | P | 0 | M
+implement | Write Code | P | 8 | H
+test | Run Tests | P | 3 | M
+finish | Done | P | 0 | M
+
+@edges
+# from -> to [| label | condition | weight]
+start -> design
+design -> review
+review -> implement | Approve | | 10
+review -> design | Revise | | 0
+implement -> test
+test -> finish | | outcome=success
+test -> implement | | outcome=failure
+
+@pipeline
+# id | handler_type | max_retries | retry_target | goal_gate | timeout
+start | start
+design | codergen | 3
+review | wait.human
+implement | codergen | 2 | | false | 5m
+test | tool
+finish | exit | 0 | design | true
+
+@details
+design | description |
+  Create a detailed API schema for: $goal
+implement | description |
+  Implement the API based on $context.design.response
+test | details |
+  cargo build && cargo test 2>&1

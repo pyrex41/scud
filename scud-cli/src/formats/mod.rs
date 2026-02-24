@@ -5,7 +5,10 @@
 
 mod scg;
 
-pub use scg::{natural_sort_ids, parse_scg, serialize_scg};
+pub use scg::{
+    natural_sort_ids, parse_scg, parse_scg_result, serialize_scg, serialize_scg_pipeline,
+    PipelineNodeAttrs, ScgEdgeAttrs, ScgParseResult, ScgPipeline,
+};
 
 /// Supported file formats
 #[derive(Debug, Clone, Copy, PartialEq)]

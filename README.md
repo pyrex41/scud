@@ -220,8 +220,9 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 - **Visual task management** - Drag-and-drop task organization
 
 ### Attractor Mode (Pipeline Engine)
-- **DOT-based workflows** - define multi-step AI pipelines as graph files
+- **DOT and SCG formats** - define pipelines as DOT graphs or native SCG files
 - **Node types** - LLM calls, shell tools, human gates, conditionals, parallel fan-out/fan-in
+- **Format conversion** - `import`/`export` between DOT and SCG
 - **Checkpoint/resume** - interrupt and resume pipelines from any node
 - **Retry with backoff** - exponential backoff with jitter on failures
 - **Stylesheets** - CSS-like model/provider defaults per node class
@@ -351,16 +352,18 @@ scud doctor scan-ext               # Scan and validate extensions
 
 ### Attractor Mode (Pipeline Engine)
 ```bash
-scud attractor run <file.dot>                  # Execute a DOT pipeline
-scud attractor run <file.dot> --headless       # Auto-approve human gates
-scud attractor run <file.dot> --simulated      # Dry-run with no LLM calls
-scud attractor run <file.dot> --model opus     # Override model
-scud attractor run <file.dot> --provider xai   # Override provider/harness
-scud attractor run <file.dot> --resume <ckpt>  # Resume from checkpoint
-scud attractor validate <file.dot>             # Validate without executing
+scud attractor run <file>                      # Execute a pipeline (.dot or .scg)
+scud attractor run <file> --headless           # Auto-approve human gates
+scud attractor run <file> --simulated          # Dry-run with no LLM calls
+scud attractor run <file> --model opus         # Override model
+scud attractor run <file> --provider xai       # Override provider/harness
+scud attractor run <file> --resume <ckpt>      # Resume from checkpoint
+scud attractor validate <file>                 # Validate without executing
+scud attractor export <file> --format dot      # Convert SCG → DOT (or DOT → SCG)
+scud attractor import <file.dot> -o out.scg    # Import DOT as SCG
 ```
 
-Pipelines are DOT `digraph` files where node shapes determine behavior (LLM calls, shell tools, human gates, conditionals, parallel execution). See [docs/attractor.md](docs/attractor.md) for the full reference.
+Pipelines can be DOT `digraph` files (node shapes determine behavior) or SCG files with `mode pipeline` (handler types in `@pipeline` section). Both formats support the same execution semantics. See [docs/attractor.md](docs/attractor.md) for the full reference.
 
 ### Utilities
 ```bash

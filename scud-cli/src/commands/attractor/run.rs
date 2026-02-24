@@ -13,9 +13,11 @@ use crate::attractor::interviewer::{AutoApproveInterviewer, ConsoleInterviewer};
 use crate::attractor::outcome::StageStatus;
 use crate::attractor::run_directory::{RunDirectory, RunManifest};
 use crate::attractor::runner::PipelineRunner;
+use crate::attractor::scg_bridge;
 use crate::attractor::transforms::apply_transforms;
 use crate::attractor::validator;
 use crate::backend;
+use crate::formats::parse_scg_result;
 
 /// Run an Attractor pipeline.
 pub async fn run(
@@ -27,11 +29,18 @@ pub async fn run(
     provider: Option<&str>,
     runs_dir: Option<&Path>,
 ) -> Result<()> {
-    // Read and parse the DOT file
-    let dot_source =
+    // Read and parse the pipeline file (.scg or .dot)
+    let source =
         std::fs::read_to_string(file).context(format!("Failed to read pipeline file: {}", file.display()))?;
-    let dot_graph = parse_dot(&dot_source).context("Failed to parse DOT file")?;
-    let mut pipeline = PipelineGraph::from_dot(&dot_graph).context("Failed to build pipeline graph")?;
+
+    let is_scg = file.extension().and_then(|e| e.to_str()) == Some("scg");
+    let mut pipeline = if is_scg {
+        let result = parse_scg_result(&source).context("Failed to parse SCG file")?;
+        scg_bridge::pipeline_from_scg(&result).context("Failed to build pipeline graph from SCG")?
+    } else {
+        let dot_graph = parse_dot(&source).context("Failed to parse DOT file")?;
+        PipelineGraph::from_dot(&dot_graph).context("Failed to build pipeline graph")?
+    };
 
     // Apply transforms
     apply_transforms(&mut pipeline);

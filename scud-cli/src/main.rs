@@ -1014,6 +1014,10 @@ enum AttractorCommands {
         /// Output format (default: dot)
         #[arg(long, default_value = "dot")]
         format: String,
+
+        /// Output file path (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -1631,8 +1635,8 @@ async fn main() -> Result<()> {
             AttractorCommands::Import { file, output } => {
                 commands::attractor::import::run(&file, output.as_deref())
             }
-            AttractorCommands::Export { file, format } => {
-                commands::attractor::export::run(&file, &format)
+            AttractorCommands::Export { file, format, output } => {
+                commands::attractor::export::run(&file, &format, output.as_deref())
             }
         },
         Commands::SyncFromClaude => commands::sync_from_claude::run(cli.project),

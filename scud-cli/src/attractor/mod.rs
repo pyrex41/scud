@@ -36,6 +36,7 @@ pub mod context;
 pub mod dot_parser;
 pub mod events;
 pub mod graph;
+pub mod scg_bridge;
 pub mod handlers;
 pub mod interviewer;
 pub mod outcome;

@@ -1,36 +1,56 @@
 # Attractor Mode
 
-Attractor Mode is a pipeline engine for multi-step AI workflows defined as DOT graphs. Nodes represent tasks — LLM calls, shell commands, human approval gates, conditional branches, parallel fan-out — and edges represent transitions with optional conditions.
+Attractor Mode is a pipeline engine for multi-step AI workflows. Pipelines can be defined in **DOT** format or natively in **SCG (SCUD Graph)** format. Nodes represent tasks — LLM calls, shell commands, human approval gates, conditional branches, parallel fan-out — and edges represent transitions with optional conditions.
 
 ```
-DOT file → Parser → Graph → Transforms → Validator → Runner
-                                                        ↓
-                                      AgentBackend ← Handler Registry
+DOT file ──→ Parser ──→ Graph → Transforms → Validator → Runner
+SCG file ──→ Parser ──→ Bridge ──↗                         ↓
+                                             AgentBackend ← Handler Registry
 ```
 
 ## Quick Start
 
 ```bash
-# Run a pipeline
+# Run a pipeline (DOT or SCG)
 scud attractor run pipeline.dot
+scud attractor run pipeline.scg
 
 # Validate without executing
-scud attractor validate pipeline.dot
+scud attractor validate pipeline.scg
 
 # Use a specific model/provider
-scud attractor run pipeline.dot --model claude-sonnet-4-5-20250929 --provider anthropic
+scud attractor run pipeline.scg --model claude-sonnet-4-5-20250929 --provider anthropic
 
 # Run without LLM calls (simulated)
-scud attractor run pipeline.dot --simulated
+scud attractor run pipeline.scg --simulated
 
 # Run headless (auto-approve human gates)
-scud attractor run pipeline.dot --headless
+scud attractor run pipeline.scg --headless
 
 # Resume from checkpoint
 scud attractor run pipeline.dot --resume runs/my-run/checkpoint.json
+
+# Convert between formats
+scud attractor export pipeline.scg --format dot        # SCG → DOT
+scud attractor export pipeline.dot --format scg        # DOT → SCG
+scud attractor import pipeline.dot -o pipeline.scg     # DOT → SCG (import shorthand)
 ```
 
-## Writing Pipelines
+## Pipeline Formats
+
+Attractor supports two input formats. Both produce the same internal `PipelineGraph` — all execution semantics are identical.
+
+### DOT Format
+
+The original format. Node shapes determine handler types. Good for Graphviz visualization.
+
+### SCG Format (Pipeline Mode)
+
+The SCG format used for SCUD task management, extended with pipeline-specific sections (`@pipeline`, extended `@edges`). Set `mode pipeline` in `@meta` to enable pipeline semantics. More compact and human-editable than DOT.
+
+Key difference: in pipeline mode, `A -> B` means "A transitions to B" (forward flow), not "A depends on B" as in standard SCG task graphs.
+
+## Writing Pipelines (DOT)
 
 Pipelines are DOT `digraph` files. Node shapes determine behavior:
 
@@ -262,12 +282,120 @@ direct_api_provider = "xai"          # provider for direct-api harness
 
 You can also override per-node via `llm_model` and `llm_provider` attributes, or per-graph via stylesheets.
 
+## Writing Pipelines (SCG)
+
+Pipeline SCG files use the same sections as standard SCG (`@meta`, `@nodes`, `@edges`, `@details`) plus a `@pipeline` section for handler configuration.
+
+```
+# SCUD Graph v1
+# Phase: build-api
+
+@meta {
+  name build-api
+  mode pipeline
+  goal Build a REST API
+  model_stylesheet * { model: "claude-3-haiku"; reasoning_effort: "medium" }
+}
+
+@nodes
+# id | title | status | complexity | priority
+start | Start | P | 0 | M
+design | Design API Schema | P | 5 | H
+review | Approve Design | P | 0 | M
+implement | Write Code | P | 8 | H
+test | Run Tests | P | 3 | M
+finish | Done | P | 0 | M
+
+@edges
+# from -> to [| label | condition | weight]
+start -> design
+design -> review
+review -> implement | Approve | | 10
+review -> design | Revise | | 0
+implement -> test
+test -> finish | | outcome=success
+test -> implement | | outcome=failure
+
+@pipeline
+# id | handler_type | max_retries | retry_target | goal_gate | timeout
+start | start
+design | codergen | 3
+review | wait.human
+implement | codergen | 2 | | false | 5m
+test | tool
+finish | exit | 0 | design | true
+
+@details
+design | description |
+  Create a detailed API schema for: $goal
+implement | description |
+  Implement the API based on $context.design.response
+test | details |
+  cargo build && cargo test 2>&1
+```
+
+### SCG Pipeline Sections
+
+**`@meta`** — Extended with pipeline-specific keys:
+
+| Key | Description |
+|---|---|
+| `mode pipeline` | Required. Enables pipeline semantics |
+| `goal` | Goal string; expanded as `$goal` in prompts |
+| `model_stylesheet` | CSS-like stylesheet for model/provider defaults |
+
+**`@nodes`** — Same as standard SCG. The `title` field becomes the node label. `description` (in `@details`) becomes the prompt.
+
+**`@edges`** — Extended with optional pipe-delimited fields:
+
+```
+from -> to [| label | condition | weight]
+```
+
+| Field | Description |
+|---|---|
+| `label` | Display label; used in human gate routing |
+| `condition` | Condition expression (e.g., `outcome=success`) |
+| `weight` | Priority tiebreaker (higher wins, default 0) |
+
+**`@pipeline`** — Per-node handler configuration (pipe-delimited):
+
+```
+id | handler_type [| max_retries | retry_target | goal_gate | timeout]
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `handler_type` | required | Handler: `start`, `exit`, `codergen`, `wait.human`, `tool`, etc. |
+| `max_retries` | `0` | Retry attempts on failure |
+| `retry_target` | — | Node to route to after exhausted retries |
+| `goal_gate` | `false` | On exit nodes: require goal satisfaction |
+| `timeout` | — | Per-node timeout (`30s`, `5m`, `1h`) |
+
+**`@details`** — Multiline content for nodes. In pipeline mode:
+- `description` → node prompt (supports `$goal` and `$context.KEY`)
+- `details` → tool command (for `tool` handler nodes)
+
+### Format Conversion
+
+Convert between DOT and SCG:
+
+```bash
+# DOT → SCG
+scud attractor import pipeline.dot -o pipeline.scg
+scud attractor export pipeline.dot --format scg
+
+# SCG → DOT
+scud attractor export pipeline.scg --format dot
+```
+
 ## Validation
 
 Run `scud attractor validate` to check a pipeline without executing it:
 
 ```bash
 scud attractor validate pipeline.dot
+scud attractor validate pipeline.scg
 ```
 
 ### Validation Rules
