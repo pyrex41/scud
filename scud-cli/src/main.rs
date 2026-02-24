@@ -363,6 +363,14 @@ enum Commands {
         /// Verbose output showing each phase's details
         #[arg(short, long)]
         verbose: bool,
+
+        /// Generate an Attractor pipeline instead of a task graph
+        #[arg(long)]
+        pipeline: bool,
+
+        /// Output file path (default: .scud/tasks/tasks.scg for pipeline)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 
     /// Clear tasks (archives by default, use --delete to permanently remove)
@@ -1201,22 +1209,37 @@ async fn main() -> Result<()> {
             model,
             dry_run,
             verbose,
+            pipeline,
+            output,
         } => {
-            commands::generate::run(
-                cli.project,
-                &file,
-                &tag,
-                num_tasks,
-                no_expand,
-                no_check_deps,
-                append,
-                no_guidance,
-                &id_format,
-                model.as_deref(),
-                dry_run,
-                verbose,
-            )
-            .await
+            if pipeline {
+                commands::generate::run_pipeline(
+                    cli.project,
+                    &file,
+                    &tag,
+                    model.as_deref(),
+                    output,
+                    dry_run,
+                    verbose,
+                )
+                .await
+            } else {
+                commands::generate::run(
+                    cli.project,
+                    &file,
+                    &tag,
+                    num_tasks,
+                    no_expand,
+                    no_check_deps,
+                    append,
+                    no_guidance,
+                    &id_format,
+                    model.as_deref(),
+                    dry_run,
+                    verbose,
+                )
+                .await
+            }
         }
         Commands::Clean {
             force,

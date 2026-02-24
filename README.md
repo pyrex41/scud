@@ -220,6 +220,7 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 - **Visual task management** - Drag-and-drop task organization
 
 ### Attractor Mode (Pipeline Engine)
+- **Generate from PRDs** - `scud generate --pipeline` creates pipelines via interactive interview + LLM
 - **DOT and SCG formats** - define pipelines as DOT graphs or native SCG files
 - **Node types** - LLM calls, shell tools, human gates, conditionals, parallel fan-out/fan-in
 - **Format conversion** - `import`/`export` between DOT and SCG
@@ -287,6 +288,7 @@ scud mermaid [--tag <tag>]         # Generate Mermaid diagram
 ### AI Commands (Requires API Key)
 ```bash
 scud generate <file> --tag <tag>   # Full pipeline: parse → expand → validate
+scud generate --pipeline <file> --tag <tag>  # Generate Attractor pipeline from PRD
 scud parse <file> --tag <tag>      # Parse PRD/doc into initial tasks
 scud expand [--task <id>]          # Break down complex tasks into subtasks
 scud analyze-complexity            # Analyze task complexity (AI-powered)
@@ -352,6 +354,11 @@ scud doctor scan-ext               # Scan and validate extensions
 
 ### Attractor Mode (Pipeline Engine)
 ```bash
+# Generate a pipeline from a PRD (interactive interview + LLM)
+scud generate --pipeline docs/prd.md --tag build-api
+scud generate --pipeline docs/prd.md --tag build-api --dry-run
+
+# Execute pipelines
 scud attractor run <file>                      # Execute a pipeline (.dot or .scg)
 scud attractor run <file> --headless           # Auto-approve human gates
 scud attractor run <file> --simulated          # Dry-run with no LLM calls
@@ -363,7 +370,7 @@ scud attractor export <file> --format dot      # Convert SCG → DOT (or DOT →
 scud attractor import <file.dot> -o out.scg    # Import DOT as SCG
 ```
 
-Pipelines can be DOT `digraph` files (node shapes determine behavior) or SCG files with `mode pipeline` (handler types in `@pipeline` section). Both formats support the same execution semantics. See [docs/attractor.md](docs/attractor.md) for the full reference.
+Pipelines can be generated from PRDs via `scud generate --pipeline`, written by hand as DOT `digraph` files (node shapes determine behavior), or as SCG files with `mode pipeline` (handler types in `@pipeline` section). All formats support the same execution semantics. See [docs/attractor.md](docs/attractor.md) for the full reference.
 
 ### Utilities
 ```bash
