@@ -155,10 +155,6 @@ scud swarm --tag my-feature --swarm-mode beads
 
 All modes include SQLite event logging, backpressure validation, and salvo worktree isolation. See [docs/orchestrator.md](docs/orchestrator.md) for details.
 
-### Parallel Execution
-
-SCUD supports multiple execution strategies for parallel AI agent orchestration.
-
 ---
 
 ## Descartes GUI
@@ -223,6 +219,15 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 - **Live output streaming** - Monitor agent progress in real-time
 - **Visual task management** - Drag-and-drop task organization
 
+### Attractor Mode (Pipeline Engine)
+- **DOT-based workflows** - define multi-step AI pipelines as graph files
+- **Node types** - LLM calls, shell tools, human gates, conditionals, parallel fan-out/fan-in
+- **Checkpoint/resume** - interrupt and resume pipelines from any node
+- **Retry with backoff** - exponential backoff with jitter on failures
+- **Stylesheets** - CSS-like model/provider defaults per node class
+- **Condition routing** - edge expressions for dynamic graph traversal
+- See [Attractor Mode docs](docs/attractor.md)
+
 ### Orchestrator Support
 - **Parallel agents** - spawn multiple AI agents via tmux or headless execution
 - **Salvo worktrees** - automatic git worktree isolation per tag
@@ -244,6 +249,9 @@ The GUI reads from SCUD's `.scud/` storage directory and provides a user-friendl
 **Swarm & Orchestration:**
 - [Orchestrator Pattern](docs/orchestrator.md) - Swarm modes and multi-agent workflows
 - [Parallel Features](docs/features/PARALLEL_FEATURES.md) - Task orchestration (includes experimental features)
+
+**Attractor Mode:**
+- [Attractor Mode](docs/attractor.md) - DOT-based AI workflow pipelines
 
 **Development:**
 - [Development Logs](log_docs/) - Implementation details & history
@@ -340,6 +348,19 @@ scud next-batch [--limit 5]        # Get multiple tasks at once
 scud doctor workflow [--tag <tag>] # Diagnose stuck task states
 scud doctor scan-ext               # Scan and validate extensions
 ```
+
+### Attractor Mode (Pipeline Engine)
+```bash
+scud attractor run <file.dot>                  # Execute a DOT pipeline
+scud attractor run <file.dot> --headless       # Auto-approve human gates
+scud attractor run <file.dot> --simulated      # Dry-run with no LLM calls
+scud attractor run <file.dot> --model opus     # Override model
+scud attractor run <file.dot> --provider xai   # Override provider/harness
+scud attractor run <file.dot> --resume <ckpt>  # Resume from checkpoint
+scud attractor validate <file.dot>             # Validate without executing
+```
+
+Pipelines are DOT `digraph` files where node shapes determine behavior (LLM calls, shell tools, human gates, conditionals, parallel execution). See [docs/attractor.md](docs/attractor.md) for the full reference.
 
 ### Utilities
 ```bash
@@ -560,6 +581,7 @@ MIT
 
 - **SCUD CLI Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
 - **SCG Format:** [docs/reference/SCG_FORMAT_SPEC.md](docs/reference/SCG_FORMAT_SPEC.md)
+- **Attractor Mode:** [docs/attractor.md](docs/attractor.md)
 - **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
 - **Parallel Features:** [docs/features/PARALLEL_FEATURES.md](docs/features/PARALLEL_FEATURES.md)
 - **Descartes GUI:** [descartes-gui/README.md](descartes-gui/README.md)
