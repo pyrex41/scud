@@ -14,6 +14,10 @@ pub struct Config {
 pub struct SwarmConfig {
     #[serde(default = "default_swarm_harness")]
     pub harness: String,
+    /// Default model for swarm agents (e.g., "xai/grok-code-fast-1", "opus").
+    /// When unset, inherits from [llm].model.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default = "default_round_size")]
     pub round_size: usize,
     #[serde(default = "default_default_tag")]
@@ -47,6 +51,7 @@ impl Default for SwarmConfig {
     fn default() -> Self {
         SwarmConfig {
             harness: default_swarm_harness(),
+            model: std::env::var("SCUD_SWARM_MODEL").ok(),
             round_size: default_round_size(),
             default_tag: default_default_tag(),
             use_direct_api: false,
@@ -129,6 +134,11 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Resolve the swarm model: swarm.model > llm.model
+    pub fn swarm_model(&self) -> &str {
+        self.swarm.model.as_deref().unwrap_or(&self.llm.model)
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;

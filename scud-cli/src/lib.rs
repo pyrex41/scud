@@ -110,6 +110,18 @@
 //!
 //! Each phase can be skipped using `no_expand` and `no_check_deps` options.
 
+/// Unified execution backend for AI agent tasks.
+///
+/// Provides the [`AgentBackend`] trait that abstracts over different execution modes
+/// (direct API, CLI subprocess, simulated) behind a single interface.
+pub mod backend;
+
+/// Attractor Mode — DOT-based AI workflow graph execution.
+///
+/// Define multi-step AI pipelines as DOT graphs where nodes represent tasks
+/// and edges represent transitions with optional conditions.
+pub mod attractor;
+
 /// Agent definitions for model routing.
 ///
 /// Allows tasks to specify which AI harness and model should run them.

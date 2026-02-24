@@ -45,6 +45,10 @@ zmq = { version = "0.10", optional = true }  # ZeroMQ for event publishing
 zeromq = "0.4"    # Alternative ZeroMQ crate for client connections
 scud-task-core.workspace = true  # Core SCUD types and utilities
 tracing = "0.1"   # Logging framework
+petgraph = "0.7"  # Graph data structure for Attractor pipelines
+rand = "0.8"      # Random number generation (retry jitter)
+tokio-util = { version = "0.7", features = ["rt"] }  # CancellationToken for agent backends
+async-trait = "0.1"  # Async trait support
 
 # TUI dependencies
 ratatui = "0.29"      # Terminal UI framework

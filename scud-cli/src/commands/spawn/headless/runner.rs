@@ -20,13 +20,32 @@ use crate::commands::spawn::terminal::{find_harness_binary, Harness};
 /// Boxed async result type for dyn-compatible async trait methods
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Process backing a headless session - either an OS child process or a tokio task
+/// Process backing a headless session - either an OS child process or a tokio task.
+///
+/// Call [`kill()`](SessionProcess::kill) to terminate the process.
 pub enum SessionProcess {
     /// Standard child process (Claude, OpenCode, Cursor harnesses)
     Child(Child),
     /// Tokio task (direct API runner)
     #[cfg(feature = "direct-api")]
     Task(tokio::task::JoinHandle<()>),
+}
+
+impl SessionProcess {
+    /// Kill the backing process immediately.
+    pub fn kill(&mut self) -> Result<()> {
+        match self {
+            SessionProcess::Child(child) => {
+                child.start_kill()?;
+                Ok(())
+            }
+            #[cfg(feature = "direct-api")]
+            SessionProcess::Task(handle) => {
+                handle.abort();
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Handle to a running headless session
@@ -126,6 +145,15 @@ impl SessionHandle {
                 Ok(())
             }
         }
+    }
+
+    /// Decompose the session into its event receiver and a killable process handle.
+    ///
+    /// This allows the caller to own the events stream and process separately,
+    /// e.g. for bridging events to a different channel while retaining the
+    /// ability to kill the subprocess on cancellation.
+    pub fn into_parts(self) -> (mpsc::Receiver<StreamEvent>, SessionProcess) {
+        (self.events, self.process)
     }
 
     /// Get the process ID
@@ -250,6 +278,8 @@ impl HeadlessRunner for ClaudeHeadless {
             // Working directory and environment
             cmd.current_dir(working_dir);
             cmd.env("SCUD_TASK_ID", task_id);
+            // Allow nested Claude sessions (e.g. attractor pipelines from within Claude Code)
+            cmd.env_remove("CLAUDECODE");
 
             // Capture stdout for streaming
             cmd.stdout(Stdio::piped());
@@ -316,7 +346,7 @@ fn parse_claude_event(line: &str) -> Option<StreamEvent> {
             }))
         }
         "stream_event" => {
-            // Check for text delta
+            // Check for text delta (streaming incremental tokens)
             if let Some(delta) = json.pointer("/event/delta") {
                 if delta.get("type")?.as_str()? == "text_delta" {
                     let text = delta.get("text")?.as_str()?;
@@ -325,14 +355,17 @@ fn parse_claude_event(line: &str) -> Option<StreamEvent> {
             }
             None
         }
-        "assistant" | "content_block_delta" => {
-            // Alternative text delta format
+        "content_block_delta" => {
+            // Streaming delta format (incremental tokens)
             if let Some(text) = json.pointer("/delta/text").and_then(|v| v.as_str()) {
                 return Some(StreamEvent::text_delta(text));
             }
-            if let Some(text) = json.pointer("/content/0/text").and_then(|v| v.as_str()) {
-                return Some(StreamEvent::text_delta(text));
-            }
+            None
+        }
+        "assistant" => {
+            // "assistant" events are full message snapshots (not incremental deltas).
+            // When --include-partial-messages is used, these duplicate text already
+            // captured from "stream_event" deltas. Skip them to avoid double-counting.
             None
         }
         "tool_use" => {
@@ -361,14 +394,17 @@ fn parse_claude_event(line: &str) -> Option<StreamEvent> {
             }))
         }
         "result" => {
-            // Check for session_id
+            // If the result carries a session_id, emit SessionAssigned
             if let Some(session_id) = json.get("session_id").and_then(|v| v.as_str()) {
                 return Some(StreamEvent::new(StreamEventKind::SessionAssigned {
                     session_id: session_id.to_string(),
                 }));
             }
-            // Otherwise treat as completion
-            Some(StreamEvent::complete(true))
+            let is_error = json.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+            // The "result" field contains the full text, but this duplicates
+            // what was already captured from "assistant" or "stream_event" events.
+            // We only signal completion here.
+            Some(StreamEvent::complete(!is_error))
         }
         "error" => {
             let message = json

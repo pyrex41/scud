@@ -1,0 +1,11 @@
+// Simple linear pipeline: start → run_tests → report → exit
+digraph simple_linear {
+    graph [goal="Run tests and report results"]
+
+    start [shape=Mdiamond, label="Start"]
+    run_tests [shape=parallelogram, label="Run Tests", tool_command="cargo test 2>&1"]
+    report [shape=box, label="Generate Report", prompt="Summarize the test results from $context.run_tests.stdout and provide a brief status report."]
+    finish [shape=Msquare, label="Done"]
+
+    start -> run_tests -> report -> finish
+}

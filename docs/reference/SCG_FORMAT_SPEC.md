@@ -147,3 +147,50 @@ Phases are separated by `---`:
 - **Wave**: The current set of all ready tasks—executable in parallel right now
 
 Waves are computed dynamically based on completion state, not static DAG depth. As tasks complete, new tasks become unblocked and form the next wave. A single wave may span multiple DAG depths if branches complete at different rates.
+
+## Pipeline Mode Extension
+
+SCG files can describe Attractor Mode pipelines by setting `mode pipeline` in `@meta`. This adds two new sections and changes edge semantics.
+
+**Key difference**: In pipeline mode, `A -> B` means "A transitions to B" (forward execution flow), not "A depends on B".
+
+### Additional Meta Keys
+
+| Key | Description |
+|---|---|
+| `mode pipeline` | Enables pipeline semantics |
+| `goal` | Goal string; expanded as `$goal` in prompts |
+| `model_stylesheet` | CSS-like model/provider defaults |
+
+### Extended `@edges`
+
+In pipeline mode, edges support optional pipe-delimited fields:
+
+```
+from -> to [| label | condition | weight]
+```
+
+### `@pipeline` Section
+
+Per-node handler configuration:
+
+```
+@pipeline
+# id | handler_type | max_retries | retry_target | goal_gate | timeout
+start | start
+design | codergen | 3
+review | wait.human
+implement | codergen | 2 | | false | 5m
+test | tool
+finish | exit | 0 | design | true
+```
+
+Handler types: `start`, `exit`, `codergen`, `wait.human`, `tool`, `conditional`, `parallel`, `parallel.fan_in`, `stack.manager_loop`.
+
+### Detail Field Mapping
+
+In pipeline mode, `@details` fields map to pipeline concepts:
+- `description` → node prompt (supports `$goal`, `$context.KEY`)
+- `details` → tool command (for `tool` handler nodes)
+
+See [Attractor Mode docs](../attractor.md) for the full pipeline reference.

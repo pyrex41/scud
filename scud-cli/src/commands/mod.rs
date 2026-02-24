@@ -58,6 +58,9 @@ pub mod serve;
 // Claude Tasks sync (internal)
 pub mod sync_from_claude;
 
+// Attractor pipeline commands
+pub mod attractor;
+
 // Direct API agent execution
 #[cfg(feature = "direct-api")]
 pub mod agent_exec;
