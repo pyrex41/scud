@@ -28,7 +28,7 @@ impl Harness {
     pub fn parse(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "claude" | "claude-code" => Ok(Harness::Claude),
-            "opencode" | "open-code" => Ok(Harness::OpenCode),
+            "opencode" | "open-code" | "xai" => Ok(Harness::OpenCode),
             "cursor" | "cursor-agent" => Ok(Harness::Cursor),
             #[cfg(feature = "direct-api")]
             "direct-api" | "direct" | "api" => Ok(Harness::DirectApi),

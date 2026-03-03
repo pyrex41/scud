@@ -4058,7 +4058,7 @@ dependencies = [
 
 [[package]]
 name = "scud-cli"
-version = "1.64.1"
+version = "1.65.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4103,7 +4103,7 @@ dependencies = [
 
 [[package]]
 name = "scud-task-core"
-version = "1.64.1"
+version = "1.65.0"
 dependencies = [
  "anyhow",
  "chrono",

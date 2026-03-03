@@ -1157,16 +1157,24 @@ pub fn spawn_agents_add(
     for agent_name in agents_to_add {
         let dest = agents_dir.join(format!("{}.toml", agent_name));
 
-        if dest.exists() {
-            existing += 1;
-            println!("  {} {} (already installed)", "·".yellow(), agent_name);
-            continue;
-        }
-
         if let Some((_, content)) = EMBEDDED_SPAWN_AGENTS.iter().find(|(n, _)| *n == agent_name) {
-            fs::write(&dest, content)?;
-            added += 1;
-            println!("  {} {}", "✓".green(), agent_name.green());
+            if dest.exists() {
+                // Check if installed version matches embedded version
+                let installed = fs::read_to_string(&dest).unwrap_or_default();
+                if installed.trim() == content.trim() {
+                    existing += 1;
+                    println!("  {} {} (already installed)", "·".yellow(), agent_name);
+                    continue;
+                }
+                // Stale — update to latest embedded version
+                fs::write(&dest, content)?;
+                added += 1;
+                println!("  {} {} (updated)", "✓".green(), agent_name.green());
+            } else {
+                fs::write(&dest, content)?;
+                added += 1;
+                println!("  {} {}", "✓".green(), agent_name.green());
+            }
         }
     }
 

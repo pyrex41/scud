@@ -70,9 +70,31 @@ impl AgentDef {
             .with_context(|| format!("Failed to parse agent file: {}", path.display()))
     }
 
-    /// Try to load agent definition, return None if not found
+    /// Try to load agent definition, return None if not found.
+    /// Falls back to embedded agent definitions if not found on disk.
     pub fn try_load(name: &str, project_root: &Path) -> Option<Self> {
-        Self::load(name, project_root).ok()
+        Self::load(name, project_root)
+            .ok()
+            .or_else(|| Self::load_embedded(name))
+    }
+
+    /// Load from embedded agent definitions (compiled into the binary)
+    fn load_embedded(name: &str) -> Option<Self> {
+        let content = match name {
+            "builder" => Some(include_str!("../assets/spawn-agents/builder.toml")),
+            "fast-builder" => Some(include_str!("../assets/spawn-agents/fast-builder.toml")),
+            "reviewer" => Some(include_str!("../assets/spawn-agents/reviewer.toml")),
+            "planner" => Some(include_str!("../assets/spawn-agents/planner.toml")),
+            "researcher" => Some(include_str!("../assets/spawn-agents/researcher.toml")),
+            "analyzer" => Some(include_str!("../assets/spawn-agents/analyzer.toml")),
+            "repairer" => Some(include_str!("../assets/spawn-agents/repairer.toml")),
+            "tester" => Some(include_str!("../assets/spawn-agents/tester.toml")),
+            "outside-generalist" => {
+                Some(include_str!("../assets/spawn-agents/outside-generalist.toml"))
+            }
+            _ => None,
+        };
+        content.and_then(|c| toml::from_str(c).ok())
     }
 
     /// Get the harness for this agent
