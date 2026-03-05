@@ -161,6 +161,7 @@ pub fn interactive_command(harness: Harness, session_id: &str) -> Result<Vec<Str
             "--resume".to_string(),
             session_id.to_string(),
         ]),
+        Harness::Rho => anyhow::bail!("Rho sessions cannot be resumed interactively yet"),
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => anyhow::bail!("Direct API sessions cannot be resumed interactively"),
     }

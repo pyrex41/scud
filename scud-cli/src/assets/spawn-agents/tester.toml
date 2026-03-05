@@ -4,8 +4,8 @@ name = "tester"
 description = "Test writing agent that creates comprehensive test coverage"
 
 [model]
-harness = "claude"
-model = "sonnet"
+harness = "rho"
+model = "claude-sonnet"
 
 [prompt]
 template = """You are writing tests for SCUD task {task.id}: {task.title}

@@ -4,8 +4,8 @@ name = "analyzer"
 description = "Code analyzer for understanding implementation details"
 
 [model]
-harness = "claude"
-model = "opus"
+harness = "rho"
+model = "claude-opus"
 
 [prompt]
 template = """You are analyzing SCUD task {task.id}: {task.title}

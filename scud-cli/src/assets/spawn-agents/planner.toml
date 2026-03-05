@@ -4,8 +4,8 @@ name = "planner"
 description = "Planning agent for architectural decisions and task breakdown"
 
 [model]
-harness = "claude"
-model = "opus"
+harness = "rho"
+model = "claude-opus"
 
 [prompt]
 template = """You are planning SCUD task {task.id}: {task.title}

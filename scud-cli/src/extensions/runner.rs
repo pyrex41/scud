@@ -210,6 +210,14 @@ pub async fn spawn_agent(
             c.arg(&config.prompt);
             c
         }
+        Harness::Rho => {
+            let mut c = Command::new(binary_path);
+            if let Some(ref model) = config.model {
+                c.arg("--model").arg(model);
+            }
+            c.arg(&config.prompt);
+            c
+        }
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => {
             let mut c = Command::new(binary_path);

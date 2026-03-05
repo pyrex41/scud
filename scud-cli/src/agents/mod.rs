@@ -36,7 +36,7 @@ pub struct ModelConfig {
 }
 
 fn default_harness() -> String {
-    "opencode".to_string()
+    "rho".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -128,7 +128,7 @@ impl AgentDef {
         None
     }
 
-    /// Create a default agent (OpenCode with xai/grok-code-fast-1, no custom prompt)
+    /// Create a default agent (Rho with claude-sonnet, no custom prompt)
     pub fn default_builder() -> Self {
         AgentDef {
             agent: AgentMeta {
@@ -136,8 +136,8 @@ impl AgentDef {
                 description: "Default code implementation agent".to_string(),
             },
             model: ModelConfig {
-                harness: "opencode".to_string(),
-                model: Some("xai/grok-code-fast-1".to_string()),
+                harness: "rho".to_string(),
+                model: Some("claude-sonnet".to_string()),
             },
             prompt: PromptConfig::default(),
         }
@@ -184,8 +184,8 @@ model = "opus"
     fn test_default_builder() {
         let agent = AgentDef::default_builder();
         assert_eq!(agent.agent.name, "builder");
-        assert_eq!(agent.model.harness, "opencode");
-        assert_eq!(agent.model.model, Some("xai/grok-code-fast-1".to_string()));
+        assert_eq!(agent.model.harness, "rho");
+        assert_eq!(agent.model.model, Some("claude-sonnet".to_string()));
     }
 
     #[test]
@@ -254,6 +254,6 @@ template_file = "custom.prompt"
     fn test_harness_parsing() {
         let agent = AgentDef::default_builder();
         let harness = agent.harness().unwrap();
-        assert_eq!(harness, Harness::OpenCode);
+        assert_eq!(harness, Harness::Rho);
     }
 }

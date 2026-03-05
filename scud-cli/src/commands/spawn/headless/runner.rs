@@ -698,6 +698,127 @@ impl HeadlessRunner for CursorHeadless {
     }
 }
 
+/// Rho CLI headless runner
+///
+/// Runs rho-cli with `--prompt-file` and parses stdout (text output)
+/// and stderr (tool events in `[tool:name]` format) into StreamEvents.
+pub struct RhoHeadless {
+    binary_path: String,
+}
+
+impl RhoHeadless {
+    /// Create a new Rho headless runner
+    pub fn new() -> Result<Self> {
+        let binary_path = find_harness_binary(Harness::Rho)?.to_string();
+        Ok(Self { binary_path })
+    }
+}
+
+impl HeadlessRunner for RhoHeadless {
+    fn start<'a>(
+        &'a self,
+        task_id: &'a str,
+        prompt: &'a str,
+        working_dir: &'a Path,
+        model: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<SessionHandle>> {
+        Box::pin(async move {
+            let mut cmd = Command::new(&self.binary_path);
+
+            if let Some(m) = model {
+                cmd.arg("--model").arg(m);
+            }
+
+            cmd.arg(prompt);
+            cmd.current_dir(working_dir);
+            cmd.env("SCUD_TASK_ID", task_id);
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+
+            let mut child = cmd.spawn()?;
+            let (tx, rx) = mpsc::channel(1000);
+
+            let stdout = child.stdout.take().expect("stdout was piped");
+            let stderr = child.stderr.take().expect("stderr was piped");
+            let task_id_stdout = task_id.to_string();
+            let task_id_stderr = task_id.to_string();
+
+            // Parse stdout as text output
+            let tx_stdout = tx.clone();
+            tokio::spawn(async move {
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.is_empty() {
+                        let _ = tx_stdout.send(StreamEvent::text_delta(format!("{}\n", line))).await;
+                    }
+                }
+                trace!(task_id = %task_id_stdout, "rho stdout stream ended");
+            });
+
+            // Parse stderr for tool events: [tool:name] args / [tool:name] done / [tool:name] ERROR: ...
+            let tx_stderr = tx;
+            tokio::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                let mut tool_counter: u64 = 0;
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let trimmed = line.trim();
+
+                    if let Some(rest) = trimmed.strip_prefix("[tool:") {
+                        if let Some(bracket_end) = rest.find(']') {
+                            let tool_name = &rest[..bracket_end];
+                            let after = rest[bracket_end + 1..].trim();
+
+                            if after == "done" {
+                                let _ = tx_stderr.send(StreamEvent::new(StreamEventKind::ToolResult {
+                                    tool_name: tool_name.to_string(),
+                                    tool_id: format!("rho-tool-{}", tool_counter),
+                                    success: true,
+                                })).await;
+                            } else if let Some(err_msg) = after.strip_prefix("ERROR:") {
+                                let _ = tx_stderr.send(StreamEvent::new(StreamEventKind::ToolResult {
+                                    tool_name: tool_name.to_string(),
+                                    tool_id: format!("rho-tool-{}", tool_counter),
+                                    success: false,
+                                })).await;
+                                debug!(task_id = %task_id_stderr, "rho tool error: {}: {}", tool_name, err_msg.trim());
+                            } else {
+                                // Tool start with args
+                                tool_counter += 1;
+                                let _ = tx_stderr.send(StreamEvent::tool_start(
+                                    tool_name,
+                                    &format!("rho-tool-{}", tool_counter),
+                                    after,
+                                )).await;
+                            }
+                        }
+                    } else if let Some(rest) = trimmed.strip_prefix("[compact]") {
+                        debug!(task_id = %task_id_stderr, "rho compaction: {}", rest.trim());
+                    } else if !trimmed.is_empty() {
+                        trace!(task_id = %task_id_stderr, "rho stderr: {}", trimmed);
+                    }
+                }
+
+                let _ = tx_stderr.send(StreamEvent::complete(true)).await;
+            });
+
+            Ok(SessionHandle::from_child(task_id.to_string(), child, rx))
+        })
+    }
+
+    fn interactive_command(&self, _session_id: &str) -> Vec<String> {
+        // Rho doesn't have session resume yet
+        vec![self.binary_path.clone()]
+    }
+
+    fn harness(&self) -> Harness {
+        Harness::Rho
+    }
+}
+
 /// Enum-based runner that wraps concrete implementations
 ///
 /// This provides polymorphism without requiring the trait to be object-safe.
@@ -707,6 +828,7 @@ pub enum AnyRunner {
     Claude(ClaudeHeadless),
     OpenCode(OpenCodeHeadless),
     Cursor(CursorHeadless),
+    Rho(RhoHeadless),
     #[cfg(feature = "direct-api")]
     DirectApi(super::direct_api::DirectApiRunner),
 }
@@ -726,6 +848,7 @@ impl AnyRunner {
             Harness::Claude => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
             Harness::OpenCode => Ok(AnyRunner::OpenCode(OpenCodeHeadless::new()?)),
             Harness::Cursor => Ok(AnyRunner::Cursor(CursorHeadless::new()?)),
+            Harness::Rho => Ok(AnyRunner::Rho(RhoHeadless::new()?)),
             #[cfg(feature = "direct-api")]
             Harness::DirectApi => Ok(AnyRunner::DirectApi(
                 super::direct_api::DirectApiRunner::new(),
@@ -745,6 +868,7 @@ impl AnyRunner {
             AnyRunner::Claude(runner) => runner.start(task_id, prompt, working_dir, model).await,
             AnyRunner::OpenCode(runner) => runner.start(task_id, prompt, working_dir, model).await,
             AnyRunner::Cursor(runner) => runner.start(task_id, prompt, working_dir, model).await,
+            AnyRunner::Rho(runner) => runner.start(task_id, prompt, working_dir, model).await,
             #[cfg(feature = "direct-api")]
             AnyRunner::DirectApi(runner) => {
                 runner.start(task_id, prompt, working_dir, model).await
@@ -758,6 +882,7 @@ impl AnyRunner {
             AnyRunner::Claude(runner) => runner.interactive_command(session_id),
             AnyRunner::OpenCode(runner) => runner.interactive_command(session_id),
             AnyRunner::Cursor(runner) => runner.interactive_command(session_id),
+            AnyRunner::Rho(runner) => runner.interactive_command(session_id),
             #[cfg(feature = "direct-api")]
             AnyRunner::DirectApi(runner) => runner.interactive_command(session_id),
         }
@@ -769,6 +894,7 @@ impl AnyRunner {
             AnyRunner::Claude(runner) => runner.harness(),
             AnyRunner::OpenCode(runner) => runner.harness(),
             AnyRunner::Cursor(runner) => runner.harness(),
+            AnyRunner::Rho(runner) => runner.harness(),
             #[cfg(feature = "direct-api")]
             AnyRunner::DirectApi(runner) => runner.harness(),
         }

@@ -18,6 +18,8 @@ pub enum Harness {
     OpenCode,
     /// Cursor Agent CLI
     Cursor,
+    /// Rho CLI (rho-cli)
+    Rho,
     /// Direct Anthropic API (no external CLI needed)
     #[cfg(feature = "direct-api")]
     DirectApi,
@@ -30,9 +32,10 @@ impl Harness {
             "claude" | "claude-code" => Ok(Harness::Claude),
             "opencode" | "open-code" | "xai" => Ok(Harness::OpenCode),
             "cursor" | "cursor-agent" => Ok(Harness::Cursor),
+            "rho" | "rho-cli" => Ok(Harness::Rho),
             #[cfg(feature = "direct-api")]
             "direct-api" | "direct" | "api" => Ok(Harness::DirectApi),
-            other => anyhow::bail!("Unknown harness: '{}'. Supported: claude, opencode, cursor", other),
+            other => anyhow::bail!("Unknown harness: '{}'. Supported: claude, opencode, cursor, rho", other),
         }
     }
 
@@ -42,6 +45,7 @@ impl Harness {
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
             Harness::Cursor => "cursor",
+            Harness::Rho => "rho",
             #[cfg(feature = "direct-api")]
             Harness::DirectApi => "direct-api",
         }
@@ -53,6 +57,7 @@ impl Harness {
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
             Harness::Cursor => "agent",
+            Harness::Rho => "rho-cli",
             #[cfg(feature = "direct-api")]
             Harness::DirectApi => "scud",
         }
@@ -90,6 +95,15 @@ impl Harness {
                     prompt_file.display()
                 )
             }
+            Harness::Rho => {
+                let model_flag = model.map(|m| format!(" --model {}", m)).unwrap_or_default();
+                format!(
+                    r#"'{}'{} --prompt-file '{}'"#,
+                    binary_path,
+                    model_flag,
+                    prompt_file.display()
+                )
+            }
             #[cfg(feature = "direct-api")]
             Harness::DirectApi => {
                 let model_flag = model.map(|m| format!(" --model {}", m)).unwrap_or_default();
@@ -108,6 +122,7 @@ impl Harness {
 static CLAUDE_PATH: OnceLock<String> = OnceLock::new();
 static OPENCODE_PATH: OnceLock<String> = OnceLock::new();
 static CURSOR_PATH: OnceLock<String> = OnceLock::new();
+static RHO_PATH: OnceLock<String> = OnceLock::new();
 #[cfg(feature = "direct-api")]
 static SCUD_PATH: OnceLock<String> = OnceLock::new();
 
@@ -118,6 +133,7 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
         Harness::Claude => &CLAUDE_PATH,
         Harness::OpenCode => &OPENCODE_PATH,
         Harness::Cursor => &CURSOR_PATH,
+        Harness::Rho => &RHO_PATH,
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => &SCUD_PATH,
     };
@@ -161,6 +177,11 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
             "/usr/local/bin/agent",
             "/usr/bin/agent",
         ],
+        Harness::Rho => &[
+            "/opt/homebrew/bin/rho-cli",
+            "/usr/local/bin/rho-cli",
+            "/usr/bin/rho-cli",
+        ],
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => &[
             "/opt/homebrew/bin/scud",
@@ -190,6 +211,10 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
             Harness::Cursor => vec![
                 format!("{}/.local/bin/agent", home),
             ],
+            Harness::Rho => vec![
+                format!("{}/.cargo/bin/rho-cli", home),
+                format!("{}/.local/bin/rho-cli", home),
+            ],
             #[cfg(feature = "direct-api")]
             Harness::DirectApi => vec![
                 format!("{}/.local/bin/scud", home),
@@ -209,6 +234,7 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
         Harness::Claude => "Install with: npm install -g @anthropic-ai/claude-code",
         Harness::OpenCode => "Install with: curl -fsSL https://opencode.ai/install | bash",
         Harness::Cursor => "Install with: curl https://cursor.com/install -fsSL | bash",
+        Harness::Rho => "Install with: cargo install rho (or build from ~/projects/rho)",
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => "Install with: cargo install scud-cli --features direct-api",
     };
@@ -557,6 +583,11 @@ fn spawn_tmux_ralph(
         ),
         Harness::Cursor => format!(
             "'{binary_path}' -p \"$(cat '{prompt_file}')\"",
+            binary_path = binary_path,
+            prompt_file = prompt_file.display()
+        ),
+        Harness::Rho => format!(
+            "'{binary_path}' --prompt-file '{prompt_file}'",
             binary_path = binary_path,
             prompt_file = prompt_file.display()
         ),
