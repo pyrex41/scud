@@ -411,6 +411,14 @@ impl From<ScudJsonTask> for TaskInfo {
     }
 }
 
+fn reconcile_task_success(
+    process_success: bool,
+    stream_terminal: bool,
+    stream_success: bool,
+) -> bool {
+    process_success && (!stream_terminal || stream_success)
+}
+
 /// Bridge between Iced GUI and SCUD Core
 ///
 /// Uses direct scud-core library calls for task operations (load, complete, block, waves)
@@ -1158,15 +1166,11 @@ impl ScudBridge {
                     session_id.to_string(),
                 ]
             }
-            "rho" => {
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::Error(
-                        "Rho sessions cannot be resumed interactively yet".to_string(),
-                    ))
-                    .await;
-                return;
-            }
+            "rho" => vec![
+                "rho-cli".to_string(),
+                "--resume".to_string(),
+                session_id.to_string(),
+            ],
             _ => {
                 error!("Unknown harness for attach: {}", harness_name);
                 let _ = self
@@ -1763,7 +1767,8 @@ impl ScudBridge {
             }
         };
 
-        let final_success = process_success && (!stream_terminal || stream_success);
+        let final_success =
+            reconcile_task_success(process_success, stream_terminal, stream_success);
 
         // If stream never reported completion, or process contradicted a stream success,
         // emit a final completion update based on the actual process result.
@@ -1959,7 +1964,8 @@ impl ScudBridge {
                 false
             }
         };
-        let final_success = process_success && (!stream_terminal || stream_success);
+        let final_success =
+            reconcile_task_success(process_success, stream_terminal, stream_success);
 
         if !stream_terminal || final_success != stream_success {
             if !process_success && stream_success {
@@ -3166,6 +3172,14 @@ impl ScudBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_reconcile_task_success_uses_process_exit_as_source_of_truth() {
+        assert!(reconcile_task_success(true, false, false));
+        assert!(reconcile_task_success(true, true, true));
+        assert!(!reconcile_task_success(false, true, true));
+        assert!(!reconcile_task_success(false, false, false));
+    }
 
     #[test]
     fn test_scud_json_event_parsing() {

@@ -27,7 +27,7 @@ use crate::sync::claude_tasks;
 
 use self::headless::StreamStore;
 use self::monitor::SpawnSession;
-use self::terminal::Harness;
+use self::terminal::{normalize_model_override, Harness};
 
 /// Information about a task to spawn
 struct TaskInfo<'a> {
@@ -84,6 +84,7 @@ pub fn run(
 
     // Parse harness
     let harness = Harness::parse(harness_arg)?;
+    let model_override = normalize_model_override(harness, model_arg);
 
     // Generate session name
     let session_name = session.unwrap_or_else(|| format!("scud-{}", phase_tag));
@@ -94,7 +95,8 @@ pub fn run(
     println!("{}", "═".repeat(50));
     println!("{:<20} {}", "Mode:".dimmed(), terminal_type.green());
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().green());
-    println!("{:<20} {}", "Model:".dimmed(), model_arg.green());
+    let model_display = model_override.unwrap_or("default");
+    println!("{:<20} {}", "Model:".dimmed(), model_display.green());
     if !headless {
         println!("{:<20} {}", "Session:".dimmed(), session_name.cyan());
     }
@@ -214,7 +216,7 @@ pub fn run(
             &ready_tasks,
             &working_dir,
             harness,
-            Some(model_arg),
+            model_override,
             store,
         ))?;
 
@@ -236,7 +238,7 @@ pub fn run(
                 info.task,
                 &info.tag,
                 harness,
-                Some(model_arg),
+                model_override,
                 &working_dir,
             );
 

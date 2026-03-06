@@ -731,6 +731,18 @@ impl RhoHeadless {
         let binary_path = find_harness_binary(Harness::Rho)?.to_string();
         Ok(Self { binary_path })
     }
+
+    #[cfg(test)]
+    pub fn with_binary_path(path: impl Into<String>) -> Self {
+        Self {
+            binary_path: path.into(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn binary_path(&self) -> &str {
+        &self.binary_path
+    }
 }
 
 impl HeadlessRunner for RhoHeadless {
@@ -770,7 +782,9 @@ impl HeadlessRunner for RhoHeadless {
 
                 while let Ok(Some(line)) = lines.next_line().await {
                     let trimmed = line.trim();
-                    if trimmed == "rho-cli placeholder - CLI structure ready" {
+                    if trimmed == "rho-cli placeholder - CLI structure ready"
+                        || trimmed.contains("rho-cli-stub is a legacy placeholder")
+                    {
                         let _ = tx_stdout
                             .send(StreamEvent::error(
                                 "Detected placeholder rho-cli binary. Install/use the functional rho-agent CLI.".to_string(),
@@ -793,11 +807,26 @@ impl HeadlessRunner for RhoHeadless {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 let mut tool_counter: u64 = 0;
+                let mut session_announced = false;
 
                 while let Ok(Some(line)) = lines.next_line().await {
                     let trimmed = line.trim();
 
-                    if let Some(rest) = trimmed.strip_prefix("[tool:") {
+                    if let Some(rest) = trimmed.strip_prefix("[session:") {
+                        if !session_announced {
+                            if let Some(end_idx) = rest.find(']') {
+                                let session_id = rest[..end_idx].trim();
+                                if !session_id.is_empty() {
+                                    let _ = tx_stderr
+                                        .send(StreamEvent::new(StreamEventKind::SessionAssigned {
+                                            session_id: session_id.to_string(),
+                                        }))
+                                        .await;
+                                    session_announced = true;
+                                }
+                            }
+                        }
+                    } else if let Some(rest) = trimmed.strip_prefix("[tool:") {
                         if let Some(bracket_end) = rest.find(']') {
                             let tool_name = &rest[..bracket_end];
                             let after = rest[bracket_end + 1..].trim();
@@ -843,9 +872,12 @@ impl HeadlessRunner for RhoHeadless {
         })
     }
 
-    fn interactive_command(&self, _session_id: &str) -> Vec<String> {
-        // Rho doesn't have session resume yet
-        vec![self.binary_path.clone()]
+    fn interactive_command(&self, session_id: &str) -> Vec<String> {
+        vec![
+            self.binary_path.clone(),
+            "--resume".to_string(),
+            session_id.to_string(),
+        ]
     }
 
     fn harness(&self) -> Harness {
@@ -1760,6 +1792,18 @@ mod tests {
         let cmd = runner.interactive_command("session-2");
         assert_eq!(cmd[0], "/bin/opencode");
         assert_eq!(cmd[1], "attach");
+    }
+
+    #[test]
+    fn test_any_runner_rho_variant_resume_command() {
+        let runner = AnyRunner::Rho(RhoHeadless::with_binary_path("/bin/rho-cli"));
+        assert_eq!(runner.harness(), Harness::Rho);
+
+        let cmd = runner.interactive_command("session-rho-1");
+        assert_eq!(cmd.len(), 3);
+        assert_eq!(cmd[0], "/bin/rho-cli");
+        assert_eq!(cmd[1], "--resume");
+        assert_eq!(cmd[2], "session-rho-1");
     }
 
     #[test]

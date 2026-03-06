@@ -20,6 +20,24 @@ pub struct CliBackend {
     harness: Harness,
 }
 
+fn reconcile_completion_status(stream_success: bool, process_ok: bool) -> AgentStatus {
+    if stream_success && process_ok {
+        AgentStatus::Completed
+    } else if process_ok {
+        AgentStatus::Failed("Agent reported failure".into())
+    } else {
+        AgentStatus::Failed("Agent process exited with non-zero status".into())
+    }
+}
+
+fn status_for_stream_end(process_ok: bool) -> AgentStatus {
+    if process_ok {
+        AgentStatus::Completed
+    } else {
+        AgentStatus::Failed("Agent process exited without completion event".into())
+    }
+}
+
 impl CliBackend {
     /// Create a new CLI backend for the specified harness.
     pub fn new(harness: Harness) -> Result<Self> {
@@ -92,15 +110,7 @@ impl AgentBackend for CliBackend {
                                     }
                                     StreamEventKind::Complete { success } => {
                                         let process_ok = session_process.wait().await.unwrap_or(false);
-                                        let status = if *success && process_ok {
-                                            AgentStatus::Completed
-                                        } else {
-                                            AgentStatus::Failed(if process_ok {
-                                                "Agent reported failure".into()
-                                            } else {
-                                                "Agent process exited with non-zero status".into()
-                                            })
-                                        };
+                                        let status = reconcile_completion_status(*success, process_ok);
                                         let _ = tx.send(AgentEvent::Complete(AgentResult {
                                             text: text_parts.join(""),
                                             status,
@@ -123,13 +133,7 @@ impl AgentBackend for CliBackend {
                                 let process_ok = session_process.wait().await.unwrap_or(false);
                                 let _ = tx.send(AgentEvent::Complete(AgentResult {
                                     text: text_parts.join(""),
-                                    status: if process_ok {
-                                        AgentStatus::Completed
-                                    } else {
-                                        AgentStatus::Failed(
-                                            "Agent process exited without completion event".into(),
-                                        )
-                                    },
+                                    status: status_for_stream_end(process_ok),
                                     tool_calls,
                                     usage: None,
                                 })).await;
@@ -144,5 +148,38 @@ impl AgentBackend for CliBackend {
         });
 
         Ok(AgentHandle { events: rx, cancel })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconcile_completion_status_prefers_process_exit() {
+        assert!(matches!(
+            reconcile_completion_status(true, true),
+            AgentStatus::Completed
+        ));
+        assert!(matches!(
+            reconcile_completion_status(true, false),
+            AgentStatus::Failed(msg) if msg.contains("non-zero")
+        ));
+        assert!(matches!(
+            reconcile_completion_status(false, true),
+            AgentStatus::Failed(msg) if msg.contains("reported failure")
+        ));
+    }
+
+    #[test]
+    fn status_for_stream_end_uses_process_result() {
+        assert!(matches!(
+            status_for_stream_end(true),
+            AgentStatus::Completed
+        ));
+        assert!(matches!(
+            status_for_stream_end(false),
+            AgentStatus::Failed(msg) if msg.contains("without completion event")
+        ));
     }
 }

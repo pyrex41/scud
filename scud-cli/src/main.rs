@@ -1737,3 +1737,45 @@ async fn main() -> Result<()> {
         // Commands::Repl => commands::repl::run(), // temporarily disabled
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn spawn_defaults_to_rho_harness() {
+        let cli = Cli::parse_from(["scud", "spawn"]);
+        match cli.command {
+            Commands::Spawn { harness, .. } => assert_eq!(harness, "rho"),
+            _ => panic!("expected spawn command"),
+        }
+    }
+
+    #[test]
+    fn swarm_defaults_to_rho_harness() {
+        let cli = Cli::parse_from(["scud", "swarm"]);
+        match cli.command {
+            Commands::Swarm { harness, .. } => assert_eq!(harness, "rho"),
+            _ => panic!("expected swarm command"),
+        }
+    }
+
+    #[test]
+    fn run_defaults_to_rho_harness() {
+        let cli = Cli::parse_from(["scud", "run", "hello"]);
+        match cli.command {
+            Commands::Run { harness, .. } => assert_eq!(harness, "rho"),
+            _ => panic!("expected run command"),
+        }
+    }
+
+    #[test]
+    fn test_defaults_to_rho_harness() {
+        let cli = Cli::parse_from(["scud", "test"]);
+        match cli.command {
+            Commands::Test { harness, .. } => assert_eq!(harness, "rho"),
+            _ => panic!("expected test command"),
+        }
+    }
+}

@@ -159,7 +159,11 @@ pub fn interactive_command(harness: Harness, session_id: &str) -> Result<Vec<Str
             "--resume".to_string(),
             session_id.to_string(),
         ]),
-        Harness::Rho => anyhow::bail!("Rho sessions cannot be resumed interactively yet"),
+        Harness::Rho => Ok(vec![
+            binary_path,
+            "--resume".to_string(),
+            session_id.to_string(),
+        ]),
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => anyhow::bail!("Direct API sessions cannot be resumed interactively"),
     }
@@ -382,5 +386,17 @@ mod tests {
         assert!(cmd[0].contains("claude"));
         assert_eq!(cmd[1], "--resume");
         assert_eq!(cmd[2], "sess-123");
+    }
+
+    #[test]
+    fn test_interactive_command_rho_structure_when_available() {
+        let Ok(cmd) = interactive_command(Harness::Rho, "sess-rho-123") else {
+            // Skip in environments without rho-cli installed.
+            return;
+        };
+        assert_eq!(cmd.len(), 3);
+        assert!(cmd[0].contains("rho-cli"));
+        assert_eq!(cmd[1], "--resume");
+        assert_eq!(cmd[2], "sess-rho-123");
     }
 }

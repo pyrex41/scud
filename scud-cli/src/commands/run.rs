@@ -7,7 +7,7 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
-use crate::commands::spawn::terminal::{self, Harness};
+use crate::commands::spawn::terminal::{self, normalize_model_override, Harness};
 
 /// Main entry point for the run command
 pub fn run(
@@ -24,6 +24,7 @@ pub fn run(
 
     // Parse harness
     let harness = Harness::parse(harness_arg)?;
+    let model_override = normalize_model_override(harness, model);
 
     // Generate unique ID for this run
     let run_id = name.unwrap_or_else(|| {
@@ -43,7 +44,11 @@ pub fn run(
     println!("{}", "SCUD Run".cyan().bold());
     println!("{}", "═".repeat(50));
     println!("{:<15} {}", "Harness:".dimmed(), harness.name().green());
-    println!("{:<15} {}", "Model:".dimmed(), model.green());
+    println!(
+        "{:<15} {}",
+        "Model:".dimmed(),
+        model_override.unwrap_or("default").green()
+    );
     println!("{:<15} {}", "Session:".dimmed(), session_name.cyan());
     println!("{:<15} {}", "Window:".dimmed(), run_id.cyan());
     println!();
@@ -64,7 +69,7 @@ pub fn run(
         &working_dir,
         &session_name,
         harness,
-        Some(model),
+        model_override,
     ) {
         Ok(window_index) => {
             println!(

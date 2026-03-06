@@ -24,8 +24,7 @@ use scud_bridge::{ScudBridge, ScudCommand, ScudEvent};
 use state::{
     AgentConfig, AgentStatus, AppState, ArchiveEntry, BackpressureState, ExecutionMode,
     HeadlessSessionInfo, HeadlessSessionStatus, LaunchConfig, LlmConfigState, RalphPhase,
-    RalphProgress,
-    SwarmDefaults, SwarmProgress, TagSummary, TaskInfo,
+    RalphProgress, SwarmDefaults, SwarmProgress, TagSummary, TaskInfo,
 };
 use views::ViewMode;
 
@@ -505,7 +504,10 @@ impl DescartesGui {
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
                     let harness = self.state.launch_config.harness.clone();
-                    let model = self.state.launch_config.model.clone();
+                    let model = normalize_launch_model_for_harness(
+                        &harness,
+                        &self.state.launch_config.model,
+                    );
                     return Task::perform(
                         async move {
                             let _ = tx
@@ -552,7 +554,10 @@ impl DescartesGui {
                 }
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
-                    let model = self.state.launch_config.model.clone();
+                    let model = normalize_launch_model_for_harness(
+                        &harness,
+                        &self.state.launch_config.model,
+                    );
                     self.state.agent_status = AgentStatus::Running;
                     self.state.output_buffer.clear();
                     self.state
@@ -1368,7 +1373,10 @@ impl DescartesGui {
                 }
                 if let Some(ref tx) = self.scud_command_tx {
                     let tx = tx.clone();
-                    let model = self.state.launch_config.model.clone();
+                    let model = normalize_launch_model_for_harness(
+                        &harness,
+                        &self.state.launch_config.model,
+                    );
                     let ralph_config = self.state.launch_config.ralph_config.clone();
                     self.state.agent_status = AgentStatus::Running;
                     self.state.output_buffer.clear();
@@ -2293,6 +2301,15 @@ async fn load_opencode_models() -> Vec<String> {
     }
 }
 
+fn normalize_launch_model_for_harness(harness: &str, model: &str) -> String {
+    if harness.eq_ignore_ascii_case("rho") && model.trim() == "xai/grok-code-fast-1" {
+        // Treat the legacy SCUD default as "no explicit override" for rho,
+        // allowing rho to honor project/global rho config defaults.
+        return String::new();
+    }
+    model.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2315,6 +2332,18 @@ mod tests {
             error: None,
             selected_agent_config: None,
         }
+    }
+
+    #[test]
+    fn test_normalize_launch_model_for_rho_legacy_default() {
+        assert_eq!(
+            normalize_launch_model_for_harness("rho", "xai/grok-code-fast-1"),
+            ""
+        );
+        assert_eq!(
+            normalize_launch_model_for_harness("claude", "sonnet"),
+            "sonnet"
+        );
     }
 
     /// Headless UI test using iced_test simulator

@@ -121,6 +121,22 @@ impl Harness {
     }
 }
 
+/// Normalize a CLI model argument into an optional override.
+///
+/// For `rho`, the legacy SCUD default (`xai/grok-code-fast-1`) is treated as
+/// "no explicit override" so rho can honor project/global rho configuration
+/// (e.g. `RHO.md` and `~/.rho/models.toml`).
+pub fn normalize_model_override<'a>(harness: Harness, model_arg: &'a str) -> Option<&'a str> {
+    let trimmed = model_arg.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if matches!(harness, Harness::Rho) && trimmed == "xai/grok-code-fast-1" {
+        return None;
+    }
+    Some(trimmed)
+}
+
 /// Cached paths to harness binaries
 static CLAUDE_PATH: OnceLock<String> = OnceLock::new();
 static OPENCODE_PATH: OnceLock<String> = OnceLock::new();
@@ -128,6 +144,42 @@ static CURSOR_PATH: OnceLock<String> = OnceLock::new();
 static RHO_PATH: OnceLock<String> = OnceLock::new();
 #[cfg(feature = "direct-api")]
 static SCUD_PATH: OnceLock<String> = OnceLock::new();
+
+fn harness_env_override(harness: Harness) -> Option<String> {
+    match harness {
+        Harness::Rho => std::env::var("SCUD_RHO_BIN")
+            .ok()
+            .or_else(|| std::env::var("RHO_CLI_BIN").ok()),
+        _ => None,
+    }
+}
+
+fn rho_candidate_is_placeholder(binary_path: &str) -> Result<bool> {
+    let output = Command::new(binary_path)
+        .output()
+        .with_context(|| format!("Failed probing rho binary '{}'", binary_path))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr).to_lowercase();
+
+    Ok(
+        combined.contains("rho-cli placeholder - cli structure ready")
+            || combined.contains("rho-cli-stub is a legacy placeholder"),
+    )
+}
+
+fn candidate_is_usable(
+    harness: Harness,
+    path: &str,
+    skipped_rho_placeholders: &mut Vec<String>,
+) -> Result<bool> {
+    if matches!(harness, Harness::Rho) && rho_candidate_is_placeholder(path)? {
+        skipped_rho_placeholders.push(path.to_string());
+        return Ok(false);
+    }
+    Ok(true)
+}
 
 /// Find the full path to a harness binary.
 /// Caches the result for subsequent calls.
@@ -146,6 +198,27 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
         return Ok(path.as_str());
     }
 
+    let mut skipped_rho_placeholders = Vec::new();
+
+    // Optional explicit override for harness binary path.
+    if let Some(override_path) = harness_env_override(harness) {
+        let override_path = override_path.trim().to_string();
+        if override_path.is_empty() {
+            anyhow::bail!("Harness override path is empty");
+        }
+        if !std::path::Path::new(&override_path).exists() {
+            anyhow::bail!("Harness override path does not exist: {}", override_path);
+        }
+        if candidate_is_usable(harness, &override_path, &mut skipped_rho_placeholders)? {
+            let _ = cache.set(override_path);
+            return Ok(cache.get().unwrap().as_str());
+        }
+        anyhow::bail!(
+            "Harness override points to a placeholder rho binary: {}\nUse a functional rho-cli binary (for example: ~/projects/rho/target/release/rho-cli).",
+            override_path
+        );
+    }
+
     let binary_name = harness.binary_name();
 
     // Try `which <binary>` to find it in PATH
@@ -157,9 +230,11 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !path.is_empty() {
-            // Cache and return
-            let _ = cache.set(path);
-            return Ok(cache.get().unwrap().as_str());
+            if candidate_is_usable(harness, &path, &mut skipped_rho_placeholders)? {
+                // Cache and return
+                let _ = cache.set(path);
+                return Ok(cache.get().unwrap().as_str());
+            }
         }
     }
 
@@ -194,7 +269,9 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
     };
 
     for path in common_paths {
-        if std::path::Path::new(path).exists() {
+        if std::path::Path::new(path).exists()
+            && candidate_is_usable(harness, path, &mut skipped_rho_placeholders)?
+        {
             let _ = cache.set(path.to_string());
             return Ok(cache.get().unwrap().as_str());
         }
@@ -215,6 +292,8 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
             Harness::Rho => vec![
                 format!("{}/.cargo/bin/rho-cli", home),
                 format!("{}/.local/bin/rho-cli", home),
+                format!("{}/projects/rho/target/release/rho-cli", home),
+                format!("{}/projects/rho/target/debug/rho-cli", home),
             ],
             #[cfg(feature = "direct-api")]
             Harness::DirectApi => vec![
@@ -224,18 +303,28 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
         };
 
         for path in home_paths {
-            if std::path::Path::new(&path).exists() {
+            if std::path::Path::new(&path).exists()
+                && candidate_is_usable(harness, &path, &mut skipped_rho_placeholders)?
+            {
                 let _ = cache.set(path);
                 return Ok(cache.get().unwrap().as_str());
             }
         }
     }
 
+    if matches!(harness, Harness::Rho) && !skipped_rho_placeholders.is_empty() {
+        let listed = skipped_rho_placeholders.join(", ");
+        anyhow::bail!(
+            "Detected placeholder rho binaries: {}.\nUse a functional rho-cli binary (set SCUD_RHO_BIN or install/build rho-agent).",
+            listed
+        );
+    }
+
     let install_hint = match harness {
         Harness::Claude => "Install with: npm install -g @anthropic-ai/claude-code",
         Harness::OpenCode => "Install with: curl -fsSL https://opencode.ai/install | bash",
         Harness::Cursor => "Install with: curl https://cursor.com/install -fsSL | bash",
-        Harness::Rho => "Install with: cargo install rho (or build from ~/projects/rho)",
+        Harness::Rho => "Install/build a functional rho-cli (set SCUD_RHO_BIN=/absolute/path/to/rho-cli if needed)",
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => "Install with: cargo install scud-cli --features direct-api",
     };
@@ -887,4 +976,51 @@ pub fn spawn_in_tmux(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn make_executable_script(contents: &str) -> tempfile::TempPath {
+        let file = tempfile::NamedTempFile::new().expect("create temp file");
+        fs::write(file.path(), contents).expect("write temp script");
+        let mut perms = fs::metadata(file.path()).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(file.path(), perms).expect("set executable permission");
+        file.into_temp_path()
+    }
+
+    #[test]
+    fn normalize_model_override_treats_rho_legacy_default_as_none() {
+        let model = normalize_model_override(Harness::Rho, "xai/grok-code-fast-1");
+        assert!(model.is_none());
+    }
+
+    #[test]
+    fn normalize_model_override_keeps_non_empty_non_legacy_values() {
+        let model = normalize_model_override(Harness::Claude, "sonnet");
+        assert_eq!(model, Some("sonnet"));
+    }
+
+    #[test]
+    fn rho_placeholder_probe_detects_placeholder_output() {
+        let script = make_executable_script(
+            "#!/usr/bin/env bash\necho 'rho-cli placeholder - CLI structure ready'\n",
+        );
+        let is_placeholder =
+            rho_candidate_is_placeholder(script.to_str().expect("temp path utf8")).unwrap();
+        assert!(is_placeholder);
+    }
+
+    #[test]
+    fn rho_placeholder_probe_accepts_non_placeholder_binary() {
+        let script =
+            make_executable_script("#!/usr/bin/env bash\necho 'functional rho cli'\nexit 1\n");
+        let is_placeholder =
+            rho_candidate_is_placeholder(script.to_str().expect("temp path utf8")).unwrap();
+        assert!(!is_placeholder);
+    }
 }
