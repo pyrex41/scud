@@ -3,7 +3,7 @@ members = ["scud-cli", "scud-core", "descartes-gui"]
 resolver = "2"
 
 [workspace.package]
-version = "1.66.0"
+version = "1.66.1"
 edition = "2021"
 license = "MIT"
 authors = ["SCUD Team"]
