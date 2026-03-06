@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-02-23T18:31:03.287684+00:00",
+  "current_node": "start",
+  "completed_nodes": [
+    "start"
+  ],
+  "node_retries": {},
+  "node_statuses": {
+    "start": "success"
+  },
+  "context": {
+    "values": {}
+  },
+  "log": []
+}
