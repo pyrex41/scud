@@ -32,6 +32,7 @@
 pub mod beads;
 pub mod events;
 pub mod publisher;
+pub mod runtime;
 pub mod session;
 pub mod transcript;
 pub mod zmq_client;
@@ -51,6 +52,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use self::runtime::SwarmRuntime;
 use crate::commands::helpers::resolve_group_tag;
 use crate::commands::spawn::agent;
 use crate::commands::spawn::headless::{self, store::SessionStatus, StreamStore};
@@ -66,6 +68,7 @@ use self::session::{acquire_session_lock, RoundState, SwarmSession, WaveState, W
 use crate::agents::AgentDef;
 use crate::attribution::{attribute_failure, AttributionConfidence};
 use crate::backpressure::{BackpressureConfig, ValidationResult};
+use crate::commands::task_selection::{count_in_progress_tasks, is_actionable_pending_task};
 use crate::transcript_watcher::TranscriptWatcher;
 
 /// Swarm execution mode
@@ -108,10 +111,8 @@ pub async fn run(
         anyhow::bail!("SCUD not initialized. Run: scud init");
     }
 
-    // Check tmux is available (only in tmux mode)
-    if matches!(swarm_mode, SwarmMode::Tmux) {
-        terminal::check_tmux_available()?;
-    }
+    let runtime = SwarmRuntime::from(swarm_mode);
+    runtime.ensure_requirements()?;
 
     // Determine phase tag
     let phase_tag = if all_tags {
@@ -208,17 +209,14 @@ pub async fn run(
             "enabled".green()
         }
     );
-    println!(
-        "{:<20} {}",
-        "Mode:".dimmed(),
-        match swarm_mode {
-            SwarmMode::Tmux => "tmux (waves)".cyan(),
-            SwarmMode::Extensions => "extensions (waves)".green(),
-            SwarmMode::Server => "server (opencode)".magenta(),
-            SwarmMode::Beads => "beads (continuous)".yellow(),
-            SwarmMode::Headless => "headless (waves)".green(),
-        }
-    );
+    let mode_label = match runtime {
+        SwarmRuntime::Tmux => runtime.display_label().cyan(),
+        SwarmRuntime::Extensions => runtime.display_label().green(),
+        SwarmRuntime::Server => runtime.display_label().magenta(),
+        SwarmRuntime::Headless => runtime.display_label().green(),
+        SwarmRuntime::Beads => runtime.display_label().yellow(),
+    };
+    println!("{:<20} {}", "Mode:".dimmed(), mode_label);
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().cyan());
     println!(
         "{:<20} {}",
@@ -269,13 +267,7 @@ pub async fn run(
     }
 
     // Initialize swarm session
-    let terminal_mode = match swarm_mode {
-        SwarmMode::Tmux => "tmux",
-        SwarmMode::Extensions => "extensions",
-        SwarmMode::Beads => "beads",
-        SwarmMode::Server => "server",
-        SwarmMode::Headless => "headless",
-    };
+    let terminal_mode = runtime.terminal_label();
     let mut swarm_session = SwarmSession::new(
         &session_name,
         &phase_tag,
@@ -291,20 +283,19 @@ pub async fn run(
 
     // Create EventWriter for SQLite event logging (Phase 1b)
     // Include ZMQ publisher if not disabled
-    let event_writer = events::EventWriter::new_with_zmq(
-        &working_dir,
-        &session_name,
-        !no_publish_events,
-    ).ok();
+    let event_writer =
+        events::EventWriter::new_with_zmq(&working_dir, &session_name, !no_publish_events).ok();
 
     // Create status tracking for control commands
-    let status_state = Arc::new(std::sync::Mutex::new(crate::commands::swarm::publisher::SwarmStatus {
-        state: "running".to_string(),
-        current_wave: 0,
-        total_waves: 0,
-        tasks_completed: 0,
-        tasks_total: 0,
-    }));
+    let status_state = Arc::new(std::sync::Mutex::new(
+        crate::commands::swarm::publisher::SwarmStatus {
+            state: "running".to_string(),
+            current_wave: 0,
+            total_waves: 0,
+            tasks_completed: 0,
+            tasks_total: 0,
+        },
+    ));
 
     // Start heartbeat background task for connection liveness detection
     let heartbeat_handle = if event_writer.is_some() {
@@ -335,12 +326,10 @@ pub async fn run(
         None
     };
 
-
-
     // Detect orphan in-progress tasks (tasks with no running tmux window)
     // Only applicable in tmux mode
     let all_phases = storage.load_tasks()?;
-    if matches!(swarm_mode, SwarmMode::Tmux) {
+    if runtime.is_tmux() {
         let orphans = find_orphan_tasks(&all_phases, &phase_tag, all_tags, &session_name);
 
         if !orphans.is_empty() {
@@ -398,7 +387,11 @@ pub async fn run(
                             if let Some(task) = phase.get_task_mut(task_id) {
                                 task.set_status(TaskStatus::Pending);
                                 storage.update_group(tag, &phase)?;
-                                println!("  {} {} -> pending (will re-spawn)", "v".green(), task_id);
+                                println!(
+                                    "  {} {} -> pending (will re-spawn)",
+                                    "v".green(),
+                                    task_id
+                                );
                             }
                         }
                     }
@@ -411,7 +404,7 @@ pub async fn run(
                     // Abort
                     anyhow::bail!("Aborted by user");
                 }
-            _ => {}
+                _ => {}
             }
             println!();
         }
@@ -419,15 +412,13 @@ pub async fn run(
 
     // === BEADS MODE: Continuous execution ===
     // If beads mode is selected, run the continuous polling loop instead of waves
-    if matches!(swarm_mode, SwarmMode::Beads) {
+    if runtime.is_beads() {
         let beads_config = beads::BeadsConfig {
             max_concurrent: round_size, // Reuse round_size as max concurrent
             poll_interval: Duration::from_secs(3),
         };
 
         // Check tmux availability for beads mode (uses tmux by default)
-        terminal::check_tmux_available()?;
-
         let result = beads::run_beads_loop(
             &storage,
             &phase_tag,
@@ -461,16 +452,16 @@ pub async fn run(
         println!(
             "  Duration:        {}",
             format!("{:.1}s", result.total_duration.as_secs_f64()).cyan()
-         );
+        );
 
-         // Stop heartbeat background task
-         if let Some((handle, stop_flag)) = heartbeat_handle {
-             stop_flag.store(true, Ordering::Relaxed);
-             let _ = handle.join();
-         }
+        // Stop heartbeat background task
+        if let Some((handle, stop_flag)) = heartbeat_handle {
+            stop_flag.store(true, Ordering::Relaxed);
+            let _ = handle.join();
+        }
 
-         return Ok(());
-     }
+        return Ok(());
+    }
 
     // === WAVE MODE: Batch execution ===
     // Main loop: execute waves until all tasks done
@@ -485,7 +476,9 @@ pub async fn run(
                     if let Some(zmq_publisher) = writer.zmq_publisher() {
                         let _ = zmq_publisher.handle_control_request(
                             pause_flag,
-                            stop_flag.as_ref().unwrap_or(&Arc::new(AtomicBool::new(false))),
+                            stop_flag
+                                .as_ref()
+                                .unwrap_or(&Arc::new(AtomicBool::new(false))),
                             &|| status_state.lock().unwrap().clone(),
                         );
                     }
@@ -529,7 +522,8 @@ pub async fn run(
             status.current_wave = wave_number;
             status.total_waves = waves.len();
             status.tasks_total = waves.iter().map(|w| w.len()).sum();
-            status.tasks_completed = all_phases.values()
+            status.tasks_completed = all_phases
+                .values()
                 .flat_map(|phase| &phase.tasks)
                 .filter(|task| matches!(task.status, TaskStatus::Done))
                 .count();
@@ -555,9 +549,8 @@ pub async fn run(
 
             // Publish swarm completed event
             if let Some(ref writer) = &event_writer {
-                let _ = writer.publish_event(&publisher::ZmqEvent::SwarmCompleted {
-                    success: true,
-                });
+                let _ =
+                    writer.publish_event(&publisher::ZmqEvent::SwarmCompleted { success: true });
                 let _ = writer.log_swarm_completed(true);
             }
 
@@ -571,10 +564,10 @@ pub async fn run(
             println!();
             println!("{}", "No ready tasks in current wave.".yellow());
 
-            let in_progress_count = count_in_progress(&all_phases, &phase_tag, all_tags);
+            let in_progress_count = count_in_progress_tasks(&all_phases, &phase_tag, all_tags);
             if in_progress_count > 0 {
                 // Check for stale in-progress tasks whose tmux windows are gone (1d)
-                if matches!(swarm_mode, SwarmMode::Tmux) {
+                if runtime.is_tmux() {
                     let orphans =
                         find_orphan_tasks(&all_phases, &phase_tag, all_tags, &session_name);
                     for (task_id, tag) in &orphans {
@@ -647,81 +640,32 @@ pub async fn run(
 
             // Spawn agents for this round based on swarm mode
             // Note: Agents self-orient using scud CLI commands (scud list, scud show, etc.)
-            let round_state = match swarm_mode {
-                SwarmMode::Tmux => {
-                    let state = execute_round(
-                        &storage,
-                        round_tasks,
-                        &working_dir,
-                        &session_name,
-                        round_idx,
-                        harness,
-                        event_writer.as_ref(),
-                    )?;
+            let round_state = runtime
+                .run_round(
+                    &storage,
+                    round_tasks,
+                    &working_dir,
+                    &session_name,
+                    round_idx,
+                    harness,
+                    stale_timeout,
+                    idle_timeout_minutes,
+                    event_writer.as_ref(),
+                )
+                .await?;
 
-                    // Create/update spawn proxy for monitor visibility (tmux mode only)
-                    let _proxy_path = create_and_update_spawn_proxy(
-                        &storage,
-                        project_root.as_ref(),
-                        &session_name,
-                        &phase_tag,
-                        &working_dir,
-                        &swarm_session,
-                        Some(&state),
-                    )?;
-
-                    // Wait for round completion (tmux mode - poll for status changes)
-                    println!("    Waiting for round completion...");
-                    wait_for_round_completion(
-                        &storage,
-                        round_tasks,
-                        &session_name,
-                        stale_timeout,
-                        idle_timeout_minutes,
-                        event_writer.as_ref(),
-                    )?;
-
-                    state
-                }
-                SwarmMode::Extensions => {
-                    // Extensions mode: synchronous execution with async subprocess runner
-                    execute_round_extensions(
-                        &storage,
-                        round_tasks,
-                        &working_dir,
-                        round_idx,
-                        harness,
-                    )
-                    .await?
-                }
-                SwarmMode::Server => {
-                    // Server mode: use OpenCode Server for agent orchestration
-                    execute_round_server(
-                        &storage,
-                        round_tasks,
-                        &working_dir,
-                        round_idx,
-                    )
-                    .await?
-                }
-                SwarmMode::Headless => {
-                    // Headless mode: use spawn's headless infrastructure for streaming JSON
-                    execute_round_headless(
-                        &storage,
-                        round_tasks,
-                        &working_dir,
-                        round_idx,
-                        harness,
-                        event_writer.as_ref(),
-                    )
-                    .await?
-                }
-                SwarmMode::Beads => {
-                    // Beads mode is handled earlier with early return
-                    // This branch should never be reached
-                    unreachable!("Beads mode should exit before wave loop")
-                }
-            };
+            // Create/update spawn proxy for monitor visibility (tmux mode only)
+            if runtime.is_tmux() {
+                let _proxy_path = create_and_update_spawn_proxy(
+                    &storage,
+                    project_root.as_ref(),
+                    &session_name,
+                    &phase_tag,
+                    &working_dir,
+                    &swarm_session,
+                    Some(&round_state),
+                )?;
+            }
 
             wave_state.rounds.push(round_state.clone());
             println!("    {} Round {} complete", "✓".green(), round_idx + 1);
@@ -880,10 +824,7 @@ pub async fn run(
 
         // Emit wave completed event
         if let Some(ref writer) = event_writer {
-            let _ = writer.log_wave_completed(
-                wave_number,
-                wave_start.elapsed().as_millis() as u64,
-            );
+            let _ = writer.log_wave_completed(wave_number, wave_start.elapsed().as_millis() as u64);
         }
 
         // Save session state
@@ -895,9 +836,7 @@ pub async fn run(
 
     // Publish swarm completed event (successful completion)
     if let Some(ref writer) = &event_writer {
-        let _ = writer.publish_event(&publisher::ZmqEvent::SwarmCompleted {
-            success: true,
-        });
+        let _ = writer.publish_event(&publisher::ZmqEvent::SwarmCompleted { success: true });
         let _ = writer.log_swarm_completed(true);
     }
 
@@ -934,8 +873,7 @@ pub async fn run(
     // Auto-sync worktree results back to main
     if is_salvo_worktree {
         if let (Some(main_root), Some(tag_name)) = (&main_project_root, &tag) {
-            if let Err(e) =
-                crate::commands::salvo::sync_to_main(main_root, &working_dir, tag_name)
+            if let Err(e) = crate::commands::salvo::sync_to_main(main_root, &working_dir, tag_name)
             {
                 eprintln!("Warning: Failed to sync salvo back to main: {}", e);
                 eprintln!("Run manually: scud salvo sync {}", tag_name);
@@ -1046,7 +984,7 @@ fn compute_waves_from_tasks<'a>(
     for tag in phase_tags {
         if let Some(phase) = all_phases.get(tag) {
             for task in &phase.tasks {
-                if is_task_actionable(task, phase) {
+                if is_actionable_pending_task(task, phase) {
                     actionable.push(TaskInfo {
                         task,
                         tag: tag.clone(),
@@ -1135,46 +1073,6 @@ fn compute_waves_from_tasks<'a>(
     }
 
     Ok(waves)
-}
-
-fn is_task_actionable(task: &Task, phase: &Phase) -> bool {
-    if task.status != TaskStatus::Pending {
-        return false;
-    }
-    if task.is_expanded() {
-        return false;
-    }
-    if let Some(ref parent_id) = task.parent_id {
-        let parent_expanded = phase
-            .get_task(parent_id)
-            .map(|p| p.is_expanded())
-            .unwrap_or(false);
-        if !parent_expanded {
-            return false;
-        }
-    }
-    true
-}
-
-fn count_in_progress(
-    all_phases: &HashMap<String, Phase>,
-    phase_tag: &str,
-    all_tags: bool,
-) -> usize {
-    let tags: Vec<&String> = if all_tags {
-        all_phases.keys().collect()
-    } else {
-        all_phases
-            .keys()
-            .filter(|t| t.as_str() == phase_tag)
-            .collect()
-    };
-
-    tags.iter()
-        .filter_map(|tag| all_phases.get(*tag))
-        .flat_map(|phase| &phase.tasks)
-        .filter(|t| t.status == TaskStatus::InProgress)
-        .count()
 }
 
 /// Check if a tmux window exists for a task
@@ -1308,7 +1206,8 @@ async fn execute_round_extensions<'a>(
         }
     }
 
-    let result = session::execute_wave_async(&wave_agents, working_dir, round_idx, default_harness).await?;
+    let result =
+        session::execute_wave_async(&wave_agents, working_dir, round_idx, default_harness).await?;
 
     // Print results
     for agent_result in &result.agent_results {
@@ -1368,51 +1267,49 @@ async fn execute_round_server<'a>(
             }
         }
     }
-        // Create event channel
-        let (event_tx, _event_rx) = mpsc::channel(1000);
+    // Create event channel
+    let (event_tx, _event_rx) = mpsc::channel(1000);
 
-        // Create orchestrator
-        let mut orchestrator = AgentOrchestrator::new(event_tx.clone()).await?;
+    // Create orchestrator
+    let mut orchestrator = AgentOrchestrator::new(event_tx.clone()).await?;
 
-        // Resolve model from config
-        let config_path = working_dir.join(".scud").join("config.toml");
-        let config = crate::config::Config::load(&config_path).unwrap_or_default();
-        let model_str = config.swarm_model().to_string();
-        let provider_str = config.swarm.direct_api_provider.clone();
+    // Resolve model from config
+    let config_path = working_dir.join(".scud").join("config.toml");
+    let config = crate::config::Config::load(&config_path).unwrap_or_default();
+    let model_str = config.swarm_model().to_string();
+    let provider_str = config.swarm.direct_api_provider.clone();
 
-        // Spawn all agents
-        for info in tasks {
-            let prompt = generate_server_prompt(info.task, &info.tag, working_dir);
+    // Spawn all agents
+    for info in tasks {
+        let prompt = generate_server_prompt(info.task, &info.tag, working_dir);
 
-            let model = Some((provider_str.as_str(), model_str.as_str()));
+        let model = Some((provider_str.as_str(), model_str.as_str()));
 
-            match orchestrator.spawn_agent(info.task, &info.tag, &prompt, model).await {
-                Ok(_) => {
-                    println!(
-                        "    {} Spawned: {} | {} [server/{}/{}]",
-                        "✓".green(),
-                        info.task.id.cyan(),
-                        info.task.title.dimmed(),
-                        provider_str,
-                        model_str,
-                    );
-                }
-                Err(e) => {
-                    println!(
-                        "    {} Failed to spawn {}: {}",
-                        "✗".red(),
-                        info.task.id,
-                        e
-                    );
-                }
+        match orchestrator
+            .spawn_agent(info.task, &info.tag, &prompt, model)
+            .await
+        {
+            Ok(_) => {
+                println!(
+                    "    {} Spawned: {} | {} [server/{}/{}]",
+                    "✓".green(),
+                    info.task.id.cyan(),
+                    info.task.title.dimmed(),
+                    provider_str,
+                    model_str,
+                );
+            }
+            Err(e) => {
+                println!("    {} Failed to spawn {}: {}", "✗".red(), info.task.id, e);
             }
         }
+    }
 
-        // Drop our sender so we can detect when orchestrator is done
-        drop(event_tx);
+    // Drop our sender so we can detect when orchestrator is done
+    drop(event_tx);
 
-        // Collect results
-        let results = orchestrator.wait_all().await;
+    // Collect results
+    let results = orchestrator.wait_all().await;
 
     // Cleanup
     orchestrator.cleanup().await;
@@ -1556,10 +1453,19 @@ async fn execute_round_headless(
                 let task_id = info.task.id.clone();
                 let tag = info.tag.clone();
                 let working_dir_clone = working_dir.to_path_buf();
-                let harness_name = default_harness.name().to_string();
+                let harness_name = config.harness.name().to_string();
 
                 tokio::spawn(async move {
+                    let mut saw_terminal_event = false;
                     while let Some(event) = session_handle.events.recv().await {
+                        if matches!(
+                            event.kind,
+                            headless::StreamEventKind::Complete { .. }
+                                | headless::StreamEventKind::Error { .. }
+                        ) {
+                            saw_terminal_event = true;
+                        }
+
                         // Check for session ID assignment
                         if let headless::StreamEventKind::SessionAssigned { ref session_id } =
                             event.kind
@@ -1575,8 +1481,21 @@ async fn execute_round_headless(
                         store_clone.push_event(&task_id, event);
                     }
 
-                    // Wait for process to complete
-                    let _ = session_handle.wait().await;
+                    // Wait for process to complete. If the harness exited without a terminal
+                    // stream event, synthesize one so rounds cannot get stuck indefinitely.
+                    let wait_ok = session_handle.wait().await.unwrap_or(false);
+                    if !saw_terminal_event {
+                        if wait_ok {
+                            store_clone.push_event(&task_id, headless::StreamEvent::complete(true));
+                        } else {
+                            store_clone.push_event(
+                                &task_id,
+                                headless::StreamEvent::error(
+                                    "Agent process exited without completion event".to_string(),
+                                ),
+                            );
+                        }
+                    }
                 });
             }
             Err(e) => {
@@ -1679,9 +1598,7 @@ async fn execute_round_headless(
                     // Prefer tool line, fall back to last output line
                     let tool_line = store.get_last_tool_line(task_id);
                     let activity = tool_line
-                        .or_else(|| {
-                            store.get_output(task_id, 1).into_iter().next()
-                        })
+                        .or_else(|| store.get_output(task_id, 1).into_iter().next())
                         .unwrap_or_default();
                     let trimmed = if activity.len() > 60 {
                         format!("{}…", &activity[..59])
@@ -1719,10 +1636,14 @@ async fn execute_round_headless(
 
     // Final summary (printed once, not overwritten)
     let elapsed = start.elapsed().as_secs();
-    let successes = round_state.task_ids.iter()
+    let successes = round_state
+        .task_ids
+        .iter()
         .filter(|id| matches!(store.get_status(id), Some(SessionStatus::Completed)))
         .count();
-    let failures = round_state.task_ids.iter()
+    let failures = round_state
+        .task_ids
+        .iter()
         .filter(|id| matches!(store.get_status(id), Some(SessionStatus::Failed)))
         .count();
     println!(
@@ -1753,7 +1674,8 @@ async fn execute_round_headless(
     // Emit completion events
     for task_id in &round_state.task_ids {
         if let Some(writer) = event_writer {
-            let _ = writer.log_completed(task_id, true, start.elapsed().as_millis() as u64);
+            let success = matches!(store.get_status(task_id), Some(SessionStatus::Completed));
+            let _ = writer.log_completed(task_id, success, start.elapsed().as_millis() as u64);
         }
     }
 
@@ -2072,10 +1994,7 @@ fn wait_for_round_completion(
         };
 
         let idle_note = if !idle_agents.is_empty() {
-            format!(
-                " ({} idle >60s)",
-                idle_agents.len()
-            )
+            format!(" ({} idle >60s)", idle_agents.len())
         } else {
             String::new()
         };

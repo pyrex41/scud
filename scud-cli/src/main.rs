@@ -626,17 +626,17 @@ enum Commands {
         #[arg(short, long)]
         monitor: bool,
 
-    /// Mark spawned tasks as in-progress
-    #[arg(short, long)]
-    claim: bool,
+        /// Mark spawned tasks as in-progress
+        #[arg(short, long)]
+        claim: bool,
 
-    /// Run in headless mode (no TUI monitor or attach)
-    #[arg(long)]
-    headless: bool,
+        /// Run in headless mode (no TUI monitor or attach)
+        #[arg(long)]
+        headless: bool,
 
-    /// AI harness: claude, opencode (overridden by task's agent_type if set)
-    #[arg(short = 'H', long, default_value = "opencode")]
-    harness: String,
+        /// AI harness: claude, opencode (overridden by task's agent_type if set)
+        #[arg(short = 'H', long, default_value = "opencode")]
+        harness: String,
 
         /// Model to use with harness (overridden by task's agent_type if set)
         #[arg(short = 'M', long, default_value = "xai/grok-code-fast-1")]
@@ -701,6 +701,28 @@ enum Commands {
         /// Attach to tmux session after spawn
         #[arg(long)]
         attach: bool,
+    },
+
+    /// Retry a single agent without stopping the swarm
+    RetryAgent {
+        /// Task ID to retry
+        task_id: String,
+
+        /// Phase tag (uses active phase if not provided)
+        #[arg(short, long)]
+        tag: Option<String>,
+
+        /// AI harness: claude, opencode (overridden by task's agent_type if set)
+        #[arg(short = 'H', long, default_value = "opencode")]
+        harness: String,
+
+        /// Model to use with harness (overridden by task's agent_type if set)
+        #[arg(short = 'M', long, default_value = "xai/grok-code-fast-1")]
+        model: String,
+
+        /// Tmux session name (default: scud-<tag>)
+        #[arg(long)]
+        session: Option<String>,
     },
 
     /// Run a single AI agent with an arbitrary prompt
@@ -961,7 +983,6 @@ enum Commands {
         #[arg(long)]
         provider: Option<String>,
     },
-
     // /// Start interactive REPL for task management - temporarily disabled
     // Repl,
 }
@@ -1072,6 +1093,14 @@ enum SalvoCommand {
         /// Tag name of the salvo
         tag: String,
     },
+}
+
+fn resolve_swarm_mode(swarm_mode: SwarmMode, headless: bool) -> SwarmMode {
+    if headless {
+        SwarmMode::Headless
+    } else {
+        swarm_mode
+    }
 }
 
 #[tokio::main]
@@ -1315,13 +1344,13 @@ async fn main() -> Result<()> {
             commands::convert::run(cli.project, &from, &to, backup)
         }
         Commands::Doctor { command } => match command {
-             DoctorCommands::Workflow {
-                 tag,
-                 stale_hours,
-                 fix,
-             } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
-             DoctorCommands::ScanExt => commands::doctor::scan_ext(cli.project),
-         },
+            DoctorCommands::Workflow {
+                tag,
+                stale_hours,
+                fix,
+            } => commands::doctor::run(cli.project, tag.as_deref(), stale_hours, fix),
+            DoctorCommands::ScanExt => commands::doctor::scan_ext(cli.project),
+        },
         Commands::CheckDeps {
             tag,
             all_tags,
@@ -1386,7 +1415,9 @@ async fn main() -> Result<()> {
         }
         Commands::Sessions { verbose } => commands::spawn::run_sessions(cli.project, verbose),
         Commands::Discover => commands::spawn::run_discover_sessions(cli.project),
-        Commands::Attach { task_id, harness } => commands::attach::run(cli.project, &task_id, harness.as_deref()),
+        Commands::Attach { task_id, harness } => {
+            commands::attach::run(cli.project, &task_id, harness.as_deref())
+        }
         Commands::Detach => commands::spawn::run_detach_session(cli.project),
         Commands::Restart {
             task_id,
@@ -1404,6 +1435,21 @@ async fn main() -> Result<()> {
             session,
             attach,
         ),
+        Commands::RetryAgent {
+            task_id,
+            tag,
+            harness,
+            model,
+            session,
+        } => commands::restart::run(
+            cli.project,
+            &task_id,
+            tag.as_deref(),
+            &harness,
+            &model,
+            session,
+            false, // no auto-attach for in-flight swarm retries
+        ),
         Commands::Run {
             prompt,
             harness,
@@ -1411,7 +1457,15 @@ async fn main() -> Result<()> {
             session,
             attach,
             name,
-        } => commands::run::run(cli.project, &prompt, &harness, &model, session, attach, name),
+        } => commands::run::run(
+            cli.project,
+            &prompt,
+            &harness,
+            &model,
+            session,
+            attach,
+            name,
+        ),
         Commands::Swarm {
             tag,
             round_size,
@@ -1432,29 +1486,32 @@ async fn main() -> Result<()> {
             stale_timeout,
             idle_timeout_minutes,
             no_publish_events,
-        } => commands::swarm::run(
-            cli.project,
-            tag.as_deref(),
-            round_size,
-            all_tags,
-            &harness,
-            if headless { SwarmMode::Headless } else { swarm_mode },
-            dry_run,
-            session,
-            no_research,
-            no_validate,
-            review,
-            review_all,
-            no_repair,
-            max_repair_attempts,
-            no_worktree,
-            salvo_dir,
-            Some(stale_timeout),
-            idle_timeout_minutes,
-            no_publish_events,
-            None, // pause_flag
-            None, // stop_flag
-        ).await,
+        } => {
+            commands::swarm::run(
+                cli.project,
+                tag.as_deref(),
+                round_size,
+                all_tags,
+                &harness,
+                resolve_swarm_mode(swarm_mode, headless),
+                dry_run,
+                session,
+                no_research,
+                no_validate,
+                review,
+                review_all,
+                no_repair,
+                max_repair_attempts,
+                no_worktree,
+                salvo_dir,
+                Some(stale_timeout),
+                idle_timeout_minutes,
+                no_publish_events,
+                None, // pause_flag
+                None, // stop_flag
+            )
+            .await
+        }
         Commands::Watch {
             session,
             tag,
@@ -1497,7 +1554,11 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
             match cmd {
-                TranscriptCommand::View { session, full, json } => {
+                TranscriptCommand::View {
+                    session,
+                    full,
+                    json,
+                } => {
                     if json {
                         match commands::swarm::transcript::export_transcript_json(
                             &project_root,
@@ -1551,7 +1612,8 @@ async fn main() -> Result<()> {
                 TranscriptCommand::Import => {
                     let db = std::sync::Arc::new(scud::db::Database::new(&project_root));
                     db.initialize()?;
-                    let watcher = scud::transcript_watcher::TranscriptWatcher::new(&project_root, db);
+                    let watcher =
+                        scud::transcript_watcher::TranscriptWatcher::new(&project_root, db);
                     let count = watcher.import_all(None, None)?;
                     println!("Imported {} transcript sessions", count);
                 }
@@ -1658,9 +1720,11 @@ async fn main() -> Result<()> {
             AttractorCommands::Import { file, output } => {
                 commands::attractor::import::run(&file, output.as_deref())
             }
-            AttractorCommands::Export { file, format, output } => {
-                commands::attractor::export::run(&file, &format, output.as_deref())
-            }
+            AttractorCommands::Export {
+                file,
+                format,
+                output,
+            } => commands::attractor::export::run(&file, &format, output.as_deref()),
         },
         Commands::SyncFromClaude => commands::sync_from_claude::run(cli.project),
         #[cfg(feature = "direct-api")]

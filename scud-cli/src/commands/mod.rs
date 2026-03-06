@@ -50,6 +50,7 @@ pub mod salvo;
 pub mod ralph;
 
 // Test and fix loop
+pub mod task_selection;
 pub mod test;
 
 // JSON RPC IPC server for subagents

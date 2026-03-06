@@ -20,6 +20,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::commands::helpers::{flatten_all_tasks, resolve_group_tag};
+use crate::commands::task_selection::is_actionable_pending_task;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 use crate::sync::claude_tasks;
@@ -117,7 +118,11 @@ pub fn run(
     }
 
     // Create stream store for headless mode
-    let stream_store = if headless { Some(StreamStore::new()) } else { None };
+    let stream_store = if headless {
+        Some(StreamStore::new())
+    } else {
+        None
+    };
 
     // Get working directory
     let working_dir = project_root
@@ -199,7 +204,9 @@ pub fn run(
 
     if headless {
         // Headless mode - use streaming runners
-        let store = stream_store.as_ref().expect("stream_store should be Some in headless mode");
+        let store = stream_store
+            .as_ref()
+            .expect("stream_store should be Some in headless mode");
 
         // Use tokio runtime for async headless spawning
         let rt = tokio::runtime::Runtime::new()?;
@@ -354,14 +361,8 @@ pub fn run(
 
     if headless {
         println!();
-        println!(
-            "To resume: {}",
-            "scud attach <task_id>".cyan()
-        );
-        println!(
-            "To list:   {}",
-            "scud attach --list".dimmed()
-        );
+        println!("To resume: {}", "scud attach <task_id>".cyan());
+        println!("To list:   {}", "scud attach --list".dimmed());
     } else {
         println!();
         println!(
@@ -402,19 +403,7 @@ pub fn run_monitor(
     use crate::commands::swarm::session as swarm_session;
     use colored::Colorize;
 
-    // Debug: show project root being used
-    let project_root_display = project_root
-        .as_ref()
-        .and_then(|p| p.to_str())
-        .unwrap_or("current directory");
-
     let mode_label = if swarm_mode { "swarm" } else { "spawn" };
-    eprintln!(
-        "{} Monitor ({}) looking for sessions in: {}",
-        "DEBUG:".yellow(),
-        mode_label,
-        project_root_display
-    );
 
     // List available sessions based on mode
     let session_name = match session {
@@ -425,31 +414,12 @@ pub fn run_monitor(
             } else {
                 monitor::list_sessions(project_root.as_ref())?
             };
-            eprintln!(
-                "{} Found {} {} session(s): {:?}",
-                "DEBUG:".yellow(),
-                sessions.len(),
-                mode_label,
-                sessions
-            );
             if sessions.is_empty() {
                 let cmd = if swarm_mode {
                     "scud swarm"
                 } else {
                     "scud spawn"
                 };
-                eprintln!(
-                    "{} No {} sessions found in: {}",
-                    "DEBUG:".yellow(),
-                    mode_label,
-                    project_root_display
-                );
-                eprintln!(
-                    "{} Run: {} --project {} (if needed)",
-                    "HINT:".cyan(),
-                    cmd,
-                    project_root_display
-                );
                 anyhow::bail!("No {} sessions found. Run: {}", mode_label, cmd);
             }
             if sessions.len() == 1 {
@@ -677,25 +647,8 @@ fn is_task_ready(
     phase: &crate::models::phase::Phase,
     all_tasks_flat: &[&Task],
 ) -> bool {
-    // Must be pending
-    if task.status != TaskStatus::Pending {
+    if !is_actionable_pending_task(task, phase) {
         return false;
-    }
-
-    // Must not be expanded (we want subtasks, not parent tasks)
-    if task.is_expanded() {
-        return false;
-    }
-
-    // If it's a subtask, parent must be expanded
-    if let Some(ref parent_id) = task.parent_id {
-        let parent_expanded = phase
-            .get_task(parent_id)
-            .map(|p| p.is_expanded())
-            .unwrap_or(false);
-        if !parent_expanded {
-            return false;
-        }
     }
 
     // All dependencies must be met
@@ -785,16 +738,18 @@ async fn spawn_headless(
         store.create_session(&info.task.id, &info.tag);
 
         // Resolve agent config (handles agent_type, custom prompts, etc.)
-        let config = agent::resolve_agent_config(
-            info.task,
-            &info.tag,
-            harness,
-            model,
-            working_dir,
-        );
+        let config = agent::resolve_agent_config(info.task, &info.tag, harness, model, working_dir);
 
         // Start headless session
-        match runner.start(&info.task.id, &config.prompt, working_dir, config.model.as_deref()).await {
+        match runner
+            .start(
+                &info.task.id,
+                &config.prompt,
+                working_dir,
+                config.model.as_deref(),
+            )
+            .await
+        {
             Ok(mut handle) => {
                 // Set PID in store for interruption support
                 if let Some(pid) = handle.pid() {
@@ -821,16 +776,14 @@ async fn spawn_headless(
                 tokio::spawn(async move {
                     while let Some(event) = handle.events.recv().await {
                         // Check for session ID assignment - save metadata for continuation
-                        if let headless::StreamEventKind::SessionAssigned { ref session_id } = event.kind {
+                        if let headless::StreamEventKind::SessionAssigned { ref session_id } =
+                            event.kind
+                        {
                             store_clone.set_session_id(&task_id, session_id);
 
                             // Save session metadata for `scud attach` continuation
-                            let mut metadata = SessionMetadata::new(
-                                &task_id,
-                                session_id,
-                                &tag,
-                                &harness_name,
-                            );
+                            let mut metadata =
+                                SessionMetadata::new(&task_id, session_id, &tag, &harness_name);
                             if let Some(pid) = handle.pid() {
                                 metadata = metadata.with_pid(pid);
                             }
@@ -851,10 +804,7 @@ async fn spawn_headless(
             }
             Err(e) => {
                 // Record error in store
-                store.push_event(
-                    &info.task.id,
-                    headless::StreamEvent::error(e.to_string()),
-                );
+                store.push_event(&info.task.id, headless::StreamEvent::error(e.to_string()));
                 println!(
                     "  {} Failed (headless): {} - {}",
                     "✗".red(),

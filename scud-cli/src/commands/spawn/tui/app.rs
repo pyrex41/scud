@@ -314,12 +314,12 @@ impl App {
 
         // Get tmux windows to find the correct window index
         let tmux_windows = self.get_tmux_windows(&session.session_name);
-        let matching_window = tmux_windows.iter().find(|(_, name)| {
-            name.starts_with(&agent.window_name) || agent.window_name.starts_with(name)
-        });
-
-        let window_target = match matching_window {
-            Some((index, _)) => format!("{}:{}", session.session_name, index),
+        let window_target = match self.window_target_for(
+            &session.session_name,
+            &agent.window_name,
+            &tmux_windows,
+        ) {
+            Some(target) => target,
             None => {
                 self.live_output = vec![format!("Window '{}' not found", agent.window_name)];
                 return;
@@ -371,9 +371,9 @@ impl App {
         let all_phases = storage.load_tasks().ok();
 
         for agent in &mut session.agents {
-            let window_exists = tmux_windows.iter().any(|(_, name)| {
-                name.starts_with(&agent.window_name) || agent.window_name.starts_with(name)
-            });
+            let window_exists = self
+                .find_window_index(&agent.window_name, &tmux_windows)
+                .is_some();
 
             let task_status = all_phases.as_ref().and_then(|phases| {
                 phases.get(&agent.tag).and_then(|phase| {
@@ -387,7 +387,8 @@ impl App {
                 (Some(TaskStatus::Done), _) => AgentStatus::Completed,
                 (Some(TaskStatus::Blocked), _) => AgentStatus::Failed,
                 (Some(TaskStatus::InProgress), true) => AgentStatus::Running,
-                (Some(TaskStatus::InProgress), false) => AgentStatus::Completed,
+                // In-progress task without a backing window is likely orphaned/stuck.
+                (Some(TaskStatus::InProgress), false) => AgentStatus::Failed,
                 (_, false) => AgentStatus::Completed,
                 (_, true) => AgentStatus::Running,
             };
@@ -420,6 +421,31 @@ impl App {
                 .collect(),
             _ => Vec::new(),
         }
+    }
+
+    fn window_name_matches(expected: &str, observed: &str) -> bool {
+        observed.starts_with(expected) || expected.starts_with(observed)
+    }
+
+    fn find_window_index(
+        &self,
+        window_name: &str,
+        tmux_windows: &[(usize, String)],
+    ) -> Option<usize> {
+        tmux_windows
+            .iter()
+            .find(|(_, observed_name)| Self::window_name_matches(window_name, observed_name))
+            .map(|(index, _)| *index)
+    }
+
+    fn window_target_for(
+        &self,
+        session_name: &str,
+        window_name: &str,
+        tmux_windows: &[(usize, String)],
+    ) -> Option<String> {
+        self.find_window_index(window_name, tmux_windows)
+            .map(|index| format!("{}:{}", session_name, index))
     }
 
     /// Periodic tick - refresh data as needed
@@ -598,12 +624,12 @@ impl App {
 
         // Find window index
         let tmux_windows = self.get_tmux_windows(&session.session_name);
-        let matching_window = tmux_windows.iter().find(|(_, name)| {
-            name.starts_with(&agent.window_name) || agent.window_name.starts_with(name)
-        });
-
-        let window_target = match matching_window {
-            Some((index, _)) => format!("{}:{}", session.session_name, index),
+        let window_target = match self.window_target_for(
+            &session.session_name,
+            &agent.window_name,
+            &tmux_windows,
+        ) {
+            Some(target) => target,
             None => {
                 self.error = Some(format!("Window not found for {}", agent.task_id));
                 return Ok(());
@@ -658,13 +684,9 @@ impl App {
 
         // Find window
         let tmux_windows = self.get_tmux_windows(&session.session_name);
-        let matching_window = tmux_windows.iter().find(|(_, name)| {
-            name.starts_with(&agent.window_name) || agent.window_name.starts_with(name)
-        });
-
-        if let Some((index, _)) = matching_window {
-            let target = format!("{}:{}", session.session_name, index);
-
+        if let Some(target) =
+            self.window_target_for(&session.session_name, &agent.window_name, &tmux_windows)
+        {
             // Send Ctrl+C to interrupt current process
             let _ = Command::new("tmux")
                 .args(["send-keys", "-t", &target, "C-c"])
