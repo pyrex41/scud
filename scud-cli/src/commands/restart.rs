@@ -9,8 +9,8 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::commands::helpers::resolve_group_tag;
-use crate::commands::spawn::{agent, terminal};
 use crate::commands::spawn::terminal::Harness;
+use crate::commands::spawn::{agent, terminal};
 use crate::models::task::TaskStatus;
 use crate::storage::Storage;
 
@@ -59,7 +59,11 @@ pub fn run(
     println!("{}", "═".repeat(50));
     println!("{:<15} {}", "Task:".dimmed(), task_id.cyan());
     println!("{:<15} {}", "Title:".dimmed(), task.title);
-    println!("{:<15} {}", "Old Status:".dimmed(), task.status.as_str().yellow());
+    println!(
+        "{:<15} {}",
+        "Old Status:".dimmed(),
+        task.status.as_str().yellow()
+    );
     println!("{:<15} {}", "Harness:".dimmed(), harness.name().green());
     println!("{:<15} {}", "Model:".dimmed(), model.green());
     println!("{:<15} {}", "Session:".dimmed(), session_name.cyan());
@@ -72,17 +76,16 @@ pub fn run(
         task_mut.set_status(TaskStatus::Pending);
         storage.update_group(&phase_tag, &phase)?;
     }
-    println!("  {} {} → {}", "✓".green(), task_id.cyan(), "pending".yellow());
+    println!(
+        "  {} {} → {}",
+        "✓".green(),
+        task_id.cyan(),
+        "pending".yellow()
+    );
 
     // Step 2: Resolve agent config and spawn
     println!("{}", "Spawning agent...".dimmed());
-    let config = agent::resolve_agent_config(
-        &task,
-        &phase_tag,
-        harness,
-        Some(model),
-        &working_dir,
-    );
+    let config = agent::resolve_agent_config(&task, &phase_tag, harness, Some(model), &working_dir);
 
     // Warn if agent type was specified but definition not found
     if task.agent_type.is_some() && !config.from_agent_def {
@@ -117,7 +120,12 @@ pub fn run(
                 task_mut.set_status(TaskStatus::InProgress);
                 storage.update_group(&phase_tag, &phase)?;
             }
-            println!("  {} {} → {}", "✓".green(), task_id.cyan(), "in-progress".green());
+            println!(
+                "  {} {} → {}",
+                "✓".green(),
+                task_id.cyan(),
+                "in-progress".green()
+            );
 
             // Summary
             println!();

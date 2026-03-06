@@ -312,9 +312,18 @@ pub fn parse_scg_result(content: &str) -> Result<ScgParseResult> {
                         // The rest may contain pipe-delimited fields
                         let parts = split_by_pipe(rest);
                         let to = parts[0].trim().to_string();
-                        let label = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
-                        let condition = parts.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
-                        let weight: i32 = parts.get(3).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+                        let label = parts
+                            .get(1)
+                            .map(|s| s.trim().to_string())
+                            .unwrap_or_default();
+                        let condition = parts
+                            .get(2)
+                            .map(|s| s.trim().to_string())
+                            .unwrap_or_default();
+                        let weight: i32 = parts
+                            .get(3)
+                            .and_then(|s| s.trim().parse().ok())
+                            .unwrap_or(0);
                         pipeline_edge_attrs.push(ScgEdgeAttrs {
                             from,
                             to,
@@ -336,29 +345,50 @@ pub fn parse_scg_result(content: &str) -> Result<ScgParseResult> {
                 if parts.len() >= 2 {
                     let id = parts[0].clone();
                     let handler_type = parts[1].clone();
-                    let max_retries: u32 = parts.get(2).and_then(|s| {
-                        let s = s.trim();
-                        if s.is_empty() { None } else { s.parse().ok() }
-                    }).unwrap_or(0);
+                    let max_retries: u32 = parts
+                        .get(2)
+                        .and_then(|s| {
+                            let s = s.trim();
+                            if s.is_empty() {
+                                None
+                            } else {
+                                s.parse().ok()
+                            }
+                        })
+                        .unwrap_or(0);
                     let retry_target = parts.get(3).and_then(|s| {
                         let s = s.trim();
-                        if s.is_empty() { None } else { Some(s.to_string()) }
+                        if s.is_empty() {
+                            None
+                        } else {
+                            Some(s.to_string())
+                        }
                     });
-                    let goal_gate = parts.get(4).map(|s| {
-                        let s = s.trim();
-                        s == "true"
-                    }).unwrap_or(false);
+                    let goal_gate = parts
+                        .get(4)
+                        .map(|s| {
+                            let s = s.trim();
+                            s == "true"
+                        })
+                        .unwrap_or(false);
                     let timeout = parts.get(5).and_then(|s| {
                         let s = s.trim();
-                        if s.is_empty() { None } else { Some(s.to_string()) }
+                        if s.is_empty() {
+                            None
+                        } else {
+                            Some(s.to_string())
+                        }
                     });
-                    pipeline_node_attrs.insert(id, PipelineNodeAttrs {
-                        handler_type,
-                        max_retries,
-                        retry_target,
-                        goal_gate,
-                        timeout,
-                    });
+                    pipeline_node_attrs.insert(
+                        id,
+                        PipelineNodeAttrs {
+                            handler_type,
+                            max_retries,
+                            retry_target,
+                            goal_gate,
+                            timeout,
+                        },
+                    );
                 }
             }
             Some("parents") => {
@@ -685,7 +715,10 @@ pub fn serialize_scg(phase: &Phase) -> String {
 /// Serialize a pipeline-mode SCG from a ScgParseResult.
 pub fn serialize_scg_pipeline(result: &ScgParseResult) -> String {
     let phase = &result.phase;
-    let pipeline = result.pipeline.as_ref().expect("serialize_scg_pipeline requires pipeline data");
+    let pipeline = result
+        .pipeline
+        .as_ref()
+        .expect("serialize_scg_pipeline requires pipeline data");
 
     let mut output = String::new();
 
@@ -729,7 +762,8 @@ pub fn serialize_scg_pipeline(result: &ScgParseResult) -> String {
         output.push_str("@edges\n");
         output.push_str("# from -> to [| label | condition | weight]\n");
         for edge in &pipeline.edge_attrs {
-            let has_extras = !edge.label.is_empty() || !edge.condition.is_empty() || edge.weight != 0;
+            let has_extras =
+                !edge.label.is_empty() || !edge.condition.is_empty() || edge.weight != 0;
             if has_extras {
                 output.push_str(&format!(
                     "{} -> {} | {} | {} | {}\n",

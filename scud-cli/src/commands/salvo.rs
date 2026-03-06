@@ -43,10 +43,7 @@ pub fn ensure_worktree(
             refresh_filtered_tasks(project_root, &wt_path, tag)?;
             // Sync agent and spawn definitions
             sync_scud_subdirs(project_root, &wt_path)?;
-            println!(
-                "Using existing salvo worktree at {}",
-                wt_path.display()
-            );
+            println!("Using existing salvo worktree at {}", wt_path.display());
             return Ok(wt_path);
         }
         // Path recorded but directory gone - clean up stale record and recreate
@@ -179,11 +176,7 @@ fn create_worktree(project_root: &Path, tag: &str, worktree_path: &Path) -> Resu
         "INSERT OR REPLACE INTO salvo_worktrees
          (tag, worktree_path, branch_name, created_at)
          VALUES (?1, ?2, ?3, datetime('now'))",
-        [
-            tag,
-            worktree_path.to_str().unwrap_or(""),
-            &branch_name,
-        ],
+        [tag, worktree_path.to_str().unwrap_or(""), &branch_name],
     )?;
 
     println!(
@@ -205,10 +198,7 @@ fn generate_filtered_tasks(
     let storage = Storage::new(Some(project_root.to_path_buf()));
     let phases = storage.load_tasks()?;
 
-    let worktree_tasks = worktree_path
-        .join(".scud")
-        .join("tasks")
-        .join("tasks.scg");
+    let worktree_tasks = worktree_path.join(".scud").join("tasks").join("tasks.scg");
     let mut output = String::new();
 
     // Target phase gets full serialization
@@ -257,21 +247,14 @@ fn sync_scud_subdirs(project_root: &Path, worktree_path: &Path) -> Result<()> {
 }
 
 /// Refresh filtered tasks (update worktree with latest from main)
-fn refresh_filtered_tasks(
-    project_root: &Path,
-    worktree_path: &Path,
-    tag: &str,
-) -> Result<()> {
+fn refresh_filtered_tasks(project_root: &Path, worktree_path: &Path, tag: &str) -> Result<()> {
     let worktree_storage = Storage::new(Some(worktree_path.to_path_buf()));
     let worktree_phases = worktree_storage.load_tasks().ok();
 
     let main_storage = Storage::new(Some(project_root.to_path_buf()));
     let main_phases = main_storage.load_tasks()?;
 
-    let worktree_tasks = worktree_path
-        .join(".scud")
-        .join("tasks")
-        .join("tasks.scg");
+    let worktree_tasks = worktree_path.join(".scud").join("tasks").join("tasks.scg");
     let mut output = String::new();
 
     // For target tag: prefer worktree version (has in-progress status changes)
@@ -292,10 +275,7 @@ fn refresh_filtered_tasks(
             }
             output.push_str("# SCUD Graph v1\n");
             output.push_str(&format!("# Phase: {}\n", other_tag));
-            output.push_str(&format!(
-                "# [Collapsed - {} tasks]\n\n",
-                phase.tasks.len()
-            ));
+            output.push_str(&format!("# [Collapsed - {} tasks]\n\n", phase.tasks.len()));
             output.push_str(&format!("@meta {{\n  name {}\n}}\n", phase.name));
             output.push_str("\n@nodes\n");
             output.push_str("# Tasks hidden. Run `scud salvo sync` to merge changes.\n");
@@ -364,10 +344,7 @@ pub fn list_worktrees(project_root: &Path) -> Result<()> {
     }
 
     println!("Salvo Worktrees:");
-    println!(
-        "{:<15} {:<40} {:<20} Last Sync",
-        "Tag", "Path", "Branch"
-    );
+    println!("{:<15} {:<40} {:<20} Last Sync", "Tag", "Path", "Branch");
     println!("{}", "-".repeat(90));
 
     for (tag, path, branch, _created, synced) in &worktrees {

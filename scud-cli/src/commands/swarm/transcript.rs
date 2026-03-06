@@ -421,8 +421,13 @@ pub fn parse_transcript(path: &Path) -> Result<Transcript> {
                     MessageContent::Structured(StructuredContent {
                         role: Some(role.to_string()),
                         content: message.get("content").cloned(),
-                        model: message.get("model").and_then(|m| m.as_str()).map(String::from),
-                        usage: message.get("usage").and_then(|u| serde_json::from_value(u.clone()).ok()),
+                        model: message
+                            .get("model")
+                            .and_then(|m| m.as_str())
+                            .map(String::from),
+                        usage: message
+                            .get("usage")
+                            .and_then(|u| serde_json::from_value(u.clone()).ok()),
                         stop_reason: message
                             .get("stop_reason")
                             .and_then(|s| s.as_str())
@@ -545,10 +550,7 @@ fn print_structured_content(content: &serde_json::Value, indent: usize) {
                                     .get("name")
                                     .and_then(|n| n.as_str())
                                     .unwrap_or("unknown");
-                                let id = obj
-                                    .get("id")
-                                    .and_then(|id| id.as_str())
-                                    .unwrap_or("");
+                                let id = obj.get("id").and_then(|id| id.as_str()).unwrap_or("");
                                 println!();
                                 println!(
                                     "{}{}{}",
@@ -643,11 +645,7 @@ pub fn print_transcript_summary(transcript: &Transcript) {
     println!("{}", "Transcript".blue().bold());
     println!("{}", "═".repeat(60).blue());
 
-    println!(
-        "  {} {}",
-        "Session:".dimmed(),
-        transcript.session_id.cyan()
-    );
+    println!("  {} {}", "Session:".dimmed(), transcript.session_id.cyan());
 
     if let (Some(start), Some(end)) = (transcript.started_at, transcript.ended_at) {
         let duration = end.signed_duration_since(start);
@@ -726,10 +724,12 @@ pub fn list_transcripts(project_root: &Path) -> Result<()> {
         // Get file size and mod time
         if let Ok(metadata) = fs::metadata(file) {
             let size_kb = metadata.len() / 1024;
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|t| chrono::DateTime::<Utc>::from(t).format("%Y-%m-%d %H:%M").to_string().into());
+            let modified = metadata.modified().ok().and_then(|t| {
+                chrono::DateTime::<Utc>::from(t)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+                    .into()
+            });
 
             println!(
                 "  {} {} ({} KB) - {}",
@@ -739,7 +739,11 @@ pub fn list_transcripts(project_root: &Path) -> Result<()> {
                 modified.unwrap_or_else(|| "unknown".to_string()).dimmed()
             );
         } else {
-            println!("  {} {}", format!("[{}]", i + 1).dimmed(), session_id.cyan());
+            println!(
+                "  {} {}",
+                format!("[{}]", i + 1).dimmed(),
+                session_id.cyan()
+            );
         }
     }
 
@@ -784,7 +788,10 @@ pub fn view_transcript(project_root: &Path, session: Option<&str>, full: bool) -
             .clone()
     } else {
         // Use the latest (last in sorted list)
-        files.last().cloned().ok_or_else(|| anyhow::anyhow!("No transcripts found"))?
+        files
+            .last()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No transcripts found"))?
     };
 
     println!(
@@ -826,7 +833,10 @@ pub fn export_transcript_json(project_root: &Path, session: Option<&str>) -> Res
             .ok_or_else(|| anyhow::anyhow!("Session '{}' not found", session_id))?
             .clone()
     } else {
-        files.last().cloned().ok_or_else(|| anyhow::anyhow!("No transcripts found"))?
+        files
+            .last()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No transcripts found"))?
     };
 
     let transcript = parse_transcript(&transcript_path)?;

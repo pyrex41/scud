@@ -171,10 +171,7 @@ impl LLMClient {
                 self.complete_anthropic_api_key(prompt, model_override)
                     .await
             }
-            "anthropic-oauth" => {
-                self.complete_anthropic_oauth(prompt, model_override)
-                    .await
-            }
+            "anthropic-oauth" => self.complete_anthropic_oauth(prompt, model_override).await,
             "xai" | "openai" | "openrouter" => {
                 self.complete_openai_compatible_with_model(prompt, model_override, provider)
                     .await
@@ -238,8 +235,9 @@ impl LLMClient {
         model_override: Option<&str>,
     ) -> Result<String> {
         let model = model_override.unwrap_or(&self.config.llm.model);
-        let creds = oauth::read_claude_oauth()?
-            .context("No Claude Code OAuth credentials found in Keychain. Log in with `claude` CLI first.")?;
+        let creds = oauth::read_claude_oauth()?.context(
+            "No Claude Code OAuth credentials found in Keychain. Log in with `claude` CLI first.",
+        )?;
 
         if !oauth::is_token_valid(&creds) {
             anyhow::bail!("Claude Code OAuth token expired. Re-login with `claude` CLI.");

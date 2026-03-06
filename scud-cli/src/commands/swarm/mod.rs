@@ -1495,6 +1495,14 @@ async fn execute_round_headless(
                                 ),
                             );
                         }
+                    } else if !wait_ok {
+                        // Even if we saw a "complete" stream event, trust the process exit code.
+                        store_clone.push_event(
+                            &task_id,
+                            headless::StreamEvent::error(
+                                "Agent process exited with non-zero status".to_string(),
+                            ),
+                        );
                     }
                 });
             }

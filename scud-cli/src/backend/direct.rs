@@ -10,9 +10,9 @@ use super::{AgentBackend, AgentHandle, AgentRequest};
 
 #[cfg(feature = "direct-api")]
 use {
+    super::{AgentEvent, AgentResult, AgentStatus, ToolCallRecord},
     tokio::sync::mpsc,
     tokio_util::sync::CancellationToken,
-    super::{AgentEvent, AgentResult, AgentStatus, ToolCallRecord},
 };
 
 /// Backend that calls LLM APIs directly (in-process).
@@ -26,9 +26,7 @@ pub struct DirectApiBackend {
 #[cfg(feature = "direct-api")]
 impl DirectApiBackend {
     pub fn new() -> Self {
-        Self {
-            max_tokens: 16_000,
-        }
+        Self { max_tokens: 16_000 }
     }
 }
 
@@ -73,9 +71,7 @@ impl AgentBackend for DirectApiBackend {
             )
             .await
             {
-                let _ = stream_tx_err
-                    .send(StreamEvent::error(&e.to_string()))
-                    .await;
+                let _ = stream_tx_err.send(StreamEvent::error(&e.to_string())).await;
                 let _ = stream_tx_err.send(StreamEvent::complete(false)).await;
             }
         });

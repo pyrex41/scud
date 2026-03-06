@@ -38,10 +38,7 @@ impl Handler for ParallelHandler {
             .collect();
 
         let mut updates = HashMap::new();
-        updates.insert(
-            "parallel.branches".into(),
-            serde_json::json!(branch_ids),
-        );
+        updates.insert("parallel.branches".into(), serde_json::json!(branch_ids));
         updates.insert(
             "parallel.branch_count".into(),
             serde_json::json!(branch_count),

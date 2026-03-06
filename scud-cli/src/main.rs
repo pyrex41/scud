@@ -634,8 +634,8 @@ enum Commands {
         #[arg(long)]
         headless: bool,
 
-        /// AI harness: claude, opencode (overridden by task's agent_type if set)
-        #[arg(short = 'H', long, default_value = "opencode")]
+        /// AI harness: rho, claude, opencode (overridden by task's agent_type if set)
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Model to use with harness (overridden by task's agent_type if set)
@@ -669,7 +669,7 @@ enum Commands {
         /// Task ID to attach to
         task_id: String,
 
-        /// Override harness (claude, opencode)
+        /// Override harness (rho, claude, opencode)
         #[arg(short, long)]
         harness: Option<String>,
     },
@@ -686,8 +686,8 @@ enum Commands {
         #[arg(short, long)]
         tag: Option<String>,
 
-        /// AI harness: claude, opencode (overridden by task's agent_type if set)
-        #[arg(short = 'H', long, default_value = "opencode")]
+        /// AI harness: rho, claude, opencode (overridden by task's agent_type if set)
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Model to use with harness (overridden by task's agent_type if set)
@@ -712,8 +712,8 @@ enum Commands {
         #[arg(short, long)]
         tag: Option<String>,
 
-        /// AI harness: claude, opencode (overridden by task's agent_type if set)
-        #[arg(short = 'H', long, default_value = "opencode")]
+        /// AI harness: rho, claude, opencode (overridden by task's agent_type if set)
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Model to use with harness (overridden by task's agent_type if set)
@@ -730,8 +730,8 @@ enum Commands {
         /// The prompt to send to the agent
         prompt: String,
 
-        /// AI harness: claude, opencode
-        #[arg(short = 'H', long, default_value = "opencode")]
+        /// AI harness: rho, claude, opencode
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Model to use with harness
@@ -765,8 +765,8 @@ enum Commands {
         #[arg(long)]
         all_tags: bool,
 
-        /// AI harness: claude, opencode (default: claude)
-        #[arg(short = 'H', long, default_value = "claude")]
+        /// AI harness: rho, claude, opencode (default: rho)
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Execution mode: tmux (default), headless, extensions, server, beads
@@ -876,8 +876,8 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "10")]
         max_attempts: usize,
 
-        /// AI harness: claude, opencode (default: claude)
-        #[arg(short = 'H', long, default_value = "claude")]
+        /// AI harness: rho, claude, opencode (default: rho)
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Agent type to use for repairs (default: repairer)
@@ -915,8 +915,8 @@ enum Commands {
         #[arg(long, default_value = "3")]
         max_repair_attempts: usize,
 
-        /// AI harness: claude, opencode
-        #[arg(short = 'H', long, default_value = "claude")]
+        /// AI harness: rho, claude, opencode
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Model to use with harness
@@ -941,8 +941,8 @@ enum Commands {
     /// Reads JSON RPC 2.0 requests from stdin and emits events/responses to stdout.
     /// Use this for programmatic control of SCUD agents from external tools.
     Serve {
-        /// AI harness: claude, opencode
-        #[arg(short = 'H', long, default_value = "claude")]
+        /// AI harness: rho, claude, opencode
+        #[arg(short = 'H', long, default_value = "rho")]
         harness: String,
 
         /// Default model to use with harness

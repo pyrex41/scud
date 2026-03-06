@@ -177,7 +177,10 @@ impl SessionStream {
 
     /// Check if session is still active
     pub fn is_active(&self) -> bool {
-        matches!(self.status, SessionStatus::Starting | SessionStatus::Running)
+        matches!(
+            self.status,
+            SessionStatus::Starting | SessionStatus::Running
+        )
     }
 
     /// Get the event count

@@ -82,11 +82,7 @@ pub async fn run(
             StreamEventKind::ToolResult {
                 tool_name, success, ..
             } => {
-                eprintln!(
-                    "[{}] {}",
-                    tool_name,
-                    if *success { "ok" } else { "FAILED" }
-                );
+                eprintln!("[{}] {}", tool_name, if *success { "ok" } else { "FAILED" });
             }
             StreamEventKind::Error { message } => eprintln!("\nERROR: {}", message),
             StreamEventKind::Complete { success } => {

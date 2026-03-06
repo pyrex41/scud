@@ -44,14 +44,14 @@ impl HandlerRegistry {
         let mut handlers: HashMap<String, Box<dyn Handler>> = HashMap::new();
         handlers.insert("start".into(), Box::new(start::StartHandler));
         handlers.insert("exit".into(), Box::new(exit::ExitHandler));
-        handlers.insert("conditional".into(), Box::new(conditional::ConditionalHandler));
+        handlers.insert(
+            "conditional".into(),
+            Box::new(conditional::ConditionalHandler),
+        );
         handlers.insert("wait.human".into(), Box::new(human::HumanHandler));
         handlers.insert("tool".into(), Box::new(tool::ToolHandler));
         handlers.insert("parallel".into(), Box::new(parallel::ParallelHandler));
-        handlers.insert(
-            "parallel.fan_in".into(),
-            Box::new(fan_in::FanInHandler),
-        );
+        handlers.insert("parallel.fan_in".into(), Box::new(fan_in::FanInHandler));
         handlers.insert(
             "stack.manager_loop".into(),
             Box::new(manager::ManagerHandler),

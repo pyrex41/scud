@@ -66,10 +66,7 @@ impl OpenCodeClient {
             anyhow::bail!("Server error: {}", error.error);
         }
 
-        response
-            .json()
-            .await
-            .context("Failed to parse server info")
+        response.json().await.context("Failed to parse server info")
     }
 
     /// Create a new session

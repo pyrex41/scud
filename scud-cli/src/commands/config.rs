@@ -1362,7 +1362,7 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
         .get("model")
         .and_then(|m| m.get("harness"))
         .and_then(|h| h.as_str())
-        .unwrap_or("opencode");
+        .unwrap_or("rho");
     let current_model = doc
         .get("model")
         .and_then(|m| m.get("model"))
@@ -1375,7 +1375,7 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
     println!();
 
     // Select harness
-    let harnesses = ["claude", "opencode", "cursor"];
+    let harnesses = ["rho", "claude", "opencode", "cursor"];
     let current_harness_idx = harnesses
         .iter()
         .position(|h| *h == current_harness)
@@ -1389,6 +1389,14 @@ pub fn spawn_agents_configure(project_root: Option<PathBuf>, name: Option<String
 
     // Select model based on harness
     let models: Vec<&str> = match new_harness {
+        "rho" => vec![
+            "claude-opus",
+            "claude-sonnet",
+            "claude-haiku",
+            "xai/grok-code-fast-1",
+            "xai/grok-4-1-fast",
+            "custom...",
+        ],
         "claude" => vec!["opus", "sonnet", "haiku", "custom..."],
         "opencode" => vec![
             "xai/grok-code-fast-1",

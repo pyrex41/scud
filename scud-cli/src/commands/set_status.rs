@@ -87,12 +87,7 @@ fn run_bulk_transition(
         for task in &mut epic.tasks {
             if task.status == from_status {
                 task.set_status(to_status.clone());
-                println!(
-                    "  {} {} → {}",
-                    "✓".green(),
-                    task.id.cyan(),
-                    to_str.green()
-                );
+                println!("  {} {} → {}", "✓".green(), task.id.cyan(), to_str.green());
                 changed_in_tag += 1;
             }
         }
@@ -104,11 +99,7 @@ fn run_bulk_transition(
     }
 
     if total_changed == 0 {
-        println!(
-            "{} No tasks found with status '{}'",
-            "!".yellow(),
-            from_str
-        );
+        println!("{} No tasks found with status '{}'", "!".yellow(), from_str);
     } else {
         println!(
             "\n{} Changed {} task(s) from {} to {}",

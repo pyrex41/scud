@@ -46,6 +46,21 @@ impl SessionProcess {
             }
         }
     }
+
+    /// Wait for the backing process/task to complete.
+    pub async fn wait(&mut self) -> Result<bool> {
+        match self {
+            SessionProcess::Child(child) => {
+                let status = child.wait().await?;
+                Ok(status.success())
+            }
+            #[cfg(feature = "direct-api")]
+            SessionProcess::Task(handle) => {
+                let _ = handle.await;
+                Ok(true)
+            }
+        }
+    }
 }
 
 /// Handle to a running headless session
@@ -271,8 +286,7 @@ impl HeadlessRunner for ClaudeHeadless {
 
             // Allowed tools
             if !self.allowed_tools.is_empty() {
-                cmd.arg("--allowedTools")
-                    .arg(self.allowed_tools.join(","));
+                cmd.arg("--allowedTools").arg(self.allowed_tools.join(","));
             }
 
             // Working directory and environment
@@ -400,7 +414,10 @@ fn parse_claude_event(line: &str) -> Option<StreamEvent> {
                     session_id: session_id.to_string(),
                 }));
             }
-            let is_error = json.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+            let is_error = json
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             // The "result" field contains the full text, but this duplicates
             // what was already captured from "assistant" or "stream_event" events.
             // We only signal completion here.
@@ -442,11 +459,11 @@ fn parse_cursor_event(line: &str) -> Option<StreamEvent> {
             }))
         }
         "tool_call" => {
-            let subtype = json.get("subtype").and_then(|v| v.as_str()).unwrap_or("started");
-            let call_id = json
-                .get("call_id")
+            let subtype = json
+                .get("subtype")
                 .and_then(|v| v.as_str())
-                .unwrap_or("");
+                .unwrap_or("started");
+            let call_id = json.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
 
             // Extract tool name from Cursor's *ToolCall nested structure
             let tool_name = json
@@ -671,7 +688,9 @@ impl HeadlessRunner for CursorHeadless {
                     } else if !line.trim().is_empty() {
                         if serde_json::from_str::<serde_json::Value>(&line).is_err() {
                             // Non-JSON output treated as text
-                            let _ = tx.send(StreamEvent::text_delta(format!("{}\n", line))).await;
+                            let _ = tx
+                                .send(StreamEvent::text_delta(format!("{}\n", line)))
+                                .await;
                         } else {
                             debug!(task_id = %task_id_for_events, "cursor: unparsed json: {}", if line.len() > 200 { &line[..200] } else { &line });
                         }
@@ -750,8 +769,19 @@ impl HeadlessRunner for RhoHeadless {
                 let mut lines = reader.lines();
 
                 while let Ok(Some(line)) = lines.next_line().await {
+                    let trimmed = line.trim();
+                    if trimmed == "rho-cli placeholder - CLI structure ready" {
+                        let _ = tx_stdout
+                            .send(StreamEvent::error(
+                                "Detected placeholder rho-cli binary. Install/use the functional rho-agent CLI.".to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
                     if !line.is_empty() {
-                        let _ = tx_stdout.send(StreamEvent::text_delta(format!("{}\n", line))).await;
+                        let _ = tx_stdout
+                            .send(StreamEvent::text_delta(format!("{}\n", line)))
+                            .await;
                     }
                 }
                 trace!(task_id = %task_id_stdout, "rho stdout stream ended");
@@ -773,26 +803,32 @@ impl HeadlessRunner for RhoHeadless {
                             let after = rest[bracket_end + 1..].trim();
 
                             if after == "done" {
-                                let _ = tx_stderr.send(StreamEvent::new(StreamEventKind::ToolResult {
-                                    tool_name: tool_name.to_string(),
-                                    tool_id: format!("rho-tool-{}", tool_counter),
-                                    success: true,
-                                })).await;
+                                let _ = tx_stderr
+                                    .send(StreamEvent::new(StreamEventKind::ToolResult {
+                                        tool_name: tool_name.to_string(),
+                                        tool_id: format!("rho-tool-{}", tool_counter),
+                                        success: true,
+                                    }))
+                                    .await;
                             } else if let Some(err_msg) = after.strip_prefix("ERROR:") {
-                                let _ = tx_stderr.send(StreamEvent::new(StreamEventKind::ToolResult {
-                                    tool_name: tool_name.to_string(),
-                                    tool_id: format!("rho-tool-{}", tool_counter),
-                                    success: false,
-                                })).await;
+                                let _ = tx_stderr
+                                    .send(StreamEvent::new(StreamEventKind::ToolResult {
+                                        tool_name: tool_name.to_string(),
+                                        tool_id: format!("rho-tool-{}", tool_counter),
+                                        success: false,
+                                    }))
+                                    .await;
                                 debug!(task_id = %task_id_stderr, "rho tool error: {}: {}", tool_name, err_msg.trim());
                             } else {
                                 // Tool start with args
                                 tool_counter += 1;
-                                let _ = tx_stderr.send(StreamEvent::tool_start(
-                                    tool_name,
-                                    &format!("rho-tool-{}", tool_counter),
-                                    after,
-                                )).await;
+                                let _ = tx_stderr
+                                    .send(StreamEvent::tool_start(
+                                        tool_name,
+                                        &format!("rho-tool-{}", tool_counter),
+                                        after,
+                                    ))
+                                    .await;
                             }
                         }
                     } else if let Some(rest) = trimmed.strip_prefix("[compact]") {
@@ -801,8 +837,6 @@ impl HeadlessRunner for RhoHeadless {
                         trace!(task_id = %task_id_stderr, "rho stderr: {}", trimmed);
                     }
                 }
-
-                let _ = tx_stderr.send(StreamEvent::complete(true)).await;
             });
 
             Ok(SessionHandle::from_child(task_id.to_string(), child, rx))
@@ -837,9 +871,7 @@ impl AnyRunner {
     /// Create a DirectApi runner with an explicit provider
     #[cfg(feature = "direct-api")]
     pub fn new_direct_api(provider: crate::llm::provider::AgentProvider) -> Self {
-        AnyRunner::DirectApi(
-            super::direct_api::DirectApiRunner::new().with_provider(provider),
-        )
+        AnyRunner::DirectApi(super::direct_api::DirectApiRunner::new().with_provider(provider))
     }
 
     /// Create a runner for the specified harness
@@ -870,9 +902,7 @@ impl AnyRunner {
             AnyRunner::Cursor(runner) => runner.start(task_id, prompt, working_dir, model).await,
             AnyRunner::Rho(runner) => runner.start(task_id, prompt, working_dir, model).await,
             #[cfg(feature = "direct-api")]
-            AnyRunner::DirectApi(runner) => {
-                runner.start(task_id, prompt, working_dir, model).await
-            }
+            AnyRunner::DirectApi(runner) => runner.start(task_id, prompt, working_dir, model).await,
         }
     }
 
@@ -1134,11 +1164,12 @@ mod tests {
         let event = parse_claude_event(line);
         match event {
             Some(StreamEvent {
-                kind: StreamEventKind::ToolStart {
-                    ref tool_name,
-                    ref tool_id,
-                    ref input_summary,
-                },
+                kind:
+                    StreamEventKind::ToolStart {
+                        ref tool_name,
+                        ref tool_id,
+                        ref input_summary,
+                    },
                 ..
             }) => {
                 assert_eq!(tool_name, "Read");
@@ -1213,11 +1244,12 @@ mod tests {
         let event = parse_claude_event(line);
         match event {
             Some(StreamEvent {
-                kind: StreamEventKind::ToolResult {
-                    ref tool_id,
-                    success,
-                    ..
-                },
+                kind:
+                    StreamEventKind::ToolResult {
+                        ref tool_id,
+                        success,
+                        ..
+                    },
                 ..
             }) => {
                 assert_eq!(tool_id, "tool_1");
@@ -1389,10 +1421,7 @@ mod tests {
         let event = parse_opencode_event(line);
         match event {
             Some(StreamEvent {
-                kind:
-                    StreamEventKind::ToolResult {
-                        success, ..
-                    },
+                kind: StreamEventKind::ToolResult { success, .. },
                 ..
             }) => {
                 assert!(!success);
@@ -1407,10 +1436,7 @@ mod tests {
         let event = parse_opencode_event(line);
         match event {
             Some(StreamEvent {
-                kind:
-                    StreamEventKind::ToolResult {
-                        success, ..
-                    },
+                kind: StreamEventKind::ToolResult { success, .. },
                 ..
             }) => {
                 assert!(!success);
@@ -1752,7 +1778,8 @@ mod tests {
 
     #[test]
     fn test_parse_opencode_tool_with_pending_status() {
-        let line = r#"{"type": "tool_call", "status": "pending", "tool": "write_file", "id": "t99"}"#;
+        let line =
+            r#"{"type": "tool_call", "status": "pending", "tool": "write_file", "id": "t99"}"#;
         let event = parse_opencode_event(line);
         match event {
             Some(StreamEvent {
@@ -1794,8 +1821,7 @@ mod tests {
 
     #[test]
     fn test_parse_opencode_tool_success_status() {
-        let line =
-            r#"{"type": "tool_use", "subtype": "success", "tool_call": {"name": "bash", "id": "t77"}}"#;
+        let line = r#"{"type": "tool_use", "subtype": "success", "tool_call": {"name": "bash", "id": "t77"}}"#;
         let event = parse_opencode_event(line);
         match event {
             Some(StreamEvent {

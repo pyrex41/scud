@@ -647,15 +647,33 @@ fn test_full_swarm_workflow_simulation() {
 
     // Simulate agent execution
     let mut phase = project.storage.load_active_group().unwrap();
-    phase.get_task_mut("1").unwrap().set_status(TaskStatus::InProgress);
-    phase.get_task_mut("2").unwrap().set_status(TaskStatus::InProgress);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("1")
+        .unwrap()
+        .set_status(TaskStatus::InProgress);
+    phase
+        .get_task_mut("2")
+        .unwrap()
+        .set_status(TaskStatus::InProgress);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     // Simulate completion
     let mut phase = project.storage.load_active_group().unwrap();
-    phase.get_task_mut("1").unwrap().set_status(TaskStatus::Done);
-    phase.get_task_mut("2").unwrap().set_status(TaskStatus::Done);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("1")
+        .unwrap()
+        .set_status(TaskStatus::Done);
+    phase
+        .get_task_mut("2")
+        .unwrap()
+        .set_status(TaskStatus::Done);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     round1_1.mark_complete();
     wave1.rounds.push(round1_1);
@@ -675,14 +693,32 @@ fn test_full_swarm_workflow_simulation() {
     round2_1.tags = vec![project.tag(), project.tag()];
 
     let mut phase = project.storage.load_active_group().unwrap();
-    phase.get_task_mut("3").unwrap().set_status(TaskStatus::InProgress);
-    phase.get_task_mut("4").unwrap().set_status(TaskStatus::InProgress);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("3")
+        .unwrap()
+        .set_status(TaskStatus::InProgress);
+    phase
+        .get_task_mut("4")
+        .unwrap()
+        .set_status(TaskStatus::InProgress);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     let mut phase = project.storage.load_active_group().unwrap();
-    phase.get_task_mut("3").unwrap().set_status(TaskStatus::Done);
-    phase.get_task_mut("4").unwrap().set_status(TaskStatus::Done);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("3")
+        .unwrap()
+        .set_status(TaskStatus::Done);
+    phase
+        .get_task_mut("4")
+        .unwrap()
+        .set_status(TaskStatus::Done);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     round2_1.mark_complete();
     wave2.rounds.push(round2_1);
@@ -702,12 +738,24 @@ fn test_full_swarm_workflow_simulation() {
     round3_1.tags = vec![project.tag()];
 
     let mut phase = project.storage.load_active_group().unwrap();
-    phase.get_task_mut("5").unwrap().set_status(TaskStatus::InProgress);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("5")
+        .unwrap()
+        .set_status(TaskStatus::InProgress);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     let mut phase = project.storage.load_active_group().unwrap();
-    phase.get_task_mut("5").unwrap().set_status(TaskStatus::Done);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("5")
+        .unwrap()
+        .set_status(TaskStatus::Done);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     round3_1.mark_complete();
     wave3.rounds.push(round3_1);
@@ -780,8 +828,14 @@ fn test_task_failure_status() {
 
     // Mark task as failed
     let mut phase = project.storage.load_active_group().unwrap();
-    phase.get_task_mut("1").unwrap().set_status(TaskStatus::Failed);
-    project.storage.update_group(&project.tag(), &phase).unwrap();
+    phase
+        .get_task_mut("1")
+        .unwrap()
+        .set_status(TaskStatus::Failed);
+    project
+        .storage
+        .update_group(&project.tag(), &phase)
+        .unwrap();
 
     // Verify
     let phase = project.storage.load_active_group().unwrap();

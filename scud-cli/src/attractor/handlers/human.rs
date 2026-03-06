@@ -34,7 +34,10 @@ impl Handler for HumanHandler {
             .collect();
 
         let _prompt = if node.prompt.is_empty() {
-            format!("Node '{}' requires human input. Choose an option:", node.label)
+            format!(
+                "Node '{}' requires human input. Choose an option:",
+                node.label
+            )
         } else {
             node.prompt.clone()
         };

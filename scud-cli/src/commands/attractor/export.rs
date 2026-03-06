@@ -11,8 +11,8 @@ use crate::formats::{parse_scg_result, serialize_scg_pipeline};
 
 /// Export a pipeline file to another format.
 pub fn run(file: &Path, format: &str, output: Option<&Path>) -> Result<()> {
-    let source = std::fs::read_to_string(file)
-        .context(format!("Failed to read: {}", file.display()))?;
+    let source =
+        std::fs::read_to_string(file).context(format!("Failed to read: {}", file.display()))?;
 
     let is_scg = file.extension().and_then(|e| e.to_str()) == Some("scg");
 
@@ -36,13 +36,16 @@ pub fn run(file: &Path, format: &str, output: Option<&Path>) -> Result<()> {
             } else {
                 // DOT -> PipelineGraph -> SCG
                 let dot = parse_dot(&source).context("Failed to parse DOT file")?;
-                let pipeline = PipelineGraph::from_dot(&dot)
-                    .context("Failed to build pipeline graph")?;
+                let pipeline =
+                    PipelineGraph::from_dot(&dot).context("Failed to build pipeline graph")?;
                 let scg_result = scg_bridge::scg_from_pipeline(&pipeline);
                 serialize_scg_pipeline(&scg_result)
             }
         }
-        _ => anyhow::bail!("Unsupported export format '{}'. Use 'dot' or 'scg'.", format),
+        _ => anyhow::bail!(
+            "Unsupported export format '{}'. Use 'dot' or 'scg'.",
+            format
+        ),
     };
 
     if let Some(out_path) = output {
@@ -119,7 +122,12 @@ fn pipeline_to_dot(pipeline: &PipelineGraph) -> String {
         if attrs.is_empty() {
             out.push_str(&format!("    {} -> {}\n", from.id, to.id));
         } else {
-            out.push_str(&format!("    {} -> {} [{}]\n", from.id, to.id, attrs.join(", ")));
+            out.push_str(&format!(
+                "    {} -> {} [{}]\n",
+                from.id,
+                to.id,
+                attrs.join(", ")
+            ));
         }
     }
 

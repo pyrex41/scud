@@ -34,10 +34,7 @@ pub struct PipelineRunner {
 
 impl PipelineRunner {
     /// Create a new PipelineRunner.
-    pub fn new(
-        handler_registry: HandlerRegistry,
-        interviewer: Box<dyn Interviewer>,
-    ) -> Self {
+    pub fn new(handler_registry: HandlerRegistry, interviewer: Box<dyn Interviewer>) -> Self {
         Self {
             handler_registry,
             interviewer,
@@ -79,10 +76,7 @@ impl PipelineRunner {
             (idx, cp)
         } else {
             let snap = ContextSnapshot::from(context.snapshot().await);
-            let cp = Checkpoint::new(
-                &graph.graph[graph.start_node].id,
-                snap,
-            );
+            let cp = Checkpoint::new(&graph.graph[graph.start_node].id, snap);
             (graph.start_node, cp)
         };
 
@@ -242,7 +236,10 @@ impl PipelineRunner {
         handler
             .execute(node, context, graph, run_dir)
             .await
-            .context(format!("Handler '{}' failed for node '{}'", node.handler_type, node.id))
+            .context(format!(
+                "Handler '{}' failed for node '{}'",
+                node.handler_type, node.id
+            ))
     }
 
     /// 5-step edge selection algorithm (spec Section 3.3).

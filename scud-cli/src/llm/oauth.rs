@@ -36,7 +36,12 @@ pub enum ApiCredential {
 /// not installed or user not logged in).
 pub fn read_claude_oauth() -> Result<Option<ClaudeOAuthCredentials>> {
     let output = std::process::Command::new("security")
-        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ])
         .output()
         .context("Failed to read from macOS Keychain")?;
 
@@ -44,8 +49,7 @@ pub fn read_claude_oauth() -> Result<Option<ClaudeOAuthCredentials>> {
         return Ok(None);
     }
 
-    let json_str =
-        String::from_utf8(output.stdout).context("Keychain data is not valid UTF-8")?;
+    let json_str = String::from_utf8(output.stdout).context("Keychain data is not valid UTF-8")?;
     let data: KeychainData =
         serde_json::from_str(json_str.trim()).context("Failed to parse keychain JSON")?;
 

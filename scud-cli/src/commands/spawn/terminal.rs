@@ -35,7 +35,10 @@ impl Harness {
             "rho" | "rho-cli" => Ok(Harness::Rho),
             #[cfg(feature = "direct-api")]
             "direct-api" | "direct" | "api" => Ok(Harness::DirectApi),
-            other => anyhow::bail!("Unknown harness: '{}'. Supported: claude, opencode, cursor, rho", other),
+            other => anyhow::bail!(
+                "Unknown harness: '{}'. Supported: claude, opencode, cursor, rho",
+                other
+            ),
         }
     }
 
@@ -208,9 +211,7 @@ pub fn find_harness_binary(harness: Harness) -> Result<&'static str> {
                 format!("{}/.local/bin/opencode", home),
                 format!("{}/.bun/bin/opencode", home),
             ],
-            Harness::Cursor => vec![
-                format!("{}/.local/bin/agent", home),
-            ],
+            Harness::Cursor => vec![format!("{}/.local/bin/agent", home)],
             Harness::Rho => vec![
                 format!("{}/.cargo/bin/rho-cli", home),
                 format!("{}/.local/bin/rho-cli", home),

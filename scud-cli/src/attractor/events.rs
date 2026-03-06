@@ -44,15 +44,10 @@ pub enum PipelineEvent {
     },
 
     /// A goal gate check was performed.
-    GoalGateCheck {
-        node_id: String,
-        satisfied: bool,
-    },
+    GoalGateCheck { node_id: String, satisfied: bool },
 
     /// A checkpoint was saved.
-    CheckpointSaved {
-        node_id: String,
-    },
+    CheckpointSaved { node_id: String },
 
     /// Pipeline execution completed.
     PipelineCompleted {
@@ -75,10 +70,7 @@ pub enum PipelineEvent {
     },
 
     /// Human input received.
-    HumanInputReceived {
-        node_id: String,
-        answer: String,
-    },
+    HumanInputReceived { node_id: String, answer: String },
 }
 
 impl PipelineEvent {

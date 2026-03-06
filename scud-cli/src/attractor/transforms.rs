@@ -5,7 +5,7 @@
 //! 2. Stylesheet application: Apply model_stylesheet CSS-like rules
 
 use super::graph::PipelineGraph;
-use super::stylesheet::{parse_stylesheet, apply_stylesheet};
+use super::stylesheet::{apply_stylesheet, parse_stylesheet};
 
 /// Apply all transforms to a pipeline graph.
 pub fn apply_transforms(graph: &mut PipelineGraph) {

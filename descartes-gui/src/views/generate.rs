@@ -171,21 +171,18 @@ fn build_output_panel(state: &GenerateState) -> Element<'_, Message> {
     container(
         column![
             header_row,
-            container(
-                scrollable(output_column)
-                    .height(Length::Fixed(200.0))
-            )
-            .padding(theme::SPACING_SM)
-            .width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(theme::surface::BASE)),
-                border: Border {
-                    color: theme::border::SUBTLE,
-                    width: 1.0,
-                    radius: theme::RADIUS_SMALL.into(),
-                },
-                ..Default::default()
-            }),
+            container(scrollable(output_column).height(Length::Fixed(200.0)))
+                .padding(theme::SPACING_SM)
+                .width(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(Background::Color(theme::surface::BASE)),
+                    border: Border {
+                        color: theme::border::SUBTLE,
+                        width: 1.0,
+                        radius: theme::RADIUS_SMALL.into(),
+                    },
+                    ..Default::default()
+                }),
         ]
         .spacing(theme::SPACING_SM),
     )
@@ -201,7 +198,9 @@ fn build_config_panel(state: &GenerateState) -> Element<'_, Message> {
 
     // Tag input row
     let tag_row = row![
-        text("Tag").width(label_width).style(theme::secondary_text()),
+        text("Tag")
+            .width(label_width)
+            .style(theme::secondary_text()),
         text_input("e.g. hello-world", &state.tag_input)
             .on_input(Message::SetGenerateTag)
             .width(Length::Fixed(200.0)),
@@ -211,7 +210,9 @@ fn build_config_panel(state: &GenerateState) -> Element<'_, Message> {
 
     // Task count row
     let num_row = row![
-        text("Tasks").width(label_width).style(theme::secondary_text()),
+        text("Tasks")
+            .width(label_width)
+            .style(theme::secondary_text()),
         text_input("10", &state.num_tasks_input)
             .on_input(Message::SetGenerateNumTasks)
             .width(Length::Fixed(60.0)),
@@ -273,11 +274,9 @@ fn build_config_panel(state: &GenerateState) -> Element<'_, Message> {
         .spacing(theme::SPACING_MD)
         .align_y(Alignment::Center);
 
-    container(
-        column![tag_row, num_row, options_row, action_row].spacing(theme::SPACING_MD),
-    )
-    .padding(theme::SPACING_MD)
-    .width(Length::Fill)
-    .style(theme::panel_container())
-    .into()
+    container(column![tag_row, num_row, options_row, action_row].spacing(theme::SPACING_MD))
+        .padding(theme::SPACING_MD)
+        .width(Length::Fill)
+        .style(theme::panel_container())
+        .into()
 }

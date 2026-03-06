@@ -76,10 +76,7 @@ fn test_tool_call_full_lifecycle() {
 
     // Test format tool with object input
     let result = runner
-        .on_tool_call(
-            "format",
-            json!({"template": "Result: {}", "value": 42}),
-        )
+        .on_tool_call("format", json!({"template": "Result: {}", "value": 42}))
         .unwrap();
     assert_eq!(result.output, json!("Result: 42"));
 }
@@ -320,15 +317,14 @@ async fn test_concurrency_limit_ordered_preserves_order() {
 async fn test_concurrency_with_failures() {
     let items: Vec<i32> = (0..10).collect();
 
-    let results: Vec<Result<i32, &str>> =
-        map_with_concurrency_limit(items, 3, |n| async move {
-            if n % 3 == 0 {
-                Err("divisible by 3")
-            } else {
-                Ok(n * 2)
-            }
-        })
-        .await;
+    let results: Vec<Result<i32, &str>> = map_with_concurrency_limit(items, 3, |n| async move {
+        if n % 3 == 0 {
+            Err("divisible by 3")
+        } else {
+            Ok(n * 2)
+        }
+    })
+    .await;
 
     // Count successes and failures
     let successes = results.iter().filter_map(|r| r.as_ref().ok()).count();
@@ -833,7 +829,9 @@ fn test_large_json_payload() {
     runner.register_tool("echo".to_string(), echo);
 
     // Create a large JSON object payload (objects get wrapped in array by on_tool_call)
-    let large_data: Vec<_> = (0..1000).map(|i| json!({"index": i, "data": "x".repeat(100)})).collect();
+    let large_data: Vec<_> = (0..1000)
+        .map(|i| json!({"index": i, "data": "x".repeat(100)}))
+        .collect();
     let large_payload = json!({"items": large_data});
 
     let result = runner.on_tool_call("echo", large_payload.clone()).unwrap();
@@ -1037,7 +1035,8 @@ fn test_spawn_config_with_all_fields() {
     // We can verify SpawnConfig fields work correctly
     let config = SpawnConfig {
         task_id: "complex:1.2.3".to_string(),
-        prompt: "Implement feature X with the following requirements:\n1. Do A\n2. Do B".to_string(),
+        prompt: "Implement feature X with the following requirements:\n1. Do A\n2. Do B"
+            .to_string(),
         working_dir: PathBuf::from("/tmp/test-project"),
         harness: Harness::Claude,
         model: Some("opus".to_string()),
@@ -1475,8 +1474,16 @@ fn test_tool_with_state_via_closure() {
 
     // A tool that tracks cumulative state via input
     fn accumulator(args: &[Value]) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let current = args.get(0).and_then(|v| v.get("current")).and_then(|v| v.as_i64()).unwrap_or(0);
-        let add = args.get(0).and_then(|v| v.get("add")).and_then(|v| v.as_i64()).unwrap_or(0);
+        let current = args
+            .get(0)
+            .and_then(|v| v.get("current"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let add = args
+            .get(0)
+            .and_then(|v| v.get("add"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
         Ok(json!({"result": current + add}))
     }
 
@@ -1529,6 +1536,8 @@ fn test_multiple_tools_interaction() {
     assert_eq!(r2.output, "HELLO WORLD");
 
     // Chain: "HELLO WORLD" -> LENGTH -> 11
-    let r3 = runner.on_tool_call("length", json!(["HELLO WORLD"])).unwrap();
+    let r3 = runner
+        .on_tool_call("length", json!(["HELLO WORLD"]))
+        .unwrap();
     assert_eq!(r3.output, 11);
 }

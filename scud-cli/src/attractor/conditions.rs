@@ -96,10 +96,7 @@ fn resolve_value(
 ) -> String {
     match key {
         "outcome" => outcome.status.as_str().to_string(),
-        "preferred_label" => outcome
-            .preferred_label
-            .clone()
-            .unwrap_or_default(),
+        "preferred_label" => outcome.preferred_label.clone().unwrap_or_default(),
         _ => {
             // Try context.key prefix
             let ctx_key = if key.starts_with("context.") {
@@ -152,10 +149,7 @@ mod tests {
         match cond {
             Condition::And(parts) => {
                 assert_eq!(parts.len(), 2);
-                assert_eq!(
-                    parts[0],
-                    Condition::Eq("outcome".into(), "success".into())
-                );
+                assert_eq!(parts[0], Condition::Eq("outcome".into(), "success".into()));
                 assert_eq!(
                     parts[1],
                     Condition::Eq("context.approved".into(), "true".into())

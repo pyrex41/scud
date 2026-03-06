@@ -13,8 +13,8 @@ use crate::formats::parse_scg_result;
 
 /// Validate a pipeline file (.scg or .dot).
 pub fn run(file: &Path) -> Result<()> {
-    let source = std::fs::read_to_string(file)
-        .context(format!("Failed to read: {}", file.display()))?;
+    let source =
+        std::fs::read_to_string(file).context(format!("Failed to read: {}", file.display()))?;
 
     let is_scg = file.extension().and_then(|e| e.to_str()) == Some("scg");
     let mut pipeline = if is_scg {
@@ -29,8 +29,14 @@ pub fn run(file: &Path) -> Result<()> {
 
     let issues = validator::validate(&pipeline);
 
-    let errors: Vec<_> = issues.iter().filter(|i| i.severity == Severity::Error).collect();
-    let warnings: Vec<_> = issues.iter().filter(|i| i.severity == Severity::Warning).collect();
+    let errors: Vec<_> = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .collect();
+    let warnings: Vec<_> = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Warning)
+        .collect();
 
     println!(
         "{}: {} ({} nodes, {} edges)",
@@ -61,12 +67,7 @@ pub fn run(file: &Path) -> Result<()> {
     if !warnings.is_empty() {
         println!("{} ({}):", "Warnings".yellow().bold(), warnings.len());
         for issue in &warnings {
-            println!(
-                "  {} [{}] {}",
-                "WARN".yellow(),
-                issue.rule,
-                issue.message
-            );
+            println!("  {} [{}] {}", "WARN".yellow(), issue.rule, issue.message);
         }
         println!();
     }
@@ -74,12 +75,7 @@ pub fn run(file: &Path) -> Result<()> {
     if !errors.is_empty() {
         println!("{} ({}):", "Errors".red().bold(), errors.len());
         for issue in &errors {
-            println!(
-                "  {} [{}] {}",
-                "ERROR".red(),
-                issue.rule,
-                issue.message
-            );
+            println!("  {} [{}] {}", "ERROR".red(), issue.rule, issue.message);
         }
         println!();
         anyhow::bail!("Validation failed with {} error(s)", errors.len());

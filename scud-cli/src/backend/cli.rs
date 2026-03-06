@@ -34,12 +34,7 @@ impl AgentBackend for CliBackend {
     async fn execute(&self, req: AgentRequest) -> Result<AgentHandle> {
         let runner = create_runner(self.harness.clone())?;
         let session = runner
-            .start(
-                "agent",
-                &req.prompt,
-                &req.working_dir,
-                req.model.as_deref(),
-            )
+            .start("agent", &req.prompt, &req.working_dir, req.model.as_deref())
             .await?;
 
         // Destructure session to own both the events receiver and the process handle
@@ -96,10 +91,15 @@ impl AgentBackend for CliBackend {
                                         }
                                     }
                                     StreamEventKind::Complete { success } => {
-                                        let status = if *success {
+                                        let process_ok = session_process.wait().await.unwrap_or(false);
+                                        let status = if *success && process_ok {
                                             AgentStatus::Completed
                                         } else {
-                                            AgentStatus::Failed("Agent reported failure".into())
+                                            AgentStatus::Failed(if process_ok {
+                                                "Agent reported failure".into()
+                                            } else {
+                                                "Agent process exited with non-zero status".into()
+                                            })
                                         };
                                         let _ = tx.send(AgentEvent::Complete(AgentResult {
                                             text: text_parts.join(""),
@@ -119,10 +119,17 @@ impl AgentBackend for CliBackend {
                                 }
                             }
                             None => {
-                                // Stream ended without Complete event
+                                // Stream ended without explicit completion: use process exit status.
+                                let process_ok = session_process.wait().await.unwrap_or(false);
                                 let _ = tx.send(AgentEvent::Complete(AgentResult {
                                     text: text_parts.join(""),
-                                    status: AgentStatus::Completed,
+                                    status: if process_ok {
+                                        AgentStatus::Completed
+                                    } else {
+                                        AgentStatus::Failed(
+                                            "Agent process exited without completion event".into(),
+                                        )
+                                    },
                                     tool_calls,
                                     usage: None,
                                 })).await;

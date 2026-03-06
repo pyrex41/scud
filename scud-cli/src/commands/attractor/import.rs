@@ -10,8 +10,8 @@ use crate::formats::serialize_scg_pipeline;
 
 /// Import a DOT pipeline and convert to SCG format.
 pub fn run(file: &Path, output: Option<&Path>) -> Result<()> {
-    let source = std::fs::read_to_string(file)
-        .context(format!("Failed to read: {}", file.display()))?;
+    let source =
+        std::fs::read_to_string(file).context(format!("Failed to read: {}", file.display()))?;
 
     let dot_graph = parse_dot(&source).context("Failed to parse DOT file")?;
     let pipeline = PipelineGraph::from_dot(&dot_graph).context("Failed to build pipeline graph")?;

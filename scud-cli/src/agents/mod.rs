@@ -27,7 +27,7 @@ pub struct AgentMeta {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelConfig {
-    /// Harness to use: "claude" or "opencode"
+    /// Harness to use: "rho", "claude", "opencode", or "cursor"
     #[serde(default = "default_harness")]
     pub harness: String,
     /// Model name to pass to CLI (e.g., "sonnet", "opus", "grok-4")
@@ -89,9 +89,9 @@ impl AgentDef {
             "analyzer" => Some(include_str!("../assets/spawn-agents/analyzer.toml")),
             "repairer" => Some(include_str!("../assets/spawn-agents/repairer.toml")),
             "tester" => Some(include_str!("../assets/spawn-agents/tester.toml")),
-            "outside-generalist" => {
-                Some(include_str!("../assets/spawn-agents/outside-generalist.toml"))
-            }
+            "outside-generalist" => Some(include_str!(
+                "../assets/spawn-agents/outside-generalist.toml"
+            )),
             _ => None,
         };
         content.and_then(|c| toml::from_str(c).ok())

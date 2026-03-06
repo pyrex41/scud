@@ -137,7 +137,8 @@ mod tests {
 
     #[test]
     fn test_session_deserialization() {
-        let json = r#"{"id": "abc123", "title": "Test", "created_at": "2024-01-01", "message_count": 5}"#;
+        let json =
+            r#"{"id": "abc123", "title": "Test", "created_at": "2024-01-01", "message_count": 5}"#;
         let session: Session = serde_json::from_str(json).unwrap();
 
         assert_eq!(session.id, "abc123");

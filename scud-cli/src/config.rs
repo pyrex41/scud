@@ -32,7 +32,7 @@ pub struct SwarmConfig {
 }
 
 fn default_swarm_harness() -> String {
-    "claude".to_string()
+    "rho".to_string()
 }
 
 fn default_round_size() -> usize {
@@ -211,7 +211,7 @@ impl Config {
             "openai" => "o3-mini",
             "openrouter" => "anthropic/claude-sonnet-4.5",
             "claude-cli" => "sonnet", // Claude CLI model names: sonnet, opus, haiku
-            "codex" => "gpt-5.1",         // Codex CLI default model
+            "codex" => "gpt-5.1",     // Codex CLI default model
             "cursor" => "claude-4-sonnet", // Cursor Agent default model
             _ => "xai/grok-code-fast-1",
         }
@@ -269,8 +269,8 @@ impl Config {
             "cursor" => vec![
                 "claude-4-opus",   // Smart/reasoning
                 "claude-4-sonnet", // Balanced
-                "gpt-5",          // OpenAI model
-                "gpt-5.2-high",   // High-capability
+                "gpt-5",           // OpenAI model
+                "gpt-5.2-high",    // High-capability
             ],
             _ => vec![],
         }

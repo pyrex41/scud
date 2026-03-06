@@ -601,7 +601,8 @@ pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
                             epic_tag: "extensions".to_string(),
                             task_id: Some(filename.to_string()),
                             message: format!(r#"Invalid harness name '{}': {}"#, harness_str, e),
-                            suggestion: r#"Use 'claude' or 'opencode'"#.to_string(),
+                            suggestion: r#"Use 'rho', 'claude', 'opencode', or 'cursor'"#
+                                .to_string(),
                         });
                     }
                 }

@@ -251,7 +251,10 @@ impl EventStream {
             }
         });
 
-        Ok(Self { rx, _handle: handle })
+        Ok(Self {
+            rx,
+            _handle: handle,
+        })
     }
 
     /// Receive next event
@@ -271,8 +274,7 @@ mod tests {
 
     #[test]
     fn test_parse_message_start() {
-        let data =
-            r#"{"type": "message.start", "session_id": "abc123", "message_id": "msg1"}"#;
+        let data = r#"{"type": "message.start", "session_id": "abc123", "message_id": "msg1"}"#;
         let event = OpenCodeEvent::parse("message", data);
 
         match event {
@@ -361,7 +363,10 @@ mod tests {
         let event = OpenCodeEvent::parse("message", data);
 
         match event {
-            OpenCodeEvent::MessageComplete { session_id, success } => {
+            OpenCodeEvent::MessageComplete {
+                session_id,
+                success,
+            } => {
                 assert_eq!(session_id, "xyz");
                 assert!(success);
             }
@@ -371,7 +376,8 @@ mod tests {
 
     #[test]
     fn test_parse_session_error() {
-        let data = r#"{"type": "session.error", "session_id": "err1", "error": "Connection failed"}"#;
+        let data =
+            r#"{"type": "session.error", "session_id": "err1", "error": "Connection failed"}"#;
         let event = OpenCodeEvent::parse("error", data);
 
         match event {

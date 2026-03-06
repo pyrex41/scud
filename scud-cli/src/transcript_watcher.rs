@@ -69,10 +69,7 @@ impl TranscriptWatcher {
                         |r| r.get(0),
                     )?;
                     if exists > 0 {
-                        self.imported_sessions
-                            .lock()
-                            .unwrap()
-                            .insert(session_id);
+                        self.imported_sessions.lock().unwrap().insert(session_id);
                         continue;
                     }
                 }
@@ -87,10 +84,7 @@ impl TranscriptWatcher {
                         scud_session_id,
                         task_id,
                     )?;
-                    self.imported_sessions
-                        .lock()
-                        .unwrap()
-                        .insert(session_id);
+                    self.imported_sessions.lock().unwrap().insert(session_id);
                     count += 1;
                 }
             }
@@ -153,16 +147,8 @@ impl TranscriptWatcher {
                 "DELETE FROM transcript_messages WHERE claude_session_id = ?",
                 [&session_id],
             )?;
-            crate::db::transcripts::insert_transcript(
-                conn,
-                &transcript,
-                scud_session_id,
-                task_id,
-            )?;
-            self.imported_sessions
-                .lock()
-                .unwrap()
-                .insert(session_id);
+            crate::db::transcripts::insert_transcript(conn, &transcript, scud_session_id, task_id)?;
+            self.imported_sessions.lock().unwrap().insert(session_id);
         }
         Ok(())
     }

@@ -253,17 +253,15 @@ impl SwarmClient {
 impl From<ZmqEvent> for ScudEvent {
     fn from(event: ZmqEvent) -> Self {
         match event {
-            ZmqEvent::SwarmStarted { tag, total_waves, .. } => {
-                ScudEvent::SwarmStarted { tag, total_waves }
-            }
-            ZmqEvent::WaveStarted { wave, tasks, .. } => {
-                ScudEvent::WaveStarted { wave, tasks }
-            }
+            ZmqEvent::SwarmStarted {
+                tag, total_waves, ..
+            } => ScudEvent::SwarmStarted { tag, total_waves },
+            ZmqEvent::WaveStarted { wave, tasks, .. } => ScudEvent::WaveStarted { wave, tasks },
             ZmqEvent::TaskStarted { task_id } => ScudEvent::TaskStarted { task_id },
             ZmqEvent::TaskOutput { task_id, text } => ScudEvent::TaskOutput { task_id, text },
-            ZmqEvent::TaskCompleted { task_id, success, .. } => {
-                ScudEvent::TaskCompleted { task_id, success }
-            }
+            ZmqEvent::TaskCompleted {
+                task_id, success, ..
+            } => ScudEvent::TaskCompleted { task_id, success },
             ZmqEvent::ValidationStarted => ScudEvent::ValidationStarted,
             ZmqEvent::ValidationCompleted { passed, output } => {
                 ScudEvent::ValidationCompleted { passed, output }

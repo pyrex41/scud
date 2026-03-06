@@ -28,9 +28,7 @@ impl AgentBackend for SimulatedBackend {
         let response_text = format!("[Simulated] Response for: {}", prompt_preview);
 
         tokio::spawn(async move {
-            let _ = tx
-                .send(AgentEvent::TextDelta(response_text.clone()))
-                .await;
+            let _ = tx.send(AgentEvent::TextDelta(response_text.clone())).await;
             let _ = tx
                 .send(AgentEvent::Complete(AgentResult {
                     text: response_text,

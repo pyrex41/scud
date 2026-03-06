@@ -560,8 +560,8 @@ pub async fn run_pipeline(
     println!();
 
     // Read PRD
-    let prd_content =
-        std::fs::read_to_string(file).with_context(|| format!("reading PRD: {}", file.display()))?;
+    let prd_content = std::fs::read_to_string(file)
+        .with_context(|| format!("reading PRD: {}", file.display()))?;
 
     let prd_first_line = prd_content
         .lines()
@@ -585,13 +585,24 @@ pub async fn run_pipeline(
         println!("  {} Goal: {}", "→".cyan(), goal);
         println!("  {} Shape: {}", "→".cyan(), shape);
         println!("  {} Human gates: {}", "→".cyan(), human_checkpoints);
-        println!("  {} Tools: {}", "→".cyan(), if tool_steps.is_empty() { "(none)" } else { &tool_steps });
+        println!(
+            "  {} Tools: {}",
+            "→".cyan(),
+            if tool_steps.is_empty() {
+                "(none)"
+            } else {
+                &tool_steps
+            }
+        );
         println!("  {} Model: {}", "→".cyan(), model_tier);
     }
     println!();
 
     if dry_run {
-        println!("{} Would generate pipeline with LLM...", "Phase 2:".yellow().bold());
+        println!(
+            "{} Would generate pipeline with LLM...",
+            "Phase 2:".yellow().bold()
+        );
         println!(
             "  {} Would write to: {}",
             "→".cyan(),
@@ -638,10 +649,7 @@ pub async fn run_pipeline(
     println!();
 
     // Convert to SCG
-    println!(
-        "{} Converting to SCG format...",
-        "Phase 3:".yellow().bold()
-    );
+    println!("{} Converting to SCG format...", "Phase 3:".yellow().bold());
 
     let result = parsed_pipeline_to_scg(&parsed, tag);
     let scg_output = serialize_scg_pipeline(&result);
@@ -668,10 +676,7 @@ pub async fn run_pipeline(
 
     // Summary
     println!("{}", "━".repeat(50).green());
-    println!(
-        "{}",
-        "Pipeline generated successfully!".green().bold()
-    );
+    println!("{}", "Pipeline generated successfully!".green().bold());
     println!("{}", "━".repeat(50).green());
     println!();
     println!(
@@ -691,10 +696,7 @@ pub async fn run_pipeline(
         "  1. Validate: scud attractor validate {}",
         output_path.display()
     );
-    println!(
-        "  2. Run: scud attractor run {}",
-        output_path.display()
-    );
+    println!("  2. Run: scud attractor run {}", output_path.display());
     println!();
 
     Ok(())
@@ -816,7 +818,12 @@ mod pipeline_tests {
         assert_eq!(finish_attrs.retry_target.as_deref(), Some("design"));
 
         // Check task fields
-        let design_task = result.phase.tasks.iter().find(|t| t.id == "design").unwrap();
+        let design_task = result
+            .phase
+            .tasks
+            .iter()
+            .find(|t| t.id == "design")
+            .unwrap();
         assert_eq!(design_task.description, "Design the REST API schema");
         assert_eq!(design_task.complexity, 5); // codergen
 

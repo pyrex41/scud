@@ -157,18 +157,12 @@ impl PipelineGraph {
 
         // Extract graph-level attrs
         let graph_attrs = GraphAttrs {
-            goal: dot
-                .graph_attrs
-                .get("goal")
-                .map(|v| v.as_str()),
+            goal: dot.graph_attrs.get("goal").map(|v| v.as_str()),
             fidelity: dot
                 .graph_attrs
                 .get("fidelity")
                 .and_then(|v| FidelityMode::from_str(&v.as_str())),
-            model_stylesheet: dot
-                .graph_attrs
-                .get("model_stylesheet")
-                .map(|v| v.as_str()),
+            model_stylesheet: dot.graph_attrs.get("model_stylesheet").map(|v| v.as_str()),
             extra: dot
                 .graph_attrs
                 .iter()
@@ -266,9 +260,7 @@ impl PipelineGraph {
 
     /// Get a node by its string ID.
     pub fn node(&self, id: &str) -> Option<&PipelineNode> {
-        self.node_index
-            .get(id)
-            .map(|idx| &self.graph[*idx])
+        self.node_index.get(id).map(|idx| &self.graph[*idx])
     }
 
     /// Get all outgoing edges from a node.
@@ -304,8 +296,7 @@ fn build_pipeline_node(id: &str, attrs: &HashMap<String, AttrValue>) -> Pipeline
         .unwrap_or_else(|| "box".into());
 
     let explicit_type = attrs.get("type").map(|v| v.as_str());
-    let handler_type = explicit_type
-        .unwrap_or_else(|| handler_type_from_shape(&shape).into());
+    let handler_type = explicit_type.unwrap_or_else(|| handler_type_from_shape(&shape).into());
 
     let label = attrs
         .get("label")
@@ -314,20 +305,28 @@ fn build_pipeline_node(id: &str, attrs: &HashMap<String, AttrValue>) -> Pipeline
 
     let classes = attrs
         .get("class")
-        .map(|v| {
-            v.as_str()
-                .split_whitespace()
-                .map(String::from)
-                .collect()
-        })
+        .map(|v| v.as_str().split_whitespace().map(String::from).collect())
         .unwrap_or_default();
 
     let mut extra_attrs = HashMap::new();
     let known_keys = [
-        "shape", "type", "label", "prompt", "max_retries", "goal_gate",
-        "retry_target", "fallback_retry_target", "fidelity", "thread_id",
-        "class", "timeout", "llm_model", "llm_provider", "reasoning_effort",
-        "auto_status", "allow_partial",
+        "shape",
+        "type",
+        "label",
+        "prompt",
+        "max_retries",
+        "goal_gate",
+        "retry_target",
+        "fallback_retry_target",
+        "fidelity",
+        "thread_id",
+        "class",
+        "timeout",
+        "llm_model",
+        "llm_provider",
+        "reasoning_effort",
+        "auto_status",
+        "allow_partial",
     ];
     for (k, v) in attrs {
         if !known_keys.contains(&k.as_str()) {
@@ -381,11 +380,11 @@ fn build_pipeline_node(id: &str, attrs: &HashMap<String, AttrValue>) -> Pipeline
 fn build_pipeline_edge(attrs: &HashMap<String, AttrValue>) -> PipelineEdge {
     PipelineEdge {
         label: attrs.get("label").map(|v| v.as_str()).unwrap_or_default(),
-        condition: attrs.get("condition").map(|v| v.as_str()).unwrap_or_default(),
-        weight: attrs
-            .get("weight")
-            .and_then(|v| v.as_int())
-            .unwrap_or(0) as i32,
+        condition: attrs
+            .get("condition")
+            .map(|v| v.as_str())
+            .unwrap_or_default(),
+        weight: attrs.get("weight").and_then(|v| v.as_int()).unwrap_or(0) as i32,
         fidelity: attrs
             .get("fidelity")
             .and_then(|v| FidelityMode::from_str(&v.as_str())),

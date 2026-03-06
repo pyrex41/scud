@@ -242,10 +242,7 @@ impl<'a> DotParser<'a> {
                     HashMap::new()
                 };
 
-                graph.nodes.push(DotNode {
-                    id,
-                    attrs,
-                });
+                graph.nodes.push(DotNode { id, attrs });
             }
 
             self.skip_optional_semicolon();
@@ -368,7 +365,9 @@ impl<'a> DotParser<'a> {
     }
 
     fn read_attr_value(&mut self) -> Result<AttrValue> {
-        let ch = self.peek_char().context("Unexpected EOF in attribute value")?;
+        let ch = self
+            .peek_char()
+            .context("Unexpected EOF in attribute value")?;
 
         if ch == '"' {
             let s = self.read_quoted_string()?;
@@ -380,9 +379,7 @@ impl<'a> DotParser<'a> {
         } else if ch == '-' || ch.is_ascii_digit() {
             let num_str = self.read_number_str();
             if num_str.contains('.') {
-                Ok(AttrValue::Float(
-                    num_str.parse().context("Invalid float")?,
-                ))
+                Ok(AttrValue::Float(num_str.parse().context("Invalid float")?))
             } else {
                 Ok(AttrValue::Int(num_str.parse().context("Invalid integer")?))
             }
@@ -559,7 +556,12 @@ impl<'a> DotParser<'a> {
     fn expect_char(&mut self, expected: char) -> Result<()> {
         match self.next_char() {
             Some(c) if c == expected => Ok(()),
-            Some(c) => bail!("Expected '{}', got '{}' at position {}", expected, c, self.pos - 1),
+            Some(c) => bail!(
+                "Expected '{}', got '{}' at position {}",
+                expected,
+                c,
+                self.pos - 1
+            ),
             None => bail!("Expected '{}', got EOF", expected),
         }
     }

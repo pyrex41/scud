@@ -113,12 +113,12 @@ fn print_event(event: &ZmqEvent) {
         } => {
             println!("[SWARM] Started tag='{}' waves={}", tag, total_waves);
         }
-        ZmqEvent::WaveStarted { wave, tasks, task_count } => {
-            println!(
-                "[WAVE {}] Started with {} tasks",
-                wave,
-                task_count
-            );
+        ZmqEvent::WaveStarted {
+            wave,
+            tasks,
+            task_count,
+        } => {
+            println!("[WAVE {}] Started with {} tasks", wave, task_count);
             if !tasks.is_empty() {
                 println!("  Tasks: {:?}", tasks);
             }
@@ -181,30 +181,59 @@ fn print_event(event: &ZmqEvent) {
         ZmqEvent::Heartbeat { timestamp } => {
             println!("[HEARTBEAT] {}", timestamp);
         }
-        ZmqEvent::ToolCall { task_id, tool, input_summary } => {
-            let summary = input_summary.as_ref().map(|s| format!(" ({})", s)).unwrap_or_default();
+        ZmqEvent::ToolCall {
+            task_id,
+            tool,
+            input_summary,
+        } => {
+            let summary = input_summary
+                .as_ref()
+                .map(|s| format!(" ({})", s))
+                .unwrap_or_default();
             println!("[TOOL {}] {} called{}", task_id, tool, summary);
         }
-        ZmqEvent::ToolResult { task_id, tool, success, duration_ms } => {
+        ZmqEvent::ToolResult {
+            task_id,
+            tool,
+            success,
+            duration_ms,
+        } => {
             let status = if *success { "success" } else { "failed" };
-            let duration = duration_ms.map(|d| format!(" ({}ms)", d)).unwrap_or_default();
+            let duration = duration_ms
+                .map(|d| format!(" ({}ms)", d))
+                .unwrap_or_default();
             println!("[TOOL {}] {} {}{}", task_id, tool, status, duration);
         }
         ZmqEvent::FileRead { task_id, path } => {
             println!("[FILE {}] Read: {}", task_id, path);
         }
-        ZmqEvent::FileWrite { task_id, path, lines_changed } => {
-            let lines = lines_changed.map(|l| format!(" ({} lines)", l)).unwrap_or_default();
+        ZmqEvent::FileWrite {
+            task_id,
+            path,
+            lines_changed,
+        } => {
+            let lines = lines_changed
+                .map(|l| format!(" ({} lines)", l))
+                .unwrap_or_default();
             println!("[FILE {}] Write: {}{}", task_id, path, lines);
         }
-        ZmqEvent::DependencyMet { task_id, dependency_id } => {
+        ZmqEvent::DependencyMet {
+            task_id,
+            dependency_id,
+        } => {
             println!("[DEP {}] Met: {}", task_id, dependency_id);
         }
-        ZmqEvent::TaskUnblocked { task_id, by_task_id } => {
+        ZmqEvent::TaskUnblocked {
+            task_id,
+            by_task_id,
+        } => {
             println!("[BLOCK {}] Unblocked by: {}", task_id, by_task_id);
         }
         ZmqEvent::RepairStarted { attempt, task_ids } => {
-            println!("[REPAIR] Started attempt {} for tasks: {:?}", attempt, task_ids);
+            println!(
+                "[REPAIR] Started attempt {} for tasks: {:?}",
+                attempt, task_ids
+            );
         }
         ZmqEvent::RepairCompleted { attempt, success } => {
             let status = if *success { "succeeded" } else { "failed" };

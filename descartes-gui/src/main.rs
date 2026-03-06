@@ -24,6 +24,7 @@ use scud_bridge::{ScudBridge, ScudCommand, ScudEvent};
 use state::{
     AgentConfig, AgentStatus, AppState, ArchiveEntry, BackpressureState, ExecutionMode,
     HeadlessSessionInfo, HeadlessSessionStatus, LaunchConfig, LlmConfigState, RalphPhase,
+    RalphProgress,
     SwarmDefaults, SwarmProgress, TagSummary, TaskInfo,
 };
 use views::ViewMode;
@@ -295,7 +296,9 @@ impl DescartesGui {
         let launch_config = LaunchConfig::from_defaults(&swarm_defaults);
 
         // Create ScudBridge and get channel handles
-        let (bridge, scud_command_tx, scud_event_rx) = ScudBridge::create();
+        let initial_working_dir = std::env::current_dir().unwrap_or_default();
+        let (bridge, scud_command_tx, scud_event_rx) =
+            ScudBridge::create_with_working_dir(initial_working_dir.clone());
 
         let init_tx = scud_command_tx.clone();
         let init_task = Task::perform(
@@ -538,10 +541,11 @@ impl DescartesGui {
                 round_size,
             } => {
                 // Check if there are any actionable tasks
-                let has_actionable = self.state.waves.iter().any(|wave| {
-                    wave.iter()
-                        .any(|t| t.status.to_lowercase() != "done")
-                });
+                let has_actionable = self
+                    .state
+                    .waves
+                    .iter()
+                    .any(|wave| wave.iter().any(|t| t.status.to_lowercase() != "done"));
                 if !has_actionable {
                     self.error = Some("No actionable tasks — all tasks are done.".to_string());
                     return Task::none();
@@ -1229,7 +1233,7 @@ impl DescartesGui {
 
             // Model loading
             Message::LoadHarnessModels => {
-                // Load models for cursor and opencode (claude is hardcoded)
+                // Load models for cursor and opencode (rho/claude are hardcoded)
                 Task::batch([
                     Task::perform(load_cursor_models(), |models| {
                         Message::HarnessModelsLoaded {
@@ -1268,6 +1272,11 @@ impl DescartesGui {
 
             Message::SwitchProject(path) => {
                 self.state.working_directory = path.clone();
+                self.state.headless_sessions.clear();
+                self.state.monitor_selected_task = None;
+                self.state.swarm_progress = SwarmProgress::default();
+                self.state.ralph_progress = RalphProgress::default();
+                self.state.output_buffer.clear();
                 // Add to recent projects
                 self.state.settings.recent_projects.retain(|p| p != &path);
                 self.state.settings.recent_projects.insert(0, path);
@@ -1278,6 +1287,11 @@ impl DescartesGui {
                         .settings
                         .recent_projects
                         .truncate(self.state.settings.max_recent_projects);
+                }
+                if let Some(ref tx) = self.scud_command_tx {
+                    let _ = tx.blocking_send(ScudCommand::SetWorkingDirectory {
+                        path: self.state.working_directory.clone(),
+                    });
                 }
                 // Reload everything for the new project
                 Task::batch([
@@ -1343,10 +1357,11 @@ impl DescartesGui {
             // Ralph lifecycle
             Message::StartRalph { tag, harness } => {
                 // Check if there are any actionable tasks
-                let has_actionable = self.state.waves.iter().any(|wave| {
-                    wave.iter()
-                        .any(|t| t.status.to_lowercase() != "done")
-                });
+                let has_actionable = self
+                    .state
+                    .waves
+                    .iter()
+                    .any(|wave| wave.iter().any(|t| t.status.to_lowercase() != "done"));
                 if !has_actionable {
                     self.error = Some("No actionable tasks — all tasks are done.".to_string());
                     return Task::none();
@@ -1512,8 +1527,7 @@ impl DescartesGui {
                         return Task::done(Message::LoadTagExplorer);
                     }
                     Err(e) => {
-                        self.state.generate_state.generate_status =
-                            Some(format!("Failed: {}", e));
+                        self.state.generate_state.generate_status = Some(format!("Failed: {}", e));
                     }
                 }
                 Task::none()
@@ -1590,9 +1604,7 @@ impl DescartesGui {
                     let tx = tx.clone();
                     return Task::perform(
                         async move {
-                            let _ = tx
-                                .send(ScudCommand::RestoreArchive { filename })
-                                .await;
+                            let _ = tx.send(ScudCommand::RestoreArchive { filename }).await;
                         },
                         |_| Message::Tick,
                     );
@@ -1603,10 +1615,9 @@ impl DescartesGui {
             Message::ArchiveRestored(result) => {
                 match result {
                     Ok(tags) => {
-                        self.state.output_buffer.push_str(&format!(
-                            "Restored tags: {}\n",
-                            tags.join(", ")
-                        ));
+                        self.state
+                            .output_buffer
+                            .push_str(&format!("Restored tags: {}\n", tags.join(", ")));
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to restore archive: {}", e));
@@ -1953,10 +1964,9 @@ impl DescartesGui {
                     &self.state.available_models,
                     self.state.is_initialized,
                 ),
-                ViewMode::Generate => views::generate::view(
-                    &self.state.generate_state,
-                    &self.state.working_directory,
-                ),
+                ViewMode::Generate => {
+                    views::generate::view(&self.state.generate_state, &self.state.working_directory)
+                }
                 ViewMode::Tags => views::tags::view(&self.state.tag_explorer),
                 ViewMode::Agents => views::agents::view(
                     &self.state.agent_configs,
@@ -1976,14 +1986,12 @@ impl DescartesGui {
                     self.state.agent_status,
                     &self.state.ralph_progress,
                 ),
-                ViewMode::Settings => {
-                    views::settings::view(
-                        &self.state.settings,
-                        &self.state.working_directory,
-                        &self.state.backpressure,
-                        &self.state.llm_config,
-                    )
-                }
+                ViewMode::Settings => views::settings::view(
+                    &self.state.settings,
+                    &self.state.working_directory,
+                    &self.state.backpressure,
+                    &self.state.llm_config,
+                ),
             };
 
             column![error_banner, header, content].spacing(10).into()
@@ -2004,10 +2012,9 @@ impl DescartesGui {
                     &self.state.available_models,
                     self.state.is_initialized,
                 ),
-                ViewMode::Generate => views::generate::view(
-                    &self.state.generate_state,
-                    &self.state.working_directory,
-                ),
+                ViewMode::Generate => {
+                    views::generate::view(&self.state.generate_state, &self.state.working_directory)
+                }
                 ViewMode::Tags => views::tags::view(&self.state.tag_explorer),
                 ViewMode::Agents => views::agents::view(
                     &self.state.agent_configs,
@@ -2027,14 +2034,12 @@ impl DescartesGui {
                     self.state.agent_status,
                     &self.state.ralph_progress,
                 ),
-                ViewMode::Settings => {
-                    views::settings::view(
-                        &self.state.settings,
-                        &self.state.working_directory,
-                        &self.state.backpressure,
-                        &self.state.llm_config,
-                    )
-                }
+                ViewMode::Settings => views::settings::view(
+                    &self.state.settings,
+                    &self.state.working_directory,
+                    &self.state.backpressure,
+                    &self.state.llm_config,
+                ),
             };
 
             column![header, content].spacing(10).into()
@@ -2159,13 +2164,13 @@ fn load_agent_configs(
                         let harness = model_section
                             .and_then(|m| m.get("harness"))
                             .and_then(|v| v.as_str())
-                            .unwrap_or("claude")
+                            .unwrap_or("rho")
                             .to_string();
 
                         let model = model_section
                             .and_then(|m| m.get("model"))
                             .and_then(|v| v.as_str())
-                            .unwrap_or("sonnet")
+                            .unwrap_or("claude-sonnet")
                             .to_string();
 
                         configs.insert(
