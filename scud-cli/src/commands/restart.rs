@@ -93,14 +93,16 @@ pub fn run(
         );
     }
 
-    match terminal::spawn_terminal_with_harness_and_model(
+    let spawn_config = terminal::SpawnConfig {
         task_id,
-        &config.prompt,
-        &working_dir,
-        &session_name,
-        config.harness,
-        config.model.as_deref(),
-    ) {
+        prompt: &config.prompt,
+        working_dir: &working_dir,
+        session_name: &session_name,
+        harness: config.harness,
+        model: config.model.as_deref(),
+        task_list_id: None,
+    };
+    match terminal::spawn_tmux_agent(&spawn_config) {
         Ok(window_index) => {
             println!(
                 "  {} Spawned: {} [{}] → {}:{}",

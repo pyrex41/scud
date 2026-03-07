@@ -242,15 +242,16 @@ pub fn run(
                 );
             }
 
-            match terminal::spawn_terminal_with_task_list(
-                &info.task.id,
-                &config.prompt,
-                &working_dir,
-                &session_name,
-                config.harness,
-                config.model.as_deref(),
-                &task_list_id,
-            ) {
+            let spawn_config = terminal::SpawnConfig {
+                task_id: &info.task.id,
+                prompt: &config.prompt,
+                working_dir: &working_dir,
+                session_name: &session_name,
+                harness: config.harness,
+                model: config.model.as_deref(),
+                task_list_id: Some(&task_list_id),
+            };
+            match terminal::spawn_tmux_agent(&spawn_config) {
                 Ok(window_index) => {
                     println!(
                         "  {} Spawned: {} | {} [{}] {}:{}",
@@ -671,36 +672,8 @@ fn get_ready_tasks<'a>(
     Ok(ready_tasks)
 }
 
-/// Check if a task is ready to be spawned
-fn is_task_ready(
-    task: &Task,
-    phase: &crate::models::phase::Phase,
-    all_tasks_flat: &[&Task],
-) -> bool {
-    // Must be pending
-    if task.status != TaskStatus::Pending {
-        return false;
-    }
-
-    // Must not be expanded (we want subtasks, not parent tasks)
-    if task.is_expanded() {
-        return false;
-    }
-
-    // If it's a subtask, parent must be expanded
-    if let Some(ref parent_id) = task.parent_id {
-        let parent_expanded = phase
-            .get_task(parent_id)
-            .map(|p| p.is_expanded())
-            .unwrap_or(false);
-        if !parent_expanded {
-            return false;
-        }
-    }
-
-    // All dependencies must be met
-    task.has_dependencies_met_refs(all_tasks_flat)
-}
+// Re-use shared readiness check from helpers
+use crate::commands::helpers::is_task_ready;
 
 #[cfg(test)]
 mod tests {

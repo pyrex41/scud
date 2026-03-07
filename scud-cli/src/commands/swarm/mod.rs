@@ -71,31 +71,60 @@ use crate::transcript_watcher::TranscriptWatcher;
 /// Swarm execution mode
 pub use crate::SwarmMode;
 
+/// Configuration for a swarm execution session.
+pub struct SwarmConfig {
+    pub project_root: Option<PathBuf>,
+    pub tag: Option<String>,
+    pub round_size: usize,
+    pub all_tags: bool,
+    pub harness_arg: String,
+    pub swarm_mode: SwarmMode,
+    pub dry_run: bool,
+    pub session_name: Option<String>,
+    pub no_research: bool,
+    pub no_validate: bool,
+    pub review: bool,
+    pub review_all: bool,
+    pub no_repair: bool,
+    pub max_repair_attempts: usize,
+    pub no_worktree: bool,
+    pub salvo_dir: Option<PathBuf>,
+    pub stale_timeout_minutes: Option<u64>,
+    pub idle_timeout_minutes: u64,
+    pub no_publish_events: bool,
+    pub pause_flag: Option<Arc<AtomicBool>>,
+    pub stop_flag: Option<Arc<AtomicBool>>,
+}
+
 /// Main entry point for the swarm command
-#[allow(clippy::too_many_arguments)]
-pub async fn run(
-    project_root: Option<PathBuf>,
-    tag: Option<&str>,
-    round_size: usize,
-    all_tags: bool,
-    harness_arg: &str,
-    swarm_mode: SwarmMode,
-    dry_run: bool,
-    session_name: Option<String>,
-    no_research: bool,
-    no_validate: bool,
-    review: bool,
-    review_all: bool,
-    no_repair: bool,
-    max_repair_attempts: usize,
-    no_worktree: bool,
-    salvo_dir: Option<PathBuf>,
-    stale_timeout_minutes: Option<u64>,
-    idle_timeout_minutes: u64,
-    no_publish_events: bool,
-    pause_flag: Option<Arc<AtomicBool>>,
-    stop_flag: Option<Arc<AtomicBool>>,
-) -> Result<()> {
+pub async fn run(config: SwarmConfig) -> Result<()> {
+    // Destructure config for use throughout the function
+    let SwarmConfig {
+        project_root,
+        tag,
+        round_size,
+        all_tags,
+        harness_arg,
+        swarm_mode,
+        dry_run,
+        session_name,
+        no_research,
+        no_validate,
+        review,
+        review_all,
+        no_repair,
+        max_repair_attempts,
+        no_worktree,
+        salvo_dir,
+        stale_timeout_minutes,
+        idle_timeout_minutes,
+        no_publish_events,
+        pause_flag,
+        stop_flag,
+    } = config;
+
+    let tag = tag.as_deref();
+    let harness_arg = &harness_arg;
     let effective_tag = tag.unwrap_or("default");
 
     if round_size == 0 {
@@ -855,14 +884,16 @@ pub async fn run(
                                 let harness = agent_def.harness()?;
                                 let model = agent_def.model();
 
-                                terminal::spawn_terminal_with_harness_and_model(
-                                    &format!("improve-{}", task_id),
-                                    &prompt,
-                                    &working_dir,
-                                    &session_name,
+                                let spawn_config = terminal::SpawnConfig {
+                                    task_id: &format!("improve-{}", task_id),
+                                    prompt: &prompt,
+                                    working_dir: &working_dir,
+                                    session_name: &session_name,
                                     harness,
                                     model,
-                                )?;
+                                    task_list_id: None,
+                                };
+                                terminal::spawn_tmux_agent(&spawn_config)?;
 
                                 println!(
                                     "    {} Spawned improvement agent for {}",
@@ -1137,23 +1168,10 @@ fn compute_waves_from_tasks<'a>(
     Ok(waves)
 }
 
+/// Check if a task is actionable for wave computation.
+/// Uses shared spawnable check; dep satisfaction is handled by Kahn's algorithm.
 fn is_task_actionable(task: &Task, phase: &Phase) -> bool {
-    if task.status != TaskStatus::Pending {
-        return false;
-    }
-    if task.is_expanded() {
-        return false;
-    }
-    if let Some(ref parent_id) = task.parent_id {
-        let parent_expanded = phase
-            .get_task(parent_id)
-            .map(|p| p.is_expanded())
-            .unwrap_or(false);
-        if !parent_expanded {
-            return false;
-        }
-    }
-    true
+    crate::commands::helpers::is_task_spawnable(task, phase)
 }
 
 fn count_in_progress(
@@ -1214,6 +1232,18 @@ fn find_orphan_tasks(
     orphans
 }
 
+/// Mark a batch of tasks as in-progress in storage.
+fn mark_tasks_in_progress(storage: &Storage, tasks: &[TaskInfo]) {
+    for info in tasks {
+        if let Ok(mut phase) = storage.load_group(&info.tag) {
+            if let Some(task) = phase.get_task_mut(&info.task.id) {
+                task.set_status(TaskStatus::InProgress);
+                let _ = storage.update_group(&info.tag, &phase);
+            }
+        }
+    }
+}
+
 fn execute_round(
     storage: &Storage,
     tasks: &[TaskInfo],
@@ -1239,14 +1269,16 @@ fn execute_round(
             );
         }
 
-        match terminal::spawn_terminal_with_harness_and_model(
-            &info.task.id,
-            &config.prompt,
+        let spawn_config = terminal::SpawnConfig {
+            task_id: &info.task.id,
+            prompt: &config.prompt,
             working_dir,
             session_name,
-            config.harness,
-            config.model.as_deref(),
-        ) {
+            harness: config.harness,
+            model: config.model.as_deref(),
+            task_list_id: None,
+        };
+        match terminal::spawn_tmux_agent(&spawn_config) {
             Ok(window_index) => {
                 println!(
                     "    {} Spawned: {} | {} [{}] {}:{}",
@@ -1298,15 +1330,7 @@ async fn execute_round_extensions<'a>(
         .map(|info| session::WaveAgent::new(info.task.clone(), &info.tag))
         .collect();
 
-    // Mark tasks as in-progress before spawning
-    for info in tasks {
-        if let Ok(mut phase) = storage.load_group(&info.tag) {
-            if let Some(task) = phase.get_task_mut(&info.task.id) {
-                task.set_status(TaskStatus::InProgress);
-                let _ = storage.update_group(&info.tag, &phase);
-            }
-        }
-    }
+    mark_tasks_in_progress(storage, tasks);
 
     let result = session::execute_wave_async(&wave_agents, working_dir, round_idx, default_harness).await?;
 
@@ -1359,15 +1383,8 @@ async fn execute_round_server<'a>(
     use crate::opencode::AgentOrchestrator;
     use tokio::sync::mpsc;
 
-    // Mark tasks as in-progress before spawning
-    for info in tasks {
-        if let Ok(mut phase) = storage.load_group(&info.tag) {
-            if let Some(task) = phase.get_task_mut(&info.task.id) {
-                task.set_status(TaskStatus::InProgress);
-                let _ = storage.update_group(&info.tag, &phase);
-            }
-        }
-    }
+    mark_tasks_in_progress(storage, tasks);
+
         // Create event channel
         let (event_tx, _event_rx) = mpsc::channel(1000);
 
@@ -2226,14 +2243,16 @@ pub fn spawn_reviewer(
     let model = agent_def.model();
 
     // Spawn reviewer
-    terminal::spawn_terminal_with_harness_and_model(
-        &format!("review-wave-{}", summary.wave_number),
-        &prompt,
+    let spawn_config = terminal::SpawnConfig {
+        task_id: &format!("review-wave-{}", summary.wave_number),
+        prompt: &prompt,
         working_dir,
         session_name,
         harness,
         model,
-    )?;
+        task_list_id: None,
+    };
+    terminal::spawn_tmux_agent(&spawn_config)?;
 
     println!(
         "    {} Reviewer spawned, waiting for completion...",
@@ -2563,14 +2582,16 @@ fn spawn_repairer(
     let harness = agent_def.harness()?;
     let model = agent_def.model();
 
-    terminal::spawn_terminal_with_harness_and_model(
-        &format!("repair-{}", task_id),
+    let spawn_config = terminal::SpawnConfig {
+        task_id: &format!("repair-{}", task_id),
         prompt,
         working_dir,
         session_name,
         harness,
         model,
-    )?;
+        task_list_id: None,
+    };
+    terminal::spawn_tmux_agent(&spawn_config)?;
 
     println!("    {} Spawned repairer for {}", "✓".green(), task_id);
     Ok(())
@@ -2640,14 +2661,16 @@ fn spawn_batch_repairer(
     let harness = agent_def.harness()?;
     let model = agent_def.model();
 
-    terminal::spawn_terminal_with_harness_and_model(
-        "batch-repair",
+    let spawn_config = terminal::SpawnConfig {
+        task_id: "batch-repair",
         prompt,
         working_dir,
         session_name,
         harness,
         model,
-    )?;
+        task_list_id: None,
+    };
+    terminal::spawn_tmux_agent(&spawn_config)?;
 
     println!("    {} Spawned batch repairer", "✓".green());
     Ok(())

@@ -4,7 +4,7 @@ use dialoguer::Select;
 use std::collections::HashMap;
 
 use crate::models::phase::Phase;
-use crate::models::task::Task;
+use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
 
 /// Flatten all tasks from all phases into a single Vec for cross-tag dependency checking
@@ -28,60 +28,60 @@ pub fn find_next_task(
     tag: Option<&str>,
     all_tags: bool,
 ) -> Option<(Task, String)> {
-    use crate::models::task::TaskStatus;
-
     let tasks = storage.load_tasks().ok()?;
     let all_tasks_flat = flatten_all_tasks(&tasks);
 
     if all_tags {
-        // Search across ALL phases
         for (phase_tag, phase) in &tasks {
             for task in &phase.tasks {
-                if task.status == TaskStatus::Pending
-                    && !task.is_expanded()
-                    && task.has_dependencies_met_refs(&all_tasks_flat)
-                {
-                    // If subtask, check parent is expanded
-                    if let Some(ref parent_id) = task.parent_id {
-                        let parent_expanded = phase
-                            .get_task(parent_id)
-                            .map(|p| p.is_expanded())
-                            .unwrap_or(false);
-                        if !parent_expanded {
-                            continue;
-                        }
-                    }
+                if is_task_ready(task, phase, &all_tasks_flat) {
                     return Some((task.clone(), phase_tag.clone()));
                 }
             }
         }
         None
     } else {
-        // Single phase
         let phase_tag = tag
             .map(String::from)
             .or_else(|| storage.get_active_group().ok().flatten())?;
         let phase = tasks.get(&phase_tag)?;
 
         for task in &phase.tasks {
-            if task.status == TaskStatus::Pending
-                && !task.is_expanded()
-                && task.has_dependencies_met_refs(&all_tasks_flat)
-            {
-                if let Some(ref parent_id) = task.parent_id {
-                    let parent_expanded = phase
-                        .get_task(parent_id)
-                        .map(|p| p.is_expanded())
-                        .unwrap_or(false);
-                    if !parent_expanded {
-                        continue;
-                    }
-                }
+            if is_task_ready(task, phase, &all_tasks_flat) {
                 return Some((task.clone(), phase_tag.clone()));
             }
         }
         None
     }
+}
+
+/// Check if a task is a candidate for execution (pending, not expanded, parent expanded).
+///
+/// This is the shared base predicate used by spawn, swarm, and beads modes.
+/// It does NOT check dependency satisfaction — callers that need that should
+/// use [`is_task_ready`] instead, or handle deps separately (e.g., Kahn's algorithm).
+pub fn is_task_spawnable(task: &Task, phase: &Phase) -> bool {
+    if task.status != TaskStatus::Pending {
+        return false;
+    }
+    if task.is_expanded() {
+        return false;
+    }
+    if let Some(ref parent_id) = task.parent_id {
+        let parent_expanded = phase
+            .get_task(parent_id)
+            .map(|p| p.is_expanded())
+            .unwrap_or(false);
+        if !parent_expanded {
+            return false;
+        }
+    }
+    true
+}
+
+/// Check if a task is ready to execute: spawnable AND all dependencies met.
+pub fn is_task_ready(task: &Task, phase: &Phase, all_tasks: &[&Task]) -> bool {
+    is_task_spawnable(task, phase) && task.has_dependencies_met_refs(all_tasks)
 }
 
 /// Resolve task group tag with fallback to active group and interactive selection

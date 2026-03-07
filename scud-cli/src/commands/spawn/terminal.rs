@@ -72,8 +72,6 @@ impl Harness {
             }
             Harness::OpenCode => {
                 let model_flag = model.map(|m| format!(" --model {}", m)).unwrap_or_default();
-                // Use --variant minimal to reduce reasoning overhead and avoid
-                // "reasoning part not found" errors with some models
                 format!(
                     r#"'{}'{} run --variant minimal "$(cat '{}')""#,
                     binary_path,
@@ -239,166 +237,63 @@ pub fn check_tmux_available() -> Result<()> {
     Ok(())
 }
 
-/// Spawn a new tmux window with the given command
-/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
-pub fn spawn_terminal(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-) -> Result<String> {
-    // Default to Claude harness for backwards compatibility
-    spawn_terminal_with_harness_and_model(
-        task_id,
-        prompt,
-        working_dir,
-        session_name,
-        Harness::Claude,
-        None,
-    )
-}
-
-/// Spawn a new tmux window with the given command using a specific harness
-/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
-pub fn spawn_terminal_with_harness(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-    harness: Harness,
-) -> Result<String> {
-    spawn_terminal_with_harness_and_model(task_id, prompt, working_dir, session_name, harness, None)
-}
-
-/// Spawn a new tmux window with the given command using a specific harness and model
-/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
-pub fn spawn_terminal_with_harness_and_model(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-    harness: Harness,
-    model: Option<&str>,
-) -> Result<String> {
-    // Find harness binary path upfront to fail fast if not found
-    let binary_path = find_harness_binary(harness)?;
-    spawn_tmux(
-        task_id,
-        prompt,
-        working_dir,
-        session_name,
-        binary_path,
-        harness,
-        model,
-        None, // No task list ID (legacy mode)
-    )
-}
-
-/// Spawn a new tmux window with Claude Code task list integration
-/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
+/// Configuration for spawning an agent in a tmux window.
 ///
-/// This variant sets `CLAUDE_CODE_TASK_LIST_ID` so agents can see SCUD tasks
-/// via the native `TaskList` tool.
-pub fn spawn_terminal_with_task_list(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-    harness: Harness,
-    model: Option<&str>,
-    task_list_id: &str,
-) -> Result<String> {
-    let binary_path = find_harness_binary(harness)?;
-    spawn_tmux(
-        task_id,
-        prompt,
-        working_dir,
-        session_name,
-        binary_path,
-        harness,
-        model,
-        Some(task_list_id),
-    )
+/// Consolidates all spawn parameters into a single struct, replacing the
+/// previous 7 public spawn functions with one entry point.
+pub struct SpawnConfig<'a> {
+    pub task_id: &'a str,
+    pub prompt: &'a str,
+    pub working_dir: &'a Path,
+    pub session_name: &'a str,
+    pub harness: Harness,
+    pub model: Option<&'a str>,
+    pub task_list_id: Option<&'a str>,
 }
 
-/// Spawn in tmux session
-/// Returns the tmux window index for easy attachment (e.g., "3" for session:3)
-#[allow(clippy::too_many_arguments)]
-fn spawn_tmux(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-    binary_path: &str,
-    harness: Harness,
-    model: Option<&str>,
-    task_list_id: Option<&str>,
-) -> Result<String> {
-    let window_name = format!("task-{}", task_id);
-
-    // Check if session exists
-    let session_exists = Command::new("tmux")
-        .args(["has-session", "-t", session_name])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-
-    if !session_exists {
-        // Create new session with control window
-        Command::new("tmux")
-            .args(["new-session", "-d", "-s", session_name, "-n", "ctrl"])
-            .arg("-c")
-            .arg(working_dir)
-            .status()
-            .context("Failed to create tmux session")?;
-    }
-
-    // Create new window for this task and capture its index
-    // Use -P -F to print the new window's index
-    let new_window_output = Command::new("tmux")
-        .args([
-            "new-window",
-            "-t",
+impl<'a> SpawnConfig<'a> {
+    /// Create a minimal spawn config with defaults (Claude harness, no model override).
+    pub fn new(
+        task_id: &'a str,
+        prompt: &'a str,
+        working_dir: &'a Path,
+        session_name: &'a str,
+    ) -> Self {
+        Self {
+            task_id,
+            prompt,
+            working_dir,
             session_name,
-            "-n",
-            &window_name,
-            "-P", // Print info about new window
-            "-F",
-            "#{window_index}", // Format: just the index
-        ])
-        .arg("-c")
-        .arg(working_dir)
-        .output()
-        .context("Failed to create tmux window")?;
-
-    if !new_window_output.status.success() {
-        anyhow::bail!(
-            "Failed to create window: {}",
-            String::from_utf8_lossy(&new_window_output.stderr)
-        );
+            harness: Harness::Claude,
+            model: None,
+            task_list_id: None,
+        }
     }
+}
 
-    let window_index = String::from_utf8_lossy(&new_window_output.stdout)
-        .trim()
-        .to_string();
+/// Spawn an AI agent in a tmux window.
+/// Returns the tmux window index for easy attachment (e.g., "3" for session:3).
+pub fn spawn_tmux_agent(config: &SpawnConfig) -> Result<String> {
+    let binary_path = find_harness_binary(config.harness)?;
+
+    let window_name = format!("task-{}", config.task_id);
+
+    ensure_tmux_session(config.session_name, config.working_dir)?;
+
+    let window_index = create_tmux_window(config.session_name, &window_name, config.working_dir)?;
 
     // Write prompt to temp file
-    let prompt_file = std::env::temp_dir().join(format!("scud-prompt-{}.txt", task_id));
-    std::fs::write(&prompt_file, prompt)?;
+    let prompt_file = std::env::temp_dir().join(format!("scud-prompt-{}.txt", config.task_id));
+    std::fs::write(&prompt_file, config.prompt)?;
 
-    // Send command to the window BY INDEX (not name, which can be ambiguous)
-    // Interactive mode with SCUD_TASK_ID for hook integration
-    // Use full path to harness binary to avoid PATH issues in spawned shells
-    // Source shell profile to ensure PATH includes node, etc.
-    let harness_cmd = harness.command(binary_path, &prompt_file, model);
+    let harness_cmd = config.harness.command(binary_path, &prompt_file, config.model);
 
     // Build the task list ID export line if provided
-    let task_list_export = task_list_id
+    let task_list_export = config
+        .task_list_id
         .map(|id| format!("export CLAUDE_CODE_TASK_LIST_ID='{}'\n", id))
         .unwrap_or_default();
 
-    // Write a bash script to handle shell-agnostic execution
-    // This ensures it works even if the user's shell is fish, zsh, etc.
     let spawn_script = format!(
         r#"#!/usr/bin/env bash
 # Source shell profile for PATH setup
@@ -411,170 +306,37 @@ export SCUD_TASK_ID='{task_id}'
 {task_list_export}{harness_cmd}
 rm -f '{prompt_file}'
 "#,
-        task_id = task_id,
+        task_id = config.task_id,
         task_list_export = task_list_export,
         harness_cmd = harness_cmd,
         prompt_file = prompt_file.display()
     );
 
-    let script_file = std::env::temp_dir().join(format!("scud-spawn-{}.sh", task_id));
+    let script_file = std::env::temp_dir().join(format!("scud-spawn-{}.sh", config.task_id));
     std::fs::write(&script_file, &spawn_script)?;
 
-    // Run the script with bash explicitly (works in any shell including fish)
-    let run_cmd = format!("bash '{}'", script_file.display());
-
-    let target = format!("{}:{}", session_name, window_index);
-    let send_result = Command::new("tmux")
-        .args(["send-keys", "-t", &target, &run_cmd, "Enter"])
-        .output()
-        .context("Failed to send command to tmux window")?;
-
-    if !send_result.status.success() {
-        anyhow::bail!(
-            "Failed to send keys: {}",
-            String::from_utf8_lossy(&send_result.stderr)
-        );
-    }
+    send_tmux_command(config.session_name, &window_index, &format!("bash '{}'", script_file.display()))?;
 
     Ok(window_index)
 }
 
-/// Spawn a new tmux window with Ralph loop enabled
-/// The agent will keep running until the completion promise is detected
-pub fn spawn_terminal_ralph(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-    completion_promise: &str,
-) -> Result<()> {
-    // Default to Claude harness
-    spawn_terminal_ralph_with_harness(
-        task_id,
-        prompt,
-        working_dir,
-        session_name,
-        completion_promise,
-        Harness::Claude,
-    )
-}
+/// Spawn an AI agent in a tmux window with a Ralph retry loop.
+/// The agent re-runs until the task is marked done or max iterations reached.
+pub fn spawn_ralph_agent(config: &SpawnConfig, completion_promise: &str) -> Result<()> {
+    let binary_path = find_harness_binary(config.harness)?;
 
-/// Spawn a new tmux window with Ralph loop enabled using a specific harness
-pub fn spawn_terminal_ralph_with_harness(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-    completion_promise: &str,
-    harness: Harness,
-) -> Result<()> {
-    // Find harness binary path upfront to fail fast if not found
-    let binary_path = find_harness_binary(harness)?;
-    spawn_tmux_ralph(
-        task_id,
-        prompt,
-        working_dir,
-        session_name,
-        completion_promise,
-        binary_path,
-        harness,
-    )
-}
+    let window_name = format!("ralph-{}", config.task_id);
 
-/// Spawn in tmux session with Ralph loop wrapper
-fn spawn_tmux_ralph(
-    task_id: &str,
-    prompt: &str,
-    working_dir: &Path,
-    session_name: &str,
-    completion_promise: &str,
-    binary_path: &str,
-    harness: Harness,
-) -> Result<()> {
-    let window_name = format!("ralph-{}", task_id);
+    ensure_tmux_session(config.session_name, config.working_dir)?;
 
-    // Check if session exists
-    let session_exists = Command::new("tmux")
-        .args(["has-session", "-t", session_name])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-
-    if !session_exists {
-        // Create new session with control window
-        Command::new("tmux")
-            .args(["new-session", "-d", "-s", session_name, "-n", "ctrl"])
-            .arg("-c")
-            .arg(working_dir)
-            .status()
-            .context("Failed to create tmux session")?;
-    }
-
-    // Create new window for this task
-    let new_window_output = Command::new("tmux")
-        .args([
-            "new-window",
-            "-t",
-            session_name,
-            "-n",
-            &window_name,
-            "-P",
-            "-F",
-            "#{window_index}",
-        ])
-        .arg("-c")
-        .arg(working_dir)
-        .output()
-        .context("Failed to create tmux window")?;
-
-    if !new_window_output.status.success() {
-        anyhow::bail!(
-            "Failed to create window: {}",
-            String::from_utf8_lossy(&new_window_output.stderr)
-        );
-    }
-
-    let window_index = String::from_utf8_lossy(&new_window_output.stdout)
-        .trim()
-        .to_string();
+    let window_index = create_tmux_window(config.session_name, &window_name, config.working_dir)?;
 
     // Write prompt to temp file
-    let prompt_file = std::env::temp_dir().join(format!("scud-ralph-{}.txt", task_id));
-    std::fs::write(&prompt_file, prompt)?;
+    let prompt_file = std::env::temp_dir().join(format!("scud-ralph-{}.txt", config.task_id));
+    std::fs::write(&prompt_file, config.prompt)?;
 
-    // Build the harness-specific command for the ralph script
-    // We need to inline this since the script is a bash heredoc
-    let harness_cmd = match harness {
-        Harness::Claude => format!(
-            "'{binary_path}' \"$(cat '{prompt_file}')\" --dangerously-skip-permissions",
-            binary_path = binary_path,
-            prompt_file = prompt_file.display()
-        ),
-        Harness::OpenCode => format!(
-            "'{binary_path}' run --variant minimal \"$(cat '{prompt_file}')\"",
-            binary_path = binary_path,
-            prompt_file = prompt_file.display()
-        ),
-        Harness::Cursor => format!(
-            "'{binary_path}' -p \"$(cat '{prompt_file}')\"",
-            binary_path = binary_path,
-            prompt_file = prompt_file.display()
-        ),
-        #[cfg(feature = "direct-api")]
-        Harness::DirectApi => format!(
-            "'{binary_path}' agent-exec --prompt-file '{prompt_file}'",
-            binary_path = binary_path,
-            prompt_file = prompt_file.display()
-        ),
-    };
+    let harness_cmd = config.harness.command(binary_path, &prompt_file, config.model);
 
-    // Create a Ralph loop script that:
-    // 1. Runs the harness with the prompt
-    // 2. Checks if the task was marked done (via scud show)
-    // 3. If not done, loops back and runs the harness again with the same prompt
-    // 4. Continues until task is done or max iterations
-    // Use full path to harness binary to avoid PATH issues in spawned shells
-    // Source shell profile to ensure PATH includes node, etc.
     let ralph_script = format!(
         r#"#!/usr/bin/env bash
 # Source shell profile for PATH setup
@@ -634,30 +396,85 @@ while true; do
     sleep 2
 done
 "#,
-        task_id = task_id,
+        task_id = config.task_id,
         promise = completion_promise,
         prompt_file = prompt_file.display(),
-        harness_name = harness.name(),
+        harness_name = config.harness.name(),
         harness_cmd = harness_cmd,
     );
 
-    // Write the Ralph script to a temp file
-    let script_file = std::env::temp_dir().join(format!("scud-ralph-script-{}.sh", task_id));
+    let script_file = std::env::temp_dir().join(format!("scud-ralph-script-{}.sh", config.task_id));
     std::fs::write(&script_file, &ralph_script)?;
 
-    // Run it with bash explicitly (works in any shell including fish)
-    let cmd = format!("bash '{}'", script_file.display());
+    send_tmux_command(config.session_name, &window_index, &format!("bash '{}'", script_file.display()))?;
 
+    Ok(())
+}
+
+// ============================================================================
+// Tmux helpers (shared by spawn_tmux_agent and spawn_ralph_agent)
+// ============================================================================
+
+/// Ensure a tmux session exists, creating it if needed.
+fn ensure_tmux_session(session_name: &str, working_dir: &Path) -> Result<()> {
+    let exists = Command::new("tmux")
+        .args(["has-session", "-t", session_name])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if !exists {
+        Command::new("tmux")
+            .args(["new-session", "-d", "-s", session_name, "-n", "ctrl"])
+            .arg("-c")
+            .arg(working_dir)
+            .status()
+            .context("Failed to create tmux session")?;
+    }
+
+    Ok(())
+}
+
+/// Create a new tmux window and return its index.
+fn create_tmux_window(session_name: &str, window_name: &str, working_dir: &Path) -> Result<String> {
+    let output = Command::new("tmux")
+        .args([
+            "new-window",
+            "-t",
+            session_name,
+            "-n",
+            window_name,
+            "-P",
+            "-F",
+            "#{window_index}",
+        ])
+        .arg("-c")
+        .arg(working_dir)
+        .output()
+        .context("Failed to create tmux window")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "Failed to create window: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Send a command to a tmux window by index.
+fn send_tmux_command(session_name: &str, window_index: &str, cmd: &str) -> Result<()> {
     let target = format!("{}:{}", session_name, window_index);
-    let send_result = Command::new("tmux")
-        .args(["send-keys", "-t", &target, &cmd, "Enter"])
+    let result = Command::new("tmux")
+        .args(["send-keys", "-t", &target, cmd, "Enter"])
         .output()
         .context("Failed to send command to tmux window")?;
 
-    if !send_result.status.success() {
+    if !result.status.success() {
         anyhow::bail!(
             "Failed to send keys: {}",
-            String::from_utf8_lossy(&send_result.stderr)
+            String::from_utf8_lossy(&result.stderr)
         );
     }
 
@@ -675,7 +492,6 @@ pub fn tmux_session_exists(session_name: &str) -> bool {
 
 /// Attach to a tmux session
 pub fn tmux_attach(session_name: &str) -> Result<()> {
-    // Use exec to replace current process with tmux attach
     let status = Command::new("tmux")
         .args(["attach", "-t", session_name])
         .status()
@@ -742,7 +558,6 @@ pub fn tmux_pane_shows_prompt(session_name: &str, window_name: &str) -> bool {
     let last_line = last_line.trim();
 
     // Common shell prompt patterns
-    // These indicate the agent process has exited and we're back at shell
     let prompt_patterns = [
         "$ ", // bash default
         "% ", // zsh default
@@ -752,14 +567,12 @@ pub fn tmux_pane_shows_prompt(session_name: &str, window_name: &str) -> bool {
         "→ ", // some custom prompts
     ];
 
-    // Check if line ends with a prompt pattern
     for pattern in prompt_patterns {
         if last_line.ends_with(pattern) || last_line.ends_with(pattern.trim()) {
             return true;
         }
     }
 
-    // Also check for common prompt formats: user@host, (env), etc followed by prompt
     if last_line.contains('@')
         && (last_line.ends_with('$') || last_line.ends_with('%') || last_line.ends_with('>'))
     {
@@ -778,81 +591,18 @@ pub fn kill_tmux_window(session_name: &str, window_name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Spawn a command in a tmux window (simpler than spawn_tmux which does more setup)
+/// Spawn a command in a tmux window (simpler than spawn_tmux_agent — just runs a raw command)
 pub fn spawn_in_tmux(
     session_name: &str,
     window_name: &str,
     command: &str,
     working_dir: &Path,
 ) -> Result<()> {
-    // Check if session exists, create if not
-    let session_exists = Command::new("tmux")
-        .args(["has-session", "-t", session_name])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    ensure_tmux_session(session_name, working_dir)?;
 
-    if !session_exists {
-        // Create new session with a control window
-        Command::new("tmux")
-            .args([
-                "new-session",
-                "-d",
-                "-s",
-                session_name,
-                "-n",
-                "ctrl",
-                "-c",
-                &working_dir.to_string_lossy(),
-            ])
-            .output()
-            .context("Failed to create tmux session")?;
-    }
+    let window_index = create_tmux_window(session_name, window_name, working_dir)?;
 
-    // Create new window for this task
-    let output = Command::new("tmux")
-        .args([
-            "new-window",
-            "-t",
-            session_name,
-            "-n",
-            window_name,
-            "-c",
-            &working_dir.to_string_lossy(),
-            "-P",
-            "-F",
-            "#{window_index}",
-        ])
-        .output()
-        .context("Failed to create tmux window")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "Failed to create tmux window: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let window_index = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    // Send the command to the window
-    let send_result = Command::new("tmux")
-        .args([
-            "send-keys",
-            "-t",
-            &format!("{}:{}", session_name, window_index),
-            command,
-            "Enter",
-        ])
-        .output()
-        .context("Failed to send command to tmux window")?;
-
-    if !send_result.status.success() {
-        anyhow::bail!(
-            "Failed to send command: {}",
-            String::from_utf8_lossy(&send_result.stderr)
-        );
-    }
+    send_tmux_command(session_name, &window_index, command)?;
 
     Ok(())
 }

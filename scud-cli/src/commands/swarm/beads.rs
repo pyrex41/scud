@@ -121,33 +121,8 @@ pub fn get_ready_tasks(
     ready
 }
 
-/// Check if a task is ready to execute
-fn is_task_ready(task: &Task, phase: &Phase, all_tasks: &[&Task]) -> bool {
-    // Must be pending
-    if task.status != TaskStatus::Pending {
-        return false;
-    }
-
-    // Skip expanded tasks (they have subtasks to do instead)
-    if task.is_expanded() {
-        return false;
-    }
-
-    // If subtask, parent must be expanded
-    if let Some(ref parent_id) = task.parent_id {
-        let parent_expanded = phase
-            .get_task(parent_id)
-            .map(|p| p.is_expanded())
-            .unwrap_or(false);
-        if !parent_expanded {
-            return false;
-        }
-    }
-
-    // All dependencies must be Done (not just "not pending")
-    // This uses the effective dependencies which includes inherited parent deps
-    task.has_dependencies_met_refs(all_tasks)
-}
+// Re-use shared readiness check from helpers
+use crate::commands::helpers::is_task_ready;
 
 /// Count tasks currently in progress
 pub fn count_in_progress(
@@ -229,14 +204,16 @@ pub fn spawn_agent_tmux(
     );
 
     // Spawn in tmux
-    let window_index = terminal::spawn_terminal_with_harness_and_model(
-        &ready_task.task.id,
-        &config.prompt,
+    let spawn_config = terminal::SpawnConfig {
+        task_id: &ready_task.task.id,
+        prompt: &config.prompt,
         working_dir,
         session_name,
-        config.harness,
-        config.model.as_deref(),
-    )?;
+        harness: config.harness,
+        model: config.model.as_deref(),
+        task_list_id: None,
+    };
+    let window_index = terminal::spawn_tmux_agent(&spawn_config)?;
 
     Ok(format!("{}:{}", session_name, window_index))
 }
