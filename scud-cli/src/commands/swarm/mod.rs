@@ -864,9 +864,9 @@ pub async fn run(config: SwarmConfig) -> Result<()> {
         session::save_session(project_root.as_ref(), &swarm_session)?;
 
         // Also save spawn-format session for TUI refresh
-        if monitor {
+        {
             let spawn_session = swarm_session.to_spawn_session();
-            spawn_monitor::save_session(project_root.as_ref(), &spawn_session)?;
+            monitor::save_session(project_root.as_ref(), &spawn_session)?;
         }
 
         wave_number += 1;

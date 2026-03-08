@@ -692,23 +692,6 @@ impl WaveExecutionResult {
     }
 }
 
-impl WaveState {
-    /// Update this wave state from an execution result
-    ///
-    /// This integrates the extension-based execution results into
-    /// the existing wave tracking structure.
-    pub fn apply_execution_result(&mut self, result: WaveExecutionResult) {
-        self.rounds.push(result.round_state);
-    }
-
-    /// Create a WaveState and immediately apply an execution result
-    pub fn from_execution_result(wave_number: usize, result: WaveExecutionResult) -> Self {
-        let mut state = Self::new(wave_number);
-        state.apply_execution_result(result);
-        state
-    }
-}
-
 /// Execute a wave of agents using extension-based spawning (no tmux)
 ///
 /// This function spawns agents as direct subprocesses and waits for them

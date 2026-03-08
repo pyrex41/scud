@@ -3,6 +3,8 @@
 use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
+
+#[cfg(feature = "zeromq")]
 use zeromq::{Socket, SocketRecv};
 
 use crate::commands::swarm::publisher::{discover_sessions, ZmqEvent};
@@ -76,33 +78,44 @@ pub async fn run(args: WatchArgs) -> Result<()> {
     println!("Connected to: {}", session.pub_endpoint);
     println!("---");
 
-    // Connect and subscribe to ZMQ
-    let mut socket = zeromq::SubSocket::new();
-    socket.connect(&session.pub_endpoint).await?;
-    socket.subscribe("").await?;
+    #[cfg(feature = "zeromq")]
+    {
+        // Connect and subscribe to ZMQ
+        let mut socket = zeromq::SubSocket::new();
+        socket.connect(&session.pub_endpoint).await?;
+        socket.subscribe("").await?;
 
-    // Receive and print events
-    loop {
-        match socket.recv().await {
-            Ok(msg) => {
-                // Get the first frame from the multi-part message
-                if let Some(frame) = msg.iter().next() {
-                    if let Ok(text) = std::str::from_utf8(frame) {
-                        if args.format == "json" {
-                            println!("{}", text);
-                        } else if let Ok(event) = serde_json::from_str::<ZmqEvent>(text) {
-                            print_event(&event);
+        // Receive and print events
+        loop {
+            match socket.recv().await {
+                Ok(msg) => {
+                    // Get the first frame from the multi-part message
+                    if let Some(frame) = msg.iter().next() {
+                        if let Ok(text) = std::str::from_utf8(frame) {
+                            if args.format == "json" {
+                                println!("{}", text);
+                            } else if let Ok(event) = serde_json::from_str::<ZmqEvent>(text) {
+                                print_event(&event);
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                eprintln!("Connection lost: {}", e);
-                break;
+                Err(e) => {
+                    eprintln!("Connection lost: {}", e);
+                    break;
+                }
             }
         }
     }
 
+    #[cfg(not(feature = "zeromq"))]
+    {
+        anyhow::bail!(
+            "Watch command requires the 'zeromq' feature. Rebuild with: cargo build --features zeromq"
+        );
+    }
+
+    #[allow(unreachable_code)]
     Ok(())
 }
 

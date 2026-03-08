@@ -69,8 +69,10 @@ pub fn run(
         working_dir: &working_dir,
         session_name: &session_name,
         harness,
-        model_override,
-    ) {
+        model: model_override.as_deref(),
+        task_list_id: None,
+    };
+    match terminal::spawn_tmux_agent(&spawn_config) {
         Ok(window_index) => {
             println!(
                 "{} Agent spawned: {}:{}",

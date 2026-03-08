@@ -13,3 +13,4 @@ tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 iced = { version = "0.14", features = ["tokio", "advanced"] }
 scud-task-core = { version = "1.63.0", path = "scud-core" }
+scud-core = { version = "1.63.0", path = "scud-core", package = "scud-task-core" }

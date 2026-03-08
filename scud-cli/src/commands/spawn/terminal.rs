@@ -453,7 +453,7 @@ pub fn spawn_ralph_agent(config: &SpawnConfig, completion_promise: &str) -> Resu
 
     // Build the harness-specific command for the ralph script
     // We need to inline this since the script is a bash heredoc
-    let harness_cmd = match harness {
+    let harness_cmd = match config.harness {
         Harness::Claude => format!(
             "'{binary_path}' \"$(cat '{prompt_file}')\" --dangerously-skip-permissions",
             binary_path = binary_path,

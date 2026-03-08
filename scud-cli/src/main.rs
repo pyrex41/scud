@@ -1494,15 +1494,15 @@ async fn main() -> Result<()> {
             idle_timeout_minutes,
             no_publish_events,
         } => {
-            commands::swarm::run(
-                cli.project,
-                tag.as_deref(),
+            commands::swarm::run(commands::swarm::SwarmConfig {
+                project_root: cli.project,
+                tag,
                 round_size,
                 all_tags,
-                &harness,
-                resolve_swarm_mode(swarm_mode, headless),
+                harness_arg: harness,
+                swarm_mode: resolve_swarm_mode(swarm_mode, headless),
                 dry_run,
-                session,
+                session_name: session,
                 no_research,
                 no_validate,
                 review,
@@ -1511,12 +1511,12 @@ async fn main() -> Result<()> {
                 max_repair_attempts,
                 no_worktree,
                 salvo_dir,
-                Some(stale_timeout),
+                stale_timeout_minutes: Some(stale_timeout),
                 idle_timeout_minutes,
                 no_publish_events,
-                None, // pause_flag
-                None, // stop_flag
-            )
+                pause_flag: None,
+                stop_flag: None,
+            })
             .await
         }
         Commands::Watch {
