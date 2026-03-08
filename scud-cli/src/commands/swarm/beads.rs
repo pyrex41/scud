@@ -193,14 +193,16 @@ pub fn spawn_agent_tmux(
     );
 
     // Spawn in tmux
-    let window_index = terminal::spawn_terminal_with_harness_and_model(
-        &ready_task.task.id,
-        &config.prompt,
+    let spawn_config = terminal::SpawnConfig {
+        task_id: &ready_task.task.id,
+        prompt: &config.prompt,
         working_dir,
         session_name,
-        config.harness,
-        config.model.as_deref(),
-    )?;
+        harness: config.harness,
+        model: config.model.as_deref(),
+        task_list_id: None,
+    };
+    let window_index = terminal::spawn_tmux_agent(&spawn_config)?;
 
     Ok(format!("{}:{}", session_name, window_index))
 }

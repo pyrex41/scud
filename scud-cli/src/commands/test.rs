@@ -248,14 +248,16 @@ echo "BLOCKED: <reason>" > {marker_path}
 
     let window_name = format!("repair-{}", attempt);
 
-    terminal::spawn_terminal_with_harness_and_model(
-        &window_name,
-        &prompt,
+    let spawn_config = terminal::SpawnConfig {
+        task_id: &window_name,
+        prompt: &prompt,
         working_dir,
         session_name,
         harness,
-        model.as_deref(),
-    )?;
+        model: model.as_deref(),
+        task_list_id: None,
+    };
+    terminal::spawn_tmux_agent(&spawn_config)?;
 
     let agent_info = if let Some(ref m) = model {
         format!("{}:{}", harness.name(), m)

@@ -63,11 +63,11 @@ pub fn run(
     println!();
 
     // Spawn the agent
-    match terminal::spawn_terminal_with_harness_and_model(
-        &run_id,
+    let spawn_config = terminal::SpawnConfig {
+        task_id: &run_id,
         prompt,
-        &working_dir,
-        &session_name,
+        working_dir: &working_dir,
+        session_name: &session_name,
         harness,
         model_override,
     ) {
