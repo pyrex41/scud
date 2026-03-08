@@ -59,6 +59,7 @@ use crate::commands::spawn::headless::{self, store::SessionStatus, StreamStore};
 use crate::commands::spawn::hooks;
 use crate::commands::spawn::monitor::{self, SpawnSession};
 use crate::commands::spawn::terminal::{self, Harness};
+use crate::commands::spawn::tui;
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
@@ -830,6 +831,12 @@ pub async fn run(
         // Save session state
         swarm_session.waves.push(wave_state);
         session::save_session(project_root.as_ref(), &swarm_session)?;
+
+        // Also save spawn-format session for TUI refresh
+        if monitor {
+            let spawn_session = swarm_session.to_spawn_session();
+            spawn_monitor::save_session(project_root.as_ref(), &spawn_session)?;
+        }
 
         wave_number += 1;
     }

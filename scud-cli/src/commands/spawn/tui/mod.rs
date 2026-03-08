@@ -6,6 +6,13 @@
 //! - Bottom: Live terminal output from selected agent
 //!
 //! Tab switches focus between panels. Space toggles task selection for spawning.
+//!
+//! ## Socket Feed
+//!
+//! When started with `--feed <endpoint>`, publishes monitor state via ZMQ PUB socket.
+//! External consumers can subscribe to receive real-time updates.
+//!
+//! Example: `scud monitor --session my-session --feed tcp://*:5555`
 
 pub mod agents;
 pub mod app;
@@ -17,6 +24,7 @@ pub mod ui;
 pub mod waves;
 
 use anyhow::Result;
+use colored::Colorize as ColoredColorize;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
@@ -32,6 +40,8 @@ use crate::commands::spawn::headless::StreamStore;
 
 use self::app::{App, FocusedPanel, ViewMode};
 use self::ui::render;
+#[cfg(feature = "socket-feed")]
+use super::feed::{self, FeedConfig};
 
 /// Result of the TUI app exit
 enum AppExit {
@@ -70,6 +80,9 @@ pub fn run(
 
     // Main loop
     let result = run_app(&mut terminal, &mut app);
+
+    // Shutdown feed
+    app.shutdown_feed();
 
     // Restore terminal
     disable_raw_mode()?;

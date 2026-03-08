@@ -54,6 +54,9 @@ async-trait = "0.1"  # Async trait support
 ratatui = "0.29"      # Terminal UI framework
 crossterm = "0.28"    # Cross-platform terminal manipulation
 
+# Socket feed (ZeroMQ) - optional
+zeromq = { version = "0.4", optional = true }
+
 [features]
 default = []
 real-llm = []        # Enable tests with real LLM API calls

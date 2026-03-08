@@ -13,6 +13,10 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::backpressure::ValidationResult;
+use crate::commands::spawn::monitor::{
+    AgentState, AgentStatus, AgentView, MonitorableSession, SpawnSession, StatusCounts,
+    WaveTaskState, WaveTaskView, WaveView,
+};
 
 /// Get the current git commit SHA
 pub fn get_current_commit() -> Option<String> {
@@ -285,6 +289,165 @@ impl SwarmSession {
         self.waves
             .last()
             .and_then(|w| w.summary.as_ref().map(|s| s.to_text()))
+    }
+
+    /// Convert to SpawnSession format for TUI compatibility
+    pub fn to_spawn_session(&self) -> SpawnSession {
+        let mut agents = Vec::new();
+
+        for wave in &self.waves {
+            for round in &wave.rounds {
+                for (idx, task_id) in round.task_ids.iter().enumerate() {
+                    let tag = round.tags.get(idx).cloned().unwrap_or_default();
+                    let failed = round.failures.contains(task_id);
+
+                    // Determine status based on wave/task state
+                    let status = if failed {
+                        AgentStatus::Failed
+                    } else if wave
+                        .validation
+                        .as_ref()
+                        .map(|v| v.all_passed)
+                        .unwrap_or(false)
+                    {
+                        AgentStatus::Completed
+                    } else {
+                        AgentStatus::Running
+                    };
+
+                    agents.push(AgentState {
+                        task_id: task_id.clone(),
+                        task_title: task_id.clone(), // Will be enriched by TUI
+                        window_name: format!("task-{}", task_id),
+                        status,
+                        started_at: wave.started_at.clone(),
+                        tag,
+                    });
+                }
+            }
+        }
+
+        SpawnSession {
+            session_name: self.session_name.clone(),
+            tag: self.tag.clone(),
+            terminal: self.terminal.clone(),
+            created_at: self.started_at.clone(),
+            working_dir: self.working_dir.clone(),
+            agents,
+        }
+    }
+}
+
+impl MonitorableSession for SwarmSession {
+    fn session_name(&self) -> &str {
+        &self.session_name
+    }
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    fn working_dir(&self) -> &str {
+        &self.working_dir
+    }
+
+    fn agents(&self) -> Vec<AgentView> {
+        let mut agents = Vec::new();
+
+        for wave in &self.waves {
+            for round in &wave.rounds {
+                for (idx, task_id) in round.task_ids.iter().enumerate() {
+                    let tag = round.tags.get(idx).cloned().unwrap_or_default();
+                    let failed = round.failures.contains(task_id);
+
+                    // Determine status based on wave/task state
+                    let status = if failed {
+                        AgentStatus::Failed
+                    } else if wave
+                        .validation
+                        .as_ref()
+                        .map(|v| v.all_passed)
+                        .unwrap_or(false)
+                    {
+                        AgentStatus::Completed
+                    } else {
+                        AgentStatus::Running
+                    };
+
+                    agents.push(AgentView {
+                        task_id: task_id.clone(),
+                        task_title: task_id.clone(), // Will be enriched by TUI
+                        window_name: format!("task-{}", task_id),
+                        status,
+                        tag,
+                    });
+                }
+            }
+        }
+
+        agents
+    }
+
+    fn waves(&self) -> Vec<WaveView> {
+        self.waves
+            .iter()
+            .map(|w| {
+                let tasks: Vec<WaveTaskView> = w
+                    .rounds
+                    .iter()
+                    .flat_map(|r| {
+                        r.task_ids.iter().map(|id| {
+                            let failed = r.failures.contains(id);
+                            let done = w
+                                .validation
+                                .as_ref()
+                                .map(|v| v.all_passed)
+                                .unwrap_or(false);
+
+                            WaveTaskView {
+                                task_id: id.clone(),
+                                task_title: id.clone(),
+                                state: if failed {
+                                    WaveTaskState::Blocked
+                                } else if done {
+                                    WaveTaskState::Done
+                                } else {
+                                    WaveTaskState::Running
+                                },
+                                complexity: None,
+                            }
+                        })
+                    })
+                    .collect();
+
+                WaveView {
+                    wave_number: w.wave_number,
+                    tasks,
+                }
+            })
+            .collect()
+    }
+
+    fn status_counts(&self) -> StatusCounts {
+        let agents = self.agents();
+        StatusCounts {
+            starting: agents
+                .iter()
+                .filter(|a| matches!(a.status, AgentStatus::Starting))
+                .count(),
+            running: agents
+                .iter()
+                .filter(|a| matches!(a.status, AgentStatus::Running))
+                .count(),
+            completed: agents
+                .iter()
+                .filter(|a| matches!(a.status, AgentStatus::Completed))
+                .count(),
+            failed: agents
+                .iter()
+                .filter(|a| matches!(a.status, AgentStatus::Failed))
+                .count(),
+        }
     }
 }
 
