@@ -430,6 +430,37 @@ fn print_results(results: &DiagnosticResults, fix_attempted: bool) {
     }
 }
 
+/// Scan and validate extension installations
+pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
+    println!(
+        "{}",
+        "SCUD Doctor - Extension Scanner".blue().bold()
+    );
+    println!("{}", "=".repeat(50).blue());
+    println!();
+
+    let _storage = Storage::new(project_root);
+
+    // Check for extensions (stub - extensions not yet implemented)
+    println!(
+        "{} Extension runner: {}",
+        "•".dimmed(),
+        "not available (stub)".yellow()
+    );
+
+    println!();
+    println!(
+        "{}",
+        "Extension support is planned but not yet implemented.".dimmed()
+    );
+    println!(
+        "{}",
+        "Use --swarm-mode tmux for agent execution.".dimmed()
+    );
+
+    Ok(())
+}
+
 fn print_recovery_instructions() {
     println!();
     println!("{}", "=".repeat(60).red());

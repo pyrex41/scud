@@ -182,6 +182,18 @@ impl WaveState {
         self.completed_at = Some(chrono::Utc::now().to_rfc3339());
     }
 
+    /// Create a WaveState from an execution result
+    pub fn from_execution_result(wave_number: usize, result: WaveExecutionResult) -> Self {
+        let mut state = Self::new(wave_number);
+        state.rounds.push(result.round_state);
+        state
+    }
+
+    /// Apply an execution result to this wave
+    pub fn apply_execution_result(&mut self, result: WaveExecutionResult) {
+        self.rounds.push(result.round_state);
+    }
+
     /// Get all task IDs from all rounds
     pub fn all_task_ids(&self) -> Vec<String> {
         self.rounds
