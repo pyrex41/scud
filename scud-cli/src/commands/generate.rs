@@ -287,7 +287,11 @@ pub async fn run(
                 "→".cyan()
             );
         } else {
-            // Run check-deps with PRD validation and fix mode enabled
+            println!(
+                "  {} Validating tasks against PRD and auto-fixing coverage gaps...",
+                "→".cyan()
+            );
+            // Run check-deps with PRD validation and auto-fix enabled
             // This validates against the PRD and auto-fixes issues including agent assignments
             let check_result = check_deps::run(
                 project_root.clone(),
@@ -300,17 +304,25 @@ pub async fn run(
             .await;
 
             // Log but don't fail the pipeline on dep issues
-            if let Err(e) = check_result {
-                println!(
-                    "  {} Dependency check encountered issues: {}",
-                    "⚠".yellow(),
-                    e
-                );
-                println!(
-                    "  {} Run '{}' to see details",
-                    "ℹ".blue(),
-                    "scud check-deps".green()
-                );
+            match check_result {
+                Ok(_) => {
+                    println!(
+                        "  {} PRD validation passed",
+                        "✓".green()
+                    );
+                }
+                Err(e) => {
+                    println!(
+                        "  {} Dependency check encountered issues: {}",
+                        "⚠".yellow(),
+                        e
+                    );
+                    println!(
+                        "  {} Run '{}' to see details",
+                        "ℹ".blue(),
+                        "scud check-deps".green()
+                    );
+                }
             }
         }
 
