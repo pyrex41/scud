@@ -73,6 +73,7 @@ impl HeadlessRunner for DirectApiRunner {
                     max_tokens,
                     tx_clone,
                     &provider,
+                    None,
                 )
                 .await
                 {

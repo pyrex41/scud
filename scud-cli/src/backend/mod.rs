@@ -53,6 +53,8 @@ pub struct AgentRequest {
     pub timeout: Option<Duration>,
     /// Reasoning effort level (e.g., "high", "medium", "low").
     pub reasoning_effort: Option<String>,
+    /// If set, only these tools are available to the agent.
+    pub allowed_tools: Option<Vec<String>>,
 }
 
 impl Default for AgentRequest {
@@ -66,6 +68,7 @@ impl Default for AgentRequest {
             max_turns: None,
             timeout: None,
             reasoning_effort: None,
+            allowed_tools: None,
         }
     }
 }

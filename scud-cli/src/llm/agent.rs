@@ -29,6 +29,7 @@ pub async fn run_agent_loop(
     max_tokens: u32,
     event_tx: mpsc::Sender<StreamEvent>,
     provider: &AgentProvider,
+    allowed_tools: Option<&[String]>,
 ) -> Result<()> {
     let credential = provider.resolve_credential()?;
     let client = Client::new();
@@ -36,7 +37,10 @@ pub async fn run_agent_loop(
         .normalize_model(model.unwrap_or(provider.default_model()))
         .to_string();
 
-    let tool_defs_raw = tools::tool_definitions();
+    let mut tool_defs_raw = tools::tool_definitions();
+    if let Some(allowed) = allowed_tools {
+        tool_defs_raw.retain(|td| allowed.contains(&td.name));
+    }
     let tool_defs = provider.format_tool_definitions(&tool_defs_raw);
 
     let mut messages = vec![AgentMessage {

@@ -934,6 +934,45 @@ enum Commands {
         command: AttractorCommands,
     },
 
+    /// Multi-agent Heavy reasoning mode (16 specialized agents)
+    #[cfg(feature = "direct-api")]
+    Heavy {
+        /// The query to reason about
+        query: String,
+
+        /// LLM provider (xai, anthropic, openai, openrouter)
+        #[arg(long)]
+        provider: Option<String>,
+
+        /// Model to use
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Stronger model for Captain synthesis (defaults to --model)
+        #[arg(long)]
+        captain_model: Option<String>,
+
+        /// Max agents to activate (default: let Captain decide)
+        #[arg(long)]
+        agents: Option<usize>,
+
+        /// Number of debate rounds (default: 0)
+        #[arg(long, default_value_t = 0)]
+        debate_rounds: usize,
+
+        /// Show intermediate agent outputs and tool calls
+        #[arg(long)]
+        verbose: bool,
+
+        /// Output structured JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Read query from file instead of argument
+        #[arg(long)]
+        query_file: Option<PathBuf>,
+    },
+
     /// Execute an agent loop using direct API calls (Anthropic, OpenAI, xAI, etc.)
     #[cfg(feature = "direct-api")]
     AgentExec {
@@ -1640,6 +1679,24 @@ async fn main() -> Result<()> {
             }
         },
         Commands::SyncFromClaude => commands::sync_from_claude::run(cli.project),
+        #[cfg(feature = "direct-api")]
+        Commands::Heavy {
+            query,
+            provider,
+            model,
+            captain_model,
+            agents,
+            debate_rounds,
+            verbose,
+            json,
+            query_file,
+        } => {
+            commands::heavy::run(
+                query, provider, model, captain_model, agents, debate_rounds, verbose, json,
+                query_file,
+            )
+            .await
+        }
         #[cfg(feature = "direct-api")]
         Commands::AgentExec {
             prompt,
