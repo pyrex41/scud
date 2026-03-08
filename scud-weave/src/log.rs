@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-use super::event::Event;
+use crate::event::Event;
 
 /// An event with a timestamp, as stored in events.jsonl.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +88,7 @@ impl Default for EventLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::weave::event::EventKind;
+    use crate::event::EventKind;
     use std::collections::HashMap;
     use tempfile::TempDir;
 

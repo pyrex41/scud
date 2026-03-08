@@ -7,6 +7,7 @@ pub mod fan_in;
 pub mod human;
 pub mod manager;
 pub mod parallel;
+pub mod rho;
 pub mod start;
 pub mod tool;
 
@@ -56,6 +57,7 @@ impl HandlerRegistry {
             "stack.manager_loop".into(),
             Box::new(manager::ManagerHandler),
         );
+        handlers.insert("rho".into(), Box::new(rho::RhoHandler));
 
         Self {
             handlers,

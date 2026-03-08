@@ -14,6 +14,7 @@ anyhow = "1.0"
 fs2 = "0.4"
 zmq = "0.10"
 globset = "0.4"
+scud-weave = { path = "../scud-weave" }
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,5 +1,5 @@
 [workspace]
-members = ["scud-cli", "scud-core", "descartes-gui"]
+members = ["scud-cli", "scud-core", "scud-weave", "descartes-gui"]
 resolver = "2"
 
 [workspace.package]

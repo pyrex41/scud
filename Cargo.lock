@@ -4170,10 +4170,23 @@ dependencies = [
  "chrono",
  "fs2",
  "globset",
+ "scud-weave",
  "serde",
  "serde_json",
  "tempfile",
  "zmq",
+]
+
+[[package]]
+name = "scud-weave"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "globset",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -4,8 +4,8 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::event::{EventKind, EventPattern};
-use super::matcher::GlobPattern;
+use crate::event::{EventKind, EventPattern};
+use crate::matcher::GlobPattern;
 
 /// A behavioral thread — a named, prioritized set of coordination rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]

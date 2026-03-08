@@ -14,6 +14,7 @@ pub mod direct_api;
 pub use direct_api::DirectApiRunner;
 pub use events::{StreamEvent, StreamEventKind};
 pub use runner::{
-    create_runner, AnyRunner, ClaudeHeadless, HeadlessRunner, OpenCodeHeadless, SessionHandle,
+    create_runner, AnyRunner, ClaudeHeadless, HeadlessRunner, OpenCodeHeadless, RhoHeadless,
+    SessionHandle,
 };
 pub use store::{SessionStatus, SessionStream, StreamStore};

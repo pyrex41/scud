@@ -225,6 +225,10 @@ impl PipelineRunner {
     }
 
     /// Execute a single node using the handler registry.
+    ///
+    /// If the node has a `weave_event` attribute, it is checked before execution.
+    /// Currently this logs the event and records it in context; full coordinator
+    /// integration is deferred (see TODO below).
     async fn execute_node(
         &self,
         node: &PipelineNode,
@@ -232,6 +236,42 @@ impl PipelineRunner {
         graph: &PipelineGraph,
         run_dir: &RunDirectory,
     ) -> Result<Outcome> {
+        // Weave gating: check for weave_event attribute before executing
+        if let Some(weave_event_attr) = node.extra_attrs.get("weave_event") {
+            let weave_event_json = weave_event_attr.as_str();
+            tracing::info!(
+                node_id = %node.id,
+                weave_event = %weave_event_json,
+                "Weave event gate detected on node"
+            );
+
+            // Parse the weave event to validate it is well-formed JSON
+            match serde_json::from_str::<serde_json::Value>(&weave_event_json) {
+                Ok(event) => {
+                    // Store the weave event in context for downstream inspection
+                    context
+                        .set(
+                            format!("{}.weave_event", node.id),
+                            event,
+                        )
+                        .await;
+
+                    // TODO: Wire up full weave coordinator integration:
+                    //   let decision = coordinator.evaluate(&event);
+                    //   if !decision.is_proceed() {
+                    //       return Ok(Outcome::failure("Blocked by weave gate"));
+                    //   }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        node_id = %node.id,
+                        error = %e,
+                        "Invalid weave_event JSON on node, skipping gate check"
+                    );
+                }
+            }
+        }
+
         let handler = self.handler_registry.get(&node.handler_type);
         handler
             .execute(node, context, graph, run_dir)

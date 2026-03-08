@@ -719,23 +719,28 @@ impl HeadlessRunner for CursorHeadless {
 
 /// Rho CLI headless runner
 ///
-/// Runs rho-cli with `--prompt-file` and parses stdout (text output)
-/// and stderr (tool events in `[tool:name]` format) into StreamEvents.
+/// Runs rho-cli with `--output-format stream-json` and parses the
+/// newline-delimited JSON events into unified `StreamEvent` types.
 pub struct RhoHeadless {
     binary_path: String,
+    model: Option<String>,
 }
 
 impl RhoHeadless {
     /// Create a new Rho headless runner
-    pub fn new() -> Result<Self> {
+    pub fn new(model: Option<String>) -> Result<Self> {
         let binary_path = find_harness_binary(Harness::Rho)?.to_string();
-        Ok(Self { binary_path })
+        Ok(Self {
+            binary_path,
+            model,
+        })
     }
 
     #[cfg(test)]
     pub fn with_binary_path(path: impl Into<String>) -> Self {
         Self {
             binary_path: path.into(),
+            model: None,
         }
     }
 
@@ -756,11 +761,17 @@ impl HeadlessRunner for RhoHeadless {
         Box::pin(async move {
             let mut cmd = Command::new(&self.binary_path);
 
-            if let Some(m) = model {
+            // Use stream-json output for structured event parsing
+            cmd.arg("--output-format").arg("stream-json");
+            cmd.arg("-p").arg(prompt);
+            cmd.arg("-C").arg(working_dir);
+
+            // Model: prefer the per-call override, fall back to constructor model
+            let effective_model = model.or(self.model.as_deref());
+            if let Some(m) = effective_model {
                 cmd.arg("--model").arg(m);
             }
 
-            cmd.arg(prompt);
             cmd.current_dir(working_dir);
             cmd.env("SCUD_TASK_ID", task_id);
             cmd.stdout(Stdio::piped());
@@ -770,102 +781,26 @@ impl HeadlessRunner for RhoHeadless {
             let (tx, rx) = mpsc::channel(1000);
 
             let stdout = child.stdout.take().expect("stdout was piped");
-            let stderr = child.stderr.take().expect("stderr was piped");
-            let task_id_stdout = task_id.to_string();
-            let task_id_stderr = task_id.to_string();
+            let task_id_for_events = task_id.to_string();
 
-            // Parse stdout as text output
-            let tx_stdout = tx.clone();
+            // Parse stdout as newline-delimited JSON (stream-json format)
             tokio::spawn(async move {
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
 
                 while let Ok(Some(line)) = lines.next_line().await {
-                    let trimmed = line.trim();
-                    if trimmed == "rho-cli placeholder - CLI structure ready"
-                        || trimmed.contains("rho-cli-stub is a legacy placeholder")
-                    {
-                        let _ = tx_stdout
-                            .send(StreamEvent::error(
-                                "Detected placeholder rho-cli binary. Install/use the functional rho-agent CLI.".to_string(),
-                            ))
-                            .await;
-                        return;
-                    }
-                    if !line.is_empty() {
-                        let _ = tx_stdout
-                            .send(StreamEvent::text_delta(format!("{}\n", line)))
-                            .await;
+                    if let Some(event) = parse_rho_event(&line) {
+                        trace!(task_id = %task_id_for_events, "rho event: {:?}", event.kind);
+                        if tx.send(event).await.is_err() {
+                            break;
+                        }
+                    } else if !line.trim().is_empty() {
+                        debug!(task_id = %task_id_for_events, "rho: unparsed line: {}", if line.len() > 200 { &line[..200] } else { &line });
                     }
                 }
-                trace!(task_id = %task_id_stdout, "rho stdout stream ended");
-            });
 
-            // Parse stderr for tool events: [tool:name] args / [tool:name] done / [tool:name] ERROR: ...
-            let tx_stderr = tx;
-            tokio::spawn(async move {
-                let reader = BufReader::new(stderr);
-                let mut lines = reader.lines();
-                let mut tool_counter: u64 = 0;
-                let mut session_announced = false;
-
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let trimmed = line.trim();
-
-                    if let Some(rest) = trimmed.strip_prefix("[session:") {
-                        if !session_announced {
-                            if let Some(end_idx) = rest.find(']') {
-                                let session_id = rest[..end_idx].trim();
-                                if !session_id.is_empty() {
-                                    let _ = tx_stderr
-                                        .send(StreamEvent::new(StreamEventKind::SessionAssigned {
-                                            session_id: session_id.to_string(),
-                                        }))
-                                        .await;
-                                    session_announced = true;
-                                }
-                            }
-                        }
-                    } else if let Some(rest) = trimmed.strip_prefix("[tool:") {
-                        if let Some(bracket_end) = rest.find(']') {
-                            let tool_name = &rest[..bracket_end];
-                            let after = rest[bracket_end + 1..].trim();
-
-                            if after == "done" {
-                                let _ = tx_stderr
-                                    .send(StreamEvent::new(StreamEventKind::ToolResult {
-                                        tool_name: tool_name.to_string(),
-                                        tool_id: format!("rho-tool-{}", tool_counter),
-                                        success: true,
-                                    }))
-                                    .await;
-                            } else if let Some(err_msg) = after.strip_prefix("ERROR:") {
-                                let _ = tx_stderr
-                                    .send(StreamEvent::new(StreamEventKind::ToolResult {
-                                        tool_name: tool_name.to_string(),
-                                        tool_id: format!("rho-tool-{}", tool_counter),
-                                        success: false,
-                                    }))
-                                    .await;
-                                debug!(task_id = %task_id_stderr, "rho tool error: {}: {}", tool_name, err_msg.trim());
-                            } else {
-                                // Tool start with args
-                                tool_counter += 1;
-                                let _ = tx_stderr
-                                    .send(StreamEvent::tool_start(
-                                        tool_name,
-                                        &format!("rho-tool-{}", tool_counter),
-                                        after,
-                                    ))
-                                    .await;
-                            }
-                        }
-                    } else if let Some(rest) = trimmed.strip_prefix("[compact]") {
-                        debug!(task_id = %task_id_stderr, "rho compaction: {}", rest.trim());
-                    } else if !trimmed.is_empty() {
-                        trace!(task_id = %task_id_stderr, "rho stderr: {}", trimmed);
-                    }
-                }
+                // Send completion event (in case rho exited without a "complete" event)
+                let _ = tx.send(StreamEvent::complete(true)).await;
             });
 
             Ok(SessionHandle::from_child(task_id.to_string(), child, rx))
@@ -882,6 +817,87 @@ impl HeadlessRunner for RhoHeadless {
 
     fn harness(&self) -> Harness {
         Harness::Rho
+    }
+}
+
+/// Parse a line of rho stream-json output into a StreamEvent
+///
+/// Rho CLI (`rho-cli --output-format stream-json`) outputs newline-delimited
+/// JSON events with the following structure:
+///
+/// - `{"type":"session","session_id":"<uuid>"}` - Session assignment
+/// - `{"type":"text_delta","text":"..."}` - Incremental text output
+/// - `{"type":"tool_start","tool_name":"read","tool_id":"tc_1","input_summary":"..."}` - Tool start
+/// - `{"type":"tool_result","tool_name":"read","tool_id":"tc_1","success":true}` - Tool result
+/// - `{"type":"complete","success":true,"session_id":"<uuid>"}` - Completion
+/// - `{"type":"error","message":"..."}` - Error
+fn parse_rho_event(line: &str) -> Option<StreamEvent> {
+    let json: serde_json::Value = serde_json::from_str(line).ok()?;
+
+    let event_type = json.get("type")?.as_str()?;
+
+    match event_type {
+        "session" => {
+            let session_id = json.get("session_id").and_then(|v| v.as_str())?;
+            Some(StreamEvent::new(StreamEventKind::SessionAssigned {
+                session_id: session_id.to_string(),
+            }))
+        }
+        "text_delta" => {
+            let text = json.get("text").and_then(|v| v.as_str())?;
+            Some(StreamEvent::text_delta(text))
+        }
+        "tool_start" => {
+            let tool_name = json
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let tool_id = json
+                .get("tool_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let input_summary = json
+                .get("input_summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            Some(StreamEvent::tool_start(tool_name, tool_id, input_summary))
+        }
+        "tool_result" => {
+            let tool_name = json
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let tool_id = json
+                .get("tool_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let success = json
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            Some(StreamEvent::new(StreamEventKind::ToolResult {
+                tool_name,
+                tool_id,
+                success,
+            }))
+        }
+        "complete" => {
+            let success = json
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            Some(StreamEvent::complete(success))
+        }
+        "error" => {
+            let message = json
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
+            Some(StreamEvent::error(message))
+        }
+        _ => None,
     }
 }
 
@@ -912,7 +928,7 @@ impl AnyRunner {
             Harness::Claude => Ok(AnyRunner::Claude(ClaudeHeadless::new()?)),
             Harness::OpenCode => Ok(AnyRunner::OpenCode(OpenCodeHeadless::new()?)),
             Harness::Cursor => Ok(AnyRunner::Cursor(CursorHeadless::new()?)),
-            Harness::Rho => Ok(AnyRunner::Rho(RhoHeadless::new()?)),
+            Harness::Rho => Ok(AnyRunner::Rho(RhoHeadless::new(None)?)),
             #[cfg(feature = "direct-api")]
             Harness::DirectApi => Ok(AnyRunner::DirectApi(
                 super::direct_api::DirectApiRunner::new(),
@@ -2097,6 +2113,153 @@ mod tests {
     #[test]
     fn test_parse_cursor_invalid_json() {
         let event = parse_cursor_event("not json");
+        assert!(event.is_none());
+    }
+
+    // =======================
+    // Rho event parsing
+    // =======================
+
+    #[test]
+    fn test_parse_rho_session() {
+        let line = r#"{"type":"session","session_id":"abc-123-def"}"#;
+        let event = parse_rho_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::SessionAssigned { ref session_id },
+                ..
+            }) => {
+                assert_eq!(session_id, "abc-123-def");
+            }
+            _ => panic!("Expected SessionAssigned"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rho_text_delta() {
+        let line = r#"{"type":"text_delta","text":"Hello world"}"#;
+        let event = parse_rho_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::TextDelta { ref text },
+                ..
+            }) if text == "Hello world"
+        ));
+    }
+
+    #[test]
+    fn test_parse_rho_tool_start() {
+        let line =
+            r#"{"type":"tool_start","tool_name":"read","tool_id":"tc_1","input_summary":"src/main.rs"}"#;
+        let event = parse_rho_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolStart {
+                        ref tool_name,
+                        ref tool_id,
+                        ref input_summary,
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "read");
+                assert_eq!(tool_id, "tc_1");
+                assert_eq!(input_summary, "src/main.rs");
+            }
+            _ => panic!("Expected ToolStart"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rho_tool_result() {
+        let line = r#"{"type":"tool_result","tool_name":"read","tool_id":"tc_1","success":true}"#;
+        let event = parse_rho_event(line);
+        match event {
+            Some(StreamEvent {
+                kind:
+                    StreamEventKind::ToolResult {
+                        ref tool_name,
+                        ref tool_id,
+                        success,
+                    },
+                ..
+            }) => {
+                assert_eq!(tool_name, "read");
+                assert_eq!(tool_id, "tc_1");
+                assert!(success);
+            }
+            _ => panic!("Expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rho_tool_result_failure() {
+        let line =
+            r#"{"type":"tool_result","tool_name":"bash","tool_id":"tc_2","success":false}"#;
+        let event = parse_rho_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::ToolResult { success, .. },
+                ..
+            }) => {
+                assert!(!success);
+            }
+            _ => panic!("Expected ToolResult"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rho_complete() {
+        let line = r#"{"type":"complete","success":true,"session_id":"abc-123"}"#;
+        let event = parse_rho_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: true },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_rho_complete_failure() {
+        let line = r#"{"type":"complete","success":false}"#;
+        let event = parse_rho_event(line);
+        assert!(matches!(
+            event,
+            Some(StreamEvent {
+                kind: StreamEventKind::Complete { success: false },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_rho_error() {
+        let line = r#"{"type":"error","message":"Rate limit exceeded"}"#;
+        let event = parse_rho_event(line);
+        match event {
+            Some(StreamEvent {
+                kind: StreamEventKind::Error { ref message },
+                ..
+            }) => {
+                assert_eq!(message, "Rate limit exceeded");
+            }
+            _ => panic!("Expected Error event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rho_unknown_type() {
+        let line = r#"{"type":"unknown_event","data":"something"}"#;
+        let event = parse_rho_event(line);
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_rho_invalid_json() {
+        let event = parse_rho_event("not json at all");
         assert!(event.is_none());
     }
 }

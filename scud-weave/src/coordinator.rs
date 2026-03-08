@@ -6,9 +6,9 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use super::bthread::{BThread, BThreadRule, PartitionDef, PartitionStrategy, Role};
-use super::event::Event;
-use super::log::TimestampedEvent;
+use crate::bthread::{BThread, BThreadRule, PartitionDef, PartitionStrategy, Role};
+use crate::event::Event;
+use crate::log::TimestampedEvent;
 
 /// An active mutex lock held by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -523,8 +523,8 @@ fn compute_partition_slot(target: &str, strategy: PartitionStrategy, agent_count
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::weave::event::{EventKind, EventPattern};
-    use crate::weave::matcher::GlobPattern;
+    use crate::event::{EventKind, EventPattern};
+    use crate::matcher::GlobPattern;
 
     fn make_event(kind: EventKind, agent: &str, target: &str) -> Event {
         Event {

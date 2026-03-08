@@ -92,7 +92,7 @@ pub mod publisher;
 ///
 /// Implements behavioral programming coordination:
 /// request/wait/block at synchronization points.
-pub mod weave;
+pub use scud_weave as weave;
 
 // Re-export commonly used types at the crate root for ergonomic API
 pub use models::{IdFormat, Phase, PhaseStats, Priority, Task, TaskStatus};

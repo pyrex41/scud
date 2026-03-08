@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::matcher::GlobPattern;
+use crate::matcher::GlobPattern;
 
 /// A coordination event representing an action by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_event_pattern_target_glob() {
-        use super::super::matcher::GlobPattern;
+        use crate::matcher::GlobPattern;
         let pattern = EventPattern {
             kind: Some(EventKind::FileWrite),
             agent: None,
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_event_pattern_target_not_exclusion() {
-        use super::super::matcher::GlobPattern;
+        use crate::matcher::GlobPattern;
         let pattern = EventPattern {
             kind: Some(EventKind::FileWrite),
             agent: None,
