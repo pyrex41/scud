@@ -306,7 +306,7 @@ pub struct TagExplorerState {
 }
 
 /// State for LLM configuration in settings
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LlmConfigState {
     pub provider: String,
     pub model: String,
@@ -320,22 +320,6 @@ pub struct LlmConfigState {
     pub status: Option<String>,
 }
 
-impl Default for LlmConfigState {
-    fn default() -> Self {
-        Self {
-            provider: String::new(),
-            model: String::new(),
-            smart_provider: String::new(),
-            smart_model: String::new(),
-            fast_provider: String::new(),
-            fast_model: String::new(),
-            max_tokens_input: String::new(),
-            loaded: false,
-            dirty: false,
-            status: None,
-        }
-    }
-}
 
 /// State for backpressure configuration in settings
 #[derive(Debug, Clone)]

@@ -69,3 +69,6 @@ pub mod agent_exec;
 // Heavy multi-agent reasoning mode
 #[cfg(feature = "direct-api")]
 pub mod heavy;
+
+// Weave b-thread coordination
+pub mod weave;

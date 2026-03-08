@@ -983,6 +983,13 @@ enum Commands {
         #[arg(long)]
         provider: Option<String>,
     },
+
+    /// B-thread coordination (scud-weave)
+    Weave {
+        #[command(subcommand)]
+        command: commands::weave::WeaveCommands,
+    },
+
     // /// Start interactive REPL for task management - temporarily disabled
     // Repl,
 }
@@ -1752,6 +1759,72 @@ async fn main() -> Result<()> {
             model,
             provider,
         } => commands::agent_exec::run(prompt, prompt_file, model, provider).await,
+        Commands::Weave { command } => {
+            use commands::weave::WeaveCommands;
+            match command {
+                WeaveCommands::Check { event_json } => {
+                    commands::weave::check::run(cli.project, &event_json)
+                }
+                WeaveCommands::Record { event_json } => {
+                    commands::weave::record::run(cli.project, &event_json)
+                }
+                WeaveCommands::Release { lock_key, agent } => {
+                    commands::weave::release::run_release(
+                        cli.project,
+                        &lock_key,
+                        agent.as_deref(),
+                    )
+                }
+                WeaveCommands::ReleaseAll { agent, task } => {
+                    commands::weave::release::run_release_all(
+                        cli.project,
+                        &agent,
+                        task.as_deref(),
+                    )
+                }
+                WeaveCommands::Init => commands::weave::manage::run_init(cli.project),
+                WeaveCommands::Add {
+                    id,
+                    name,
+                    rule_type,
+                    rule_spec,
+                } => commands::weave::manage::run_add(
+                    cli.project,
+                    &id,
+                    &name,
+                    &rule_type,
+                    &rule_spec,
+                ),
+                WeaveCommands::Enable { id } => {
+                    commands::weave::manage::run_enable(cli.project, &id)
+                }
+                WeaveCommands::Disable { id } => {
+                    commands::weave::manage::run_disable(cli.project, &id)
+                }
+                WeaveCommands::Remove { id } => {
+                    commands::weave::manage::run_remove(cli.project, &id)
+                }
+                WeaveCommands::List => commands::weave::manage::run_list(cli.project),
+                WeaveCommands::Status => commands::weave::status::run(cli.project),
+                WeaveCommands::Log { tail } => commands::weave::log::run(cli.project, tail),
+                WeaveCommands::Explain { event_json } => {
+                    commands::weave::explain::run(cli.project, &event_json)
+                }
+                WeaveCommands::Summary => commands::weave::summary::run(cli.project),
+                WeaveCommands::Gate { tool, input } => {
+                    commands::weave::gate::run(cli.project, &tool, &input)
+                }
+                WeaveCommands::Template { command } => {
+                    use commands::weave::TemplateCommands;
+                    match command {
+                        TemplateCommands::List => commands::weave::template::run_list(),
+                        TemplateCommands::Apply { name } => {
+                            commands::weave::template::run_apply(cli.project, &name)
+                        }
+                    }
+                }
+            }
+        }
         // Commands::Repl => commands::repl::run(), // temporarily disabled
     }
 }

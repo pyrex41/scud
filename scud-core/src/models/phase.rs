@@ -1,5 +1,9 @@
 use super::task::{Task, TaskStatus};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+use crate::weave::bthread::{BThread, NodeAnnotation, PartitionDef, Role, WeaveEdge};
+use crate::weave::coordinator::ActiveLock;
 
 /// ID format for task generation
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -37,6 +41,24 @@ pub struct Phase {
     /// ID format used for this phase (default: Sequential for backwards compatibility)
     #[serde(default)]
     pub id_format: IdFormat,
+    /// B-thread definitions from @weave section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weave_threads: Vec<BThread>,
+    /// Agent role definitions from @roles section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<Role>,
+    /// Partition definitions from @partitions section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub partitions: Vec<PartitionDef>,
+    /// Active mutex locks from @locks section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locks: Vec<ActiveLock>,
+    /// Behavioral edges (~~, >>, !=) from @edges section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weave_edges: Vec<WeaveEdge>,
+    /// Node annotations (role=, scope=) from extended @nodes.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub node_annotations: HashMap<String, NodeAnnotation>,
 }
 
 impl Phase {
@@ -45,6 +67,12 @@ impl Phase {
             name,
             tasks: Vec::new(),
             id_format: IdFormat::default(),
+            weave_threads: Vec::new(),
+            roles: Vec::new(),
+            partitions: Vec::new(),
+            locks: Vec::new(),
+            weave_edges: Vec::new(),
+            node_annotations: HashMap::new(),
         }
     }
 

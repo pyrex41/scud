@@ -88,14 +88,27 @@ pub mod storage;
 /// Supports PUB socket for broadcasting events and REP socket for queries.
 pub mod publisher;
 
+/// B-Thread coordination layer (scud-weave).
+///
+/// Implements behavioral programming coordination:
+/// request/wait/block at synchronization points.
+pub mod weave;
+
 // Re-export commonly used types at the crate root for ergonomic API
 pub use models::{IdFormat, Phase, PhaseStats, Priority, Task, TaskStatus};
 
 // Re-export format utilities
-pub use formats::{natural_sort_ids, parse_scg, serialize_scg, Format};
+pub use formats::{natural_sort_ids, parse_scg, serialize_scg, validate_weave, Format};
 
 // Re-export wave computation types and functions
 pub use waves::{compute_waves, detect_id_collisions, Wave, WaveResult};
 
 // Re-export storage
 pub use storage::Storage;
+
+// Re-export weave types
+pub use weave::{
+    ActiveLock, BThread, BThreadRule, Coordinator, Decision, Event, EventKind, EventLog,
+    EventPattern, GlobPattern, NodeAnnotation, PartitionDef, Role, TimestampedEvent, WeaveEdge,
+    WeaveEdgeType,
+};
