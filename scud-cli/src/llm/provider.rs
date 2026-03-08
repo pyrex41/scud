@@ -24,9 +24,19 @@ pub enum AgentRole {
 
 #[derive(Debug, Clone)]
 pub enum AgentContentBlock {
-    Text { text: String },
-    ToolUse { id: String, name: String, input: Value },
-    ToolResult { tool_use_id: String, content: String, is_error: bool },
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        is_error: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -106,8 +116,9 @@ impl AgentProvider {
                 Ok(ProviderCredential::BearerToken(key))
             }
             Self::OpenCodeZen => {
-                let key = std::env::var("OPENCODE_API_KEY")
-                    .map_err(|_| anyhow::anyhow!("OPENCODE_API_KEY environment variable not set"))?;
+                let key = std::env::var("OPENCODE_API_KEY").map_err(|_| {
+                    anyhow::anyhow!("OPENCODE_API_KEY environment variable not set")
+                })?;
                 Ok(ProviderCredential::BearerToken(key))
             }
         }
@@ -321,10 +332,7 @@ async fn send_anthropic_request(
         ApiCredential::OAuth(token) => {
             req = req
                 .bearer_auth(token)
-                .header(
-                    "anthropic-beta",
-                    "claude-code-20250219,oauth-2025-04-20",
-                )
+                .header("anthropic-beta", "claude-code-20250219,oauth-2025-04-20")
                 .header(
                     "user-agent",
                     format!("claude-cli/{} (external, cli)", CLAUDE_CODE_VERSION),
@@ -773,8 +781,7 @@ mod tests {
         assert_eq!(tool_calls[0]["function"]["name"], "Read");
         // arguments should be a JSON string
         let args: Value =
-            serde_json::from_str(tool_calls[0]["function"]["arguments"].as_str().unwrap())
-                .unwrap();
+            serde_json::from_str(tool_calls[0]["function"]["arguments"].as_str().unwrap()).unwrap();
         assert_eq!(args["file_path"], "/src/main.rs");
 
         // Tool result
@@ -855,9 +862,7 @@ mod tests {
 
     #[test]
     fn test_default_model() {
-        assert!(AgentProvider::Anthropic
-            .default_model()
-            .contains("claude"));
+        assert!(AgentProvider::Anthropic.default_model().contains("claude"));
         assert!(AgentProvider::Xai.default_model().contains("grok"));
         assert!(AgentProvider::OpenAI.default_model().contains("o3"));
     }

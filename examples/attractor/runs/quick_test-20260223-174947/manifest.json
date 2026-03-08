@@ -1,0 +1,7 @@
+{
+  "run_id": "quick_test-20260223-174947",
+  "pipeline_name": "quick_test",
+  "pipeline_file": "examples/attractor/quick_test.dot",
+  "started_at": "2026-02-23T17:49:47.124322+00:00",
+  "status": "running"
+}

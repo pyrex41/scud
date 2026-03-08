@@ -39,6 +39,8 @@ pub mod types;
 
 pub use client::OpenCodeClient;
 pub use events::{EventStream, OpenCodeEvent};
-pub use manager::{global_manager, init_global_manager, OpenCodeManager, ServerConfig, DEFAULT_PORT};
+pub use manager::{
+    global_manager, init_global_manager, OpenCodeManager, ServerConfig, DEFAULT_PORT,
+};
 pub use orchestrator::{execute_wave_server, AgentHandle, AgentOrchestrator};
 pub use types::*;

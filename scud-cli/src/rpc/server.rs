@@ -279,9 +279,12 @@ impl RpcServer {
             Ok(handle) => {
                 // Track the agent handle
                 let mut agents = self.active_agents.lock().await;
-                agents.insert(task_id.clone(), tokio::spawn(async move {
-                    let _ = handle.await;
-                }));
+                agents.insert(
+                    task_id.clone(),
+                    tokio::spawn(async move {
+                        let _ = handle.await;
+                    }),
+                );
 
                 Ok(serde_json::json!({
                     "status": "spawned",
@@ -304,7 +307,8 @@ impl RpcServer {
         let tag = params
             .tag
             .or_else(|| storage.get_active_group().ok().flatten());
-        let tag = tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
+        let tag =
+            tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
 
         // Load the task group
         let group = storage
@@ -365,9 +369,12 @@ impl RpcServer {
             Ok(handle) => {
                 // Track the agent handle
                 let mut agents = self.active_agents.lock().await;
-                agents.insert(task_id.clone(), tokio::spawn(async move {
-                    let _ = handle.await;
-                }));
+                agents.insert(
+                    task_id.clone(),
+                    tokio::spawn(async move {
+                        let _ = handle.await;
+                    }),
+                );
 
                 Ok(serde_json::json!({
                     "status": "spawned",
@@ -418,7 +425,8 @@ impl RpcServer {
         let tag = params
             .tag
             .or_else(|| storage.get_active_group().ok().flatten());
-        let tag = tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
+        let tag =
+            tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
 
         let group = storage
             .load_group(&tag)
@@ -462,7 +470,8 @@ impl RpcServer {
         let tag = params
             .tag
             .or_else(|| storage.get_active_group().ok().flatten());
-        let tag = tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
+        let tag =
+            tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
 
         let group = storage
             .load_group(&tag)
@@ -497,7 +506,8 @@ impl RpcServer {
         let tag = params
             .tag
             .or_else(|| storage.get_active_group().ok().flatten());
-        let tag = tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
+        let tag =
+            tag.ok_or_else(|| RpcError::invalid_params("No tag specified and no active tag"))?;
 
         let mut group = storage
             .load_group(&tag)
@@ -511,8 +521,10 @@ impl RpcServer {
             .ok_or_else(|| RpcError::task_not_found(&params.task_id))?;
 
         // Parse status
-        let new_status = crate::models::task::TaskStatus::from_str(&params.status)
-            .ok_or_else(|| RpcError::invalid_params(&format!("Invalid status: {}", params.status)))?;
+        let new_status =
+            crate::models::task::TaskStatus::from_str(&params.status).ok_or_else(|| {
+                RpcError::invalid_params(&format!("Invalid status: {}", params.status))
+            })?;
 
         let old_status = task.status.as_str().to_string();
         task.status = new_status;
@@ -596,7 +608,9 @@ impl RpcServer {
         while let Some(event) = event_rx.recv().await {
             let notification = match event {
                 AgentEvent::Started { task_id } => RpcNotification::agent_started(&task_id),
-                AgentEvent::Output { task_id, line } => RpcNotification::agent_output(&task_id, &line),
+                AgentEvent::Output { task_id, line } => {
+                    RpcNotification::agent_output(&task_id, &line)
+                }
                 AgentEvent::Completed { result } => RpcNotification::agent_completed(
                     &result.task_id,
                     result.success,

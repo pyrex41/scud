@@ -142,7 +142,7 @@ pub struct TaskInfo {
 /// Swarm execution defaults loaded from config
 #[derive(Debug, Clone)]
 pub struct SwarmDefaults {
-    /// Harness to use for swarm execution (e.g., "claude-code", "opencode")
+    /// Harness to use for swarm execution (e.g., "rho", "claude")
     pub harness: String,
     /// Number of agents to run in parallel per wave
     pub round_size: usize,
@@ -153,7 +153,7 @@ pub struct SwarmDefaults {
 impl Default for SwarmDefaults {
     fn default() -> Self {
         Self {
-            harness: "claude-code".to_string(),
+            harness: "rho".to_string(),
             round_size: 3,
             default_tag: "refactor".to_string(),
         }
@@ -187,7 +187,7 @@ impl SwarmDefaults {
 /// Launch configuration selected in the GUI
 #[derive(Debug, Clone)]
 pub struct LaunchConfig {
-    /// Harness to use for launch (e.g., "claude-code", "opencode")
+    /// Harness to use for launch (e.g., "rho", "claude")
     pub harness: String,
     /// Model override to use (empty means harness default)
     pub model: String,
@@ -443,6 +443,7 @@ impl Default for AppState {
             launch_config: LaunchConfig::from_defaults(&swarm_defaults),
             swarm_defaults,
             available_harnesses: vec![
+                "rho".to_string(),
                 "claude".to_string(),
                 "opencode".to_string(),
                 "cursor".to_string(),
@@ -466,6 +467,16 @@ impl Default for AppState {
                         "sonnet".to_string(),
                         "opus".to_string(),
                         "haiku".to_string(),
+                    ],
+                );
+                models.insert(
+                    "rho".to_string(),
+                    vec![
+                        "claude-sonnet".to_string(),
+                        "claude-opus".to_string(),
+                        "claude-haiku".to_string(),
+                        "xai/grok-code-fast-1".to_string(),
+                        "xai/grok-4-1-fast".to_string(),
                     ],
                 );
                 // Others will be populated on startup
@@ -498,8 +509,8 @@ impl AgentConfig {
         Self {
             name: name.to_string(),
             description: String::new(),
-            harness: "claude".to_string(),
-            model: "sonnet".to_string(),
+            harness: "rho".to_string(),
+            model: "claude-sonnet".to_string(),
             dirty: false,
         }
     }

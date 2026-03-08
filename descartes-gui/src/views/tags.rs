@@ -218,8 +218,7 @@ fn build_archives_section(state: &TagExplorerState) -> Element<'_, Message> {
                 .width(Length::Fixed(50.0))
                 .size(theme::font_size::CAPTION)
                 .style(theme::muted_text()),
-            text("")
-                .width(Length::Fixed(80.0)),
+            text("").width(Length::Fixed(80.0)),
         ]
         .spacing(theme::SPACING_SM)
         .align_y(Alignment::Center);

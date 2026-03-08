@@ -210,6 +210,14 @@ pub async fn spawn_agent(
             c.arg(&config.prompt);
             c
         }
+        Harness::Rho => {
+            let mut c = Command::new(binary_path);
+            if let Some(ref model) = config.model {
+                c.arg("--model").arg(model);
+            }
+            c.arg(&config.prompt);
+            c
+        }
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => {
             let mut c = Command::new(binary_path);
@@ -495,7 +503,9 @@ pub async fn spawn_agents_with_limit(
         let tx = event_tx.clone();
         async move {
             match spawn_agent(config, tx).await {
-                Ok(handle) => handle.await.map_err(|e| anyhow::anyhow!("Join error: {}", e)),
+                Ok(handle) => handle
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Join error: {}", e)),
                 Err(e) => Err(e),
             }
         }
@@ -730,9 +740,7 @@ mod tests {
         let mut runner = ExtensionRunner::new();
 
         // Register a simple tool that echoes input
-        fn echo_tool(
-            args: &[Value],
-        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        fn echo_tool(args: &[Value]) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
             Ok(args.first().cloned().unwrap_or(Value::Null))
         }
 
@@ -753,9 +761,7 @@ mod tests {
         let mut runner = ExtensionRunner::new();
 
         // Tool that returns the number of args received
-        fn count_args(
-            args: &[Value],
-        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        fn count_args(args: &[Value]) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
             Ok(serde_json::json!(args.len()))
         }
 

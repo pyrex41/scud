@@ -300,9 +300,7 @@ fn run_ralph_loop(
     println!();
     println!(
         "{}",
-        "═══════════════ SUMMARY ═══════════════"
-            .cyan()
-            .bold()
+        "═══════════════ SUMMARY ═══════════════".cyan().bold()
     );
     println!("  Iterations: {}", iteration);
     println!("  Completed:  {} tasks", completed_count);
@@ -487,7 +485,12 @@ fn generate_repair_prompt(
         .results
         .iter()
         .filter(|r| !r.passed)
-        .map(|r| format!("Command `{}` failed:\n{}\n{}", r.command, r.stdout, r.stderr))
+        .map(|r| {
+            format!(
+                "Command `{}` failed:\n{}\n{}",
+                r.command, r.stdout, r.stderr
+            )
+        })
         .collect();
 
     format!(

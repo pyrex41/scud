@@ -78,8 +78,7 @@ impl RunDirectory {
     /// Write the prompt for a node.
     pub fn write_prompt(&self, node_id: &str, prompt: &str) -> Result<()> {
         let dir = self.node_dir(node_id)?;
-        std::fs::write(dir.join("prompt.md"), prompt)
-            .context("Failed to write prompt file")?;
+        std::fs::write(dir.join("prompt.md"), prompt).context("Failed to write prompt file")?;
         Ok(())
     }
 
@@ -95,23 +94,21 @@ impl RunDirectory {
     pub fn write_status(&self, node_id: &str, status: &serde_json::Value) -> Result<()> {
         let dir = self.node_dir(node_id)?;
         let json = serde_json::to_string_pretty(status)?;
-        std::fs::write(dir.join("status.json"), json)
-            .context("Failed to write status file")?;
+        std::fs::write(dir.join("status.json"), json).context("Failed to write status file")?;
         Ok(())
     }
 
     /// Write the run manifest.
     pub fn write_manifest(&self, manifest: &RunManifest) -> Result<()> {
         let json = serde_json::to_string_pretty(manifest)?;
-        std::fs::write(self.manifest_path(), json)
-            .context("Failed to write manifest")?;
+        std::fs::write(self.manifest_path(), json).context("Failed to write manifest")?;
         Ok(())
     }
 
     /// Read the run manifest.
     pub fn read_manifest(&self) -> Result<RunManifest> {
-        let json = std::fs::read_to_string(self.manifest_path())
-            .context("Failed to read manifest")?;
+        let json =
+            std::fs::read_to_string(self.manifest_path()).context("Failed to read manifest")?;
         serde_json::from_str(&json).context("Failed to parse manifest")
     }
 

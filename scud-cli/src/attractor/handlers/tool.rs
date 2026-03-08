@@ -27,11 +27,7 @@ impl Handler for ToolHandler {
             .extra_attrs
             .get("tool_command")
             .map(|v| v.as_str())
-            .or_else(|| {
-                node.extra_attrs
-                    .get("command")
-                    .map(|v| v.as_str())
-            })
+            .or_else(|| node.extra_attrs.get("command").map(|v| v.as_str()))
             .unwrap_or_default();
 
         if command.is_empty() {
@@ -53,10 +49,7 @@ impl Handler for ToolHandler {
         run_dir.write_response(&node.id, &combined)?;
 
         let mut updates = HashMap::new();
-        updates.insert(
-            format!("{}.stdout", node.id),
-            serde_json::json!(stdout),
-        );
+        updates.insert(format!("{}.stdout", node.id), serde_json::json!(stdout));
         updates.insert(
             format!("{}.exit_code", node.id),
             serde_json::json!(output.status.code()),

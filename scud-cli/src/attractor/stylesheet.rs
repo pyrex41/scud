@@ -170,9 +170,7 @@ pub fn parse_stylesheet(input: &str) -> Result<Vec<StyleRule>> {
     Ok(rules)
 }
 
-fn parse_selector(
-    chars: &mut std::iter::Peekable<std::str::Chars>,
-) -> Result<Selector> {
+fn parse_selector(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<Selector> {
     match chars.peek() {
         Some('*') => {
             chars.next();

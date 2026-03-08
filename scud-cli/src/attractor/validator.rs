@@ -171,10 +171,7 @@ fn check_condition_syntax(graph: &PipelineGraph, issues: &mut Vec<ValidationIssu
                 issues.push(ValidationIssue {
                     severity: Severity::Error,
                     rule: "condition_syntax".into(),
-                    message: format!(
-                        "Edge {} -> {} has invalid condition: '{}'",
-                        from, to, cond
-                    ),
+                    message: format!("Edge {} -> {} has invalid condition: '{}'", from, to, cond),
                     node_id: Some(from.clone()),
                 });
             }
@@ -222,10 +219,7 @@ fn check_goal_gate_has_retry(graph: &PipelineGraph, issues: &mut Vec<ValidationI
             issues.push(ValidationIssue {
                 severity: Severity::Warning,
                 rule: "goal_gate_has_retry".into(),
-                message: format!(
-                    "Node '{}' has goal_gate=true but no retry_target",
-                    node.id
-                ),
+                message: format!("Node '{}' has goal_gate=true but no retry_target", node.id),
                 node_id: Some(node.id.clone()),
             });
         }
@@ -239,10 +233,7 @@ fn check_prompt_on_llm_nodes(graph: &PipelineGraph, issues: &mut Vec<ValidationI
             issues.push(ValidationIssue {
                 severity: Severity::Warning,
                 rule: "prompt_on_llm_nodes".into(),
-                message: format!(
-                    "LLM node '{}' has no prompt attribute",
-                    node.id
-                ),
+                message: format!("LLM node '{}' has no prompt attribute", node.id),
                 node_id: Some(node.id.clone()),
             });
         }
@@ -269,7 +260,10 @@ mod tests {
         let graph = PipelineGraph::from_dot(&dot).unwrap();
         let issues = validate(&graph);
 
-        let errors: Vec<_> = issues.iter().filter(|i| i.severity == Severity::Error).collect();
+        let errors: Vec<_> = issues
+            .iter()
+            .filter(|i| i.severity == Severity::Error)
+            .collect();
         assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
     }
 
@@ -288,10 +282,8 @@ mod tests {
         let graph = PipelineGraph::from_dot(&dot).unwrap();
         let issues = validate(&graph);
 
-        let reachability_errors: Vec<_> = issues
-            .iter()
-            .filter(|i| i.rule == "reachability")
-            .collect();
+        let reachability_errors: Vec<_> =
+            issues.iter().filter(|i| i.rule == "reachability").collect();
         assert_eq!(reachability_errors.len(), 1);
         assert!(reachability_errors[0].message.contains("orphan"));
     }

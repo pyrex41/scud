@@ -3,7 +3,9 @@
 //! Displays tasks organized in parallel execution waves,
 //! with launch controls at the bottom.
 
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Column};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_input, Column,
+};
 use iced::{Alignment, Background, Border, Element, Length};
 use std::collections::HashMap;
 
@@ -522,17 +524,14 @@ fn build_init_banner() -> Element<'static, Message> {
         .size(theme::font_size::HEADING)
         .style(theme::heading_text());
 
-    let description = text(
-        "This directory doesn't have a .scud/ configuration. Initialize to get started.",
-    )
-    .size(theme::font_size::BODY)
-    .style(theme::secondary_text());
+    let description =
+        text("This directory doesn't have a .scud/ configuration. Initialize to get started.")
+            .size(theme::font_size::BODY)
+            .style(theme::secondary_text());
 
-    let init_button = button(
-        text("Initialize Project").size(theme::font_size::BODY),
-    )
-    .on_press(Message::InitProject)
-    .style(theme::primary_button());
+    let init_button = button(text("Initialize Project").size(theme::font_size::BODY))
+        .on_press(Message::InitProject)
+        .style(theme::primary_button());
 
     container(
         column![heading, description, init_button]

@@ -143,7 +143,11 @@ pub fn show_all(project_root: Option<PathBuf>, limit: usize, tag: Option<&str>) 
             }
             // Don't forget the last entry
             if !current_timestamp.is_empty() && !current_content.trim().is_empty() {
-                entries.push((current_timestamp, task_id, current_content.trim().to_string()));
+                entries.push((
+                    current_timestamp,
+                    task_id,
+                    current_content.trim().to_string(),
+                ));
             }
         }
     }

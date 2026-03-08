@@ -30,8 +30,8 @@ pub async fn run(
     runs_dir: Option<&Path>,
 ) -> Result<()> {
     // Read and parse the pipeline file (.scg or .dot)
-    let source =
-        std::fs::read_to_string(file).context(format!("Failed to read pipeline file: {}", file.display()))?;
+    let source = std::fs::read_to_string(file)
+        .context(format!("Failed to read pipeline file: {}", file.display()))?;
 
     let is_scg = file.extension().and_then(|e| e.to_str()) == Some("scg");
     let mut pipeline = if is_scg {
@@ -63,12 +63,7 @@ pub async fn run(
     if !errors.is_empty() {
         eprintln!("{}", "Validation errors:".red().bold());
         for issue in &errors {
-            eprintln!(
-                "  {} {}: {}",
-                "ERROR".red(),
-                issue.rule,
-                issue.message
-            );
+            eprintln!("  {} {}: {}", "ERROR".red(), issue.rule, issue.message);
         }
         anyhow::bail!("Pipeline has {} validation error(s)", errors.len());
     }
@@ -76,23 +71,16 @@ pub async fn run(
     // Print warnings
     for issue in &issues {
         if issue.severity == validator::Severity::Warning {
-            eprintln!(
-                "  {} {}: {}",
-                "WARN".yellow(),
-                issue.rule,
-                issue.message
-            );
+            eprintln!("  {} {}: {}", "WARN".yellow(), issue.rule, issue.message);
         }
     }
 
     // Set up run directory
-    let base_dir = runs_dir
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            file.parent()
-                .unwrap_or_else(|| Path::new("."))
-                .to_path_buf()
-        });
+    let base_dir = runs_dir.map(PathBuf::from).unwrap_or_else(|| {
+        file.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
+    });
 
     let run_id = format!(
         "{}-{}",
@@ -127,13 +115,15 @@ pub async fn run(
         let harness = if let Some(p) = provider {
             crate::commands::spawn::terminal::Harness::parse(p)?
         } else {
-            // Fall back to config's swarm.harness, then "claude"
-            let config_path = file.parent()
+            // Fall back to config's swarm.harness, then "rho"
+            let config_path = file
+                .parent()
                 .unwrap_or_else(|| Path::new("."))
-                .join(".scud").join("config.toml");
+                .join(".scud")
+                .join("config.toml");
             let harness_name = crate::config::Config::load(&config_path)
                 .map(|c| c.swarm.harness.clone())
-                .unwrap_or_else(|_| "claude".to_string());
+                .unwrap_or_else(|_| "rho".to_string());
             crate::commands::spawn::terminal::Harness::parse(&harness_name)?
         };
         std::sync::Arc::from(backend::create_backend(&harness)?)
@@ -158,7 +148,10 @@ pub async fn run(
     let print_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             match event {
-                crate::attractor::events::PipelineEvent::NodeStarted { node_id, handler_type } => {
+                crate::attractor::events::PipelineEvent::NodeStarted {
+                    node_id,
+                    handler_type,
+                } => {
                     eprintln!(
                         "  {} {} ({})",
                         "→".blue(),
@@ -177,12 +170,7 @@ pub async fn run(
                         StageStatus::Skipped => "⊘".dimmed().to_string(),
                         _ => "?".yellow().to_string(),
                     };
-                    eprintln!(
-                        "  {} {} ({}ms)",
-                        status_str,
-                        node_id,
-                        duration_ms
-                    );
+                    eprintln!("  {} {} ({}ms)", status_str, node_id, duration_ms);
                 }
                 crate::attractor::events::PipelineEvent::EdgeSelected {
                     from_node,
@@ -234,7 +222,9 @@ pub async fn run(
     );
     eprintln!();
 
-    let status = runner.run(&pipeline, &context, &run_dir, checkpoint).await?;
+    let status = runner
+        .run(&pipeline, &context, &run_dir, checkpoint)
+        .await?;
 
     // Wait for event printer to finish
     drop(runner);

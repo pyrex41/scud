@@ -24,13 +24,13 @@ pub struct SessionMetadata {
     /// Process ID (if still running)
     #[serde(default)]
     pub pid: Option<u32>,
-    /// Harness used (claude, opencode)
+    /// Harness used (rho, claude, opencode, cursor)
     #[serde(default = "default_harness")]
     pub harness: String,
 }
 
 fn default_harness() -> String {
-    "claude".to_string()
+    "rho".to_string()
 }
 
 impl SessionMetadata {
@@ -69,11 +69,10 @@ pub fn save_session_metadata(project_root: &Path, metadata: &SessionMetadata) ->
         .context("Failed to create headless metadata directory")?;
 
     let metadata_file = session_metadata_path(project_root, &metadata.task_id);
-    let content = serde_json::to_string_pretty(metadata)
-        .context("Failed to serialize session metadata")?;
+    let content =
+        serde_json::to_string_pretty(metadata).context("Failed to serialize session metadata")?;
 
-    std::fs::write(&metadata_file, content)
-        .context("Failed to write session metadata")?;
+    std::fs::write(&metadata_file, content).context("Failed to write session metadata")?;
 
     Ok(())
 }
@@ -89,11 +88,11 @@ pub fn load_session_metadata(project_root: &Path, task_id: &str) -> Result<Sessi
         );
     }
 
-    let content = std::fs::read_to_string(&metadata_file)
-        .context("Failed to read session metadata")?;
+    let content =
+        std::fs::read_to_string(&metadata_file).context("Failed to read session metadata")?;
 
-    let metadata: SessionMetadata = serde_json::from_str(&content)
-        .context("Failed to parse session metadata")?;
+    let metadata: SessionMetadata =
+        serde_json::from_str(&content).context("Failed to parse session metadata")?;
 
     Ok(metadata)
 }
@@ -129,8 +128,7 @@ pub fn delete_session_metadata(project_root: &Path, task_id: &str) -> Result<()>
     let metadata_file = session_metadata_path(project_root, task_id);
 
     if metadata_file.exists() {
-        std::fs::remove_file(&metadata_file)
-            .context("Failed to delete session metadata")?;
+        std::fs::remove_file(&metadata_file).context("Failed to delete session metadata")?;
     }
 
     Ok(())
@@ -161,17 +159,18 @@ pub fn interactive_command(harness: Harness, session_id: &str) -> Result<Vec<Str
             "--resume".to_string(),
             session_id.to_string(),
         ]),
+        Harness::Rho => Ok(vec![
+            binary_path,
+            "--resume".to_string(),
+            session_id.to_string(),
+        ]),
         #[cfg(feature = "direct-api")]
         Harness::DirectApi => anyhow::bail!("Direct API sessions cannot be resumed interactively"),
     }
 }
 
 /// Main entry point for the attach command
-pub fn run(
-    project_root: Option<PathBuf>,
-    task_id: &str,
-    harness_arg: Option<&str>,
-) -> Result<()> {
+pub fn run(project_root: Option<PathBuf>, task_id: &str, harness_arg: Option<&str>) -> Result<()> {
     let storage = Storage::new(project_root.clone());
     let root = storage.project_root().to_path_buf();
 
@@ -189,7 +188,11 @@ pub fn run(
     println!("{}", "SCUD Attach".cyan().bold());
     println!("{}", "═".repeat(50));
     println!("{:<15} {}", "Task:".dimmed(), task_id.cyan());
-    println!("{:<15} {}", "Session:".dimmed(), metadata.session_id.dimmed());
+    println!(
+        "{:<15} {}",
+        "Session:".dimmed(),
+        metadata.session_id.dimmed()
+    );
     println!("{:<15} {}", "Tag:".dimmed(), metadata.tag);
     println!("{:<15} {}", "Harness:".dimmed(), harness.name().green());
     if let Some(pid) = metadata.pid {
@@ -278,8 +281,8 @@ mod tests {
 
     #[test]
     fn test_session_metadata_serialization() {
-        let metadata = SessionMetadata::new("1.1", "sess-abc123", "alpha", "claude")
-            .with_pid(12345);
+        let metadata =
+            SessionMetadata::new("1.1", "sess-abc123", "alpha", "claude").with_pid(12345);
 
         let json = serde_json::to_string(&metadata).unwrap();
         let parsed: SessionMetadata = serde_json::from_str(&json).unwrap();
@@ -367,7 +370,7 @@ mod tests {
         // Test that old metadata without harness field deserializes correctly
         let json = r#"{"task_id": "1.1", "session_id": "sess-123", "tag": "test"}"#;
         let metadata: SessionMetadata = serde_json::from_str(json).unwrap();
-        assert_eq!(metadata.harness, "claude");
+        assert_eq!(metadata.harness, "rho");
     }
 
     #[test]
@@ -383,5 +386,17 @@ mod tests {
         assert!(cmd[0].contains("claude"));
         assert_eq!(cmd[1], "--resume");
         assert_eq!(cmd[2], "sess-123");
+    }
+
+    #[test]
+    fn test_interactive_command_rho_structure_when_available() {
+        let Ok(cmd) = interactive_command(Harness::Rho, "sess-rho-123") else {
+            // Skip in environments without rho-cli installed.
+            return;
+        };
+        assert_eq!(cmd.len(), 3);
+        assert!(cmd[0].contains("rho-cli"));
+        assert_eq!(cmd[1], "--resume");
+        assert_eq!(cmd[2], "sess-rho-123");
     }
 }

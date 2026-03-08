@@ -11,6 +11,15 @@ SCG file ──→ Parser ──→ Bridge ──↗                         ↓
 ## Quick Start
 
 ```bash
+# Generate a pipeline from a PRD (interactive interview + LLM)
+scud generate --pipeline docs/prd.md --tag build-api
+
+# Generate with dry-run (preview without writing)
+scud generate --pipeline docs/prd.md --tag build-api --dry-run
+
+# Generate to a custom output path
+scud generate --pipeline docs/prd.md --tag build-api --output my-pipeline.scg
+
 # Run a pipeline (DOT or SCG)
 scud attractor run pipeline.dot
 scud attractor run pipeline.scg
@@ -49,6 +58,39 @@ The original format. Node shapes determine handler types. Good for Graphviz visu
 The SCG format used for SCUD task management, extended with pipeline-specific sections (`@pipeline`, extended `@edges`). Set `mode pipeline` in `@meta` to enable pipeline semantics. More compact and human-editable than DOT.
 
 Key difference: in pipeline mode, `A -> B` means "A transitions to B" (forward flow), not "A depends on B" as in standard SCG task graphs.
+
+## Generating Pipelines from PRDs
+
+Instead of writing pipeline SCG files by hand, you can generate them from a PRD document using the `--pipeline` flag on `scud generate`. This runs an interactive interview to gather context, then uses an LLM to produce a complete pipeline SCG.
+
+```bash
+scud generate --pipeline docs/prd.md --tag build-api
+```
+
+The interview asks five questions:
+
+1. **Goal** — High-level goal for the pipeline (seeded from the PRD's first line)
+2. **Workflow shape** — Linear, branching with review gates, iterative with test-fix loops, or custom
+3. **Human checkpoints** — Whether to include `wait.human` review gates
+4. **Tool steps** — Shell commands to include as `tool` nodes (e.g., `cargo test`)
+5. **Model tier** — Fast (Haiku), Balanced (Sonnet), or Powerful (Opus)
+
+The generated pipeline is written to `.scud/tasks/tasks.scg` by default (override with `--output`). You can then validate and run it:
+
+```bash
+scud attractor validate .scud/tasks/tasks.scg
+scud attractor run .scud/tasks/tasks.scg
+```
+
+Options:
+
+| Flag | Description |
+|------|-------------|
+| `--pipeline` | Generate an Attractor pipeline instead of a task graph |
+| `--output <path>` | Output file path (default: `.scud/tasks/tasks.scg`) |
+| `--dry-run` | Preview interview and planned output without writing |
+| `--verbose` | Show interview answers and generation details |
+| `--model <model>` | Override LLM model for generation |
 
 ## Writing Pipelines (DOT)
 

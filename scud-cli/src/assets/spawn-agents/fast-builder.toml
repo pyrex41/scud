@@ -4,7 +4,7 @@ name = "fast-builder"
 description = "Fast builder for simple, quick implementation tasks"
 
 [model]
-harness = "opencode"
+harness = "rho"
 model = "xai/grok-code-fast-1"
 
 [prompt]

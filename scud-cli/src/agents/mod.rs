@@ -27,7 +27,7 @@ pub struct AgentMeta {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelConfig {
-    /// Harness to use: "claude" or "opencode"
+    /// Harness to use: "rho", "claude", "opencode", or "cursor"
     #[serde(default = "default_harness")]
     pub harness: String,
     /// Model name to pass to CLI (e.g., "sonnet", "opus", "grok-4")
@@ -36,7 +36,7 @@ pub struct ModelConfig {
 }
 
 fn default_harness() -> String {
-    "opencode".to_string()
+    "rho".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -70,9 +70,31 @@ impl AgentDef {
             .with_context(|| format!("Failed to parse agent file: {}", path.display()))
     }
 
-    /// Try to load agent definition, return None if not found
+    /// Try to load agent definition, return None if not found.
+    /// Falls back to embedded agent definitions if not found on disk.
     pub fn try_load(name: &str, project_root: &Path) -> Option<Self> {
-        Self::load(name, project_root).ok()
+        Self::load(name, project_root)
+            .ok()
+            .or_else(|| Self::load_embedded(name))
+    }
+
+    /// Load from embedded agent definitions (compiled into the binary)
+    fn load_embedded(name: &str) -> Option<Self> {
+        let content = match name {
+            "builder" => Some(include_str!("../assets/spawn-agents/builder.toml")),
+            "fast-builder" => Some(include_str!("../assets/spawn-agents/fast-builder.toml")),
+            "reviewer" => Some(include_str!("../assets/spawn-agents/reviewer.toml")),
+            "planner" => Some(include_str!("../assets/spawn-agents/planner.toml")),
+            "researcher" => Some(include_str!("../assets/spawn-agents/researcher.toml")),
+            "analyzer" => Some(include_str!("../assets/spawn-agents/analyzer.toml")),
+            "repairer" => Some(include_str!("../assets/spawn-agents/repairer.toml")),
+            "tester" => Some(include_str!("../assets/spawn-agents/tester.toml")),
+            "outside-generalist" => Some(include_str!(
+                "../assets/spawn-agents/outside-generalist.toml"
+            )),
+            _ => None,
+        };
+        content.and_then(|c| toml::from_str(c).ok())
     }
 
     /// Get the harness for this agent
@@ -106,7 +128,7 @@ impl AgentDef {
         None
     }
 
-    /// Create a default agent (OpenCode with xai/grok-code-fast-1, no custom prompt)
+    /// Create a default agent (Rho with claude-sonnet, no custom prompt)
     pub fn default_builder() -> Self {
         AgentDef {
             agent: AgentMeta {
@@ -114,8 +136,8 @@ impl AgentDef {
                 description: "Default code implementation agent".to_string(),
             },
             model: ModelConfig {
-                harness: "opencode".to_string(),
-                model: Some("xai/grok-code-fast-1".to_string()),
+                harness: "rho".to_string(),
+                model: Some("claude-sonnet".to_string()),
             },
             prompt: PromptConfig::default(),
         }
@@ -162,8 +184,8 @@ model = "opus"
     fn test_default_builder() {
         let agent = AgentDef::default_builder();
         assert_eq!(agent.agent.name, "builder");
-        assert_eq!(agent.model.harness, "opencode");
-        assert_eq!(agent.model.model, Some("xai/grok-code-fast-1".to_string()));
+        assert_eq!(agent.model.harness, "rho");
+        assert_eq!(agent.model.model, Some("claude-sonnet".to_string()));
     }
 
     #[test]
@@ -232,6 +254,6 @@ template_file = "custom.prompt"
     fn test_harness_parsing() {
         let agent = AgentDef::default_builder();
         let harness = agent.harness().unwrap();
-        assert_eq!(harness, Harness::OpenCode);
+        assert_eq!(harness, Harness::Rho);
     }
 }

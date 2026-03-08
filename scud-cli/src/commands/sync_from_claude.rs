@@ -184,7 +184,11 @@ mod tests {
         // Verify the task was saved correctly
         let saved_phase = storage.load_group(&tag).unwrap();
         let saved_task = saved_phase.get_task("1").unwrap();
-        assert_eq!(saved_task.status, TaskStatus::Done, "Task should be saved as Done");
+        assert_eq!(
+            saved_task.status,
+            TaskStatus::Done,
+            "Task should be saved as Done"
+        );
 
         // Sync to Claude format
         sync_phase(&phase, &tag).unwrap();

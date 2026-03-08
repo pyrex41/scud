@@ -115,10 +115,7 @@ mod tests {
     async fn test_set_and_get() {
         let ctx = Context::new();
         ctx.set("name", serde_json::json!("Alice")).await;
-        assert_eq!(
-            ctx.get("name").await,
-            Some(serde_json::json!("Alice"))
-        );
+        assert_eq!(ctx.get("name").await, Some(serde_json::json!("Alice")));
     }
 
     #[tokio::test]
@@ -149,14 +146,8 @@ mod tests {
         clone.set("shared", serde_json::json!("modified")).await;
 
         // Original should be unchanged
-        assert_eq!(
-            ctx.get_str("shared").await,
-            Some("original".to_string())
-        );
-        assert_eq!(
-            clone.get_str("shared").await,
-            Some("modified".to_string())
-        );
+        assert_eq!(ctx.get_str("shared").await, Some("original".to_string()));
+        assert_eq!(clone.get_str("shared").await, Some("modified".to_string()));
     }
 
     #[tokio::test]
@@ -177,9 +168,6 @@ mod tests {
         let json = serde_json::to_string(&snap).unwrap();
         let restored_snap: ContextSnapshot = serde_json::from_str(&json).unwrap();
         let restored = restored_snap.restore();
-        assert_eq!(
-            restored.get_str("key").await,
-            Some("value".to_string())
-        );
+        assert_eq!(restored.get_str("key").await, Some("value".to_string()));
     }
 }

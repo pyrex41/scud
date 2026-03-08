@@ -100,11 +100,7 @@ impl Handler for CodergenHandler {
 }
 
 /// Expand `$goal` and `$context.key` variables in a prompt string.
-async fn expand_variables(
-    prompt: &str,
-    graph: &PipelineGraph,
-    context: &Context,
-) -> String {
+async fn expand_variables(prompt: &str, graph: &PipelineGraph, context: &Context) -> String {
     let mut result = prompt.to_string();
 
     // Replace $goal with graph-level goal
@@ -140,7 +136,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let run_dir = RunDirectory::create(dir.path(), "test").unwrap();
 
-        let dot = parse_dot(r#"
+        let dot = parse_dot(
+            r#"
             digraph test {
                 graph [goal="Test goal"]
                 start [shape=Mdiamond]
@@ -148,12 +145,17 @@ mod tests {
                 finish [shape=Msquare]
                 start -> task -> finish
             }
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         let graph = PipelineGraph::from_dot(&dot).unwrap();
         let context = Context::new();
         let node = graph.node("task").unwrap();
 
-        let outcome = handler.execute(node, &context, &graph, &run_dir).await.unwrap();
+        let outcome = handler
+            .execute(node, &context, &graph, &run_dir)
+            .await
+            .unwrap();
         assert!(outcome.status.is_success());
         assert!(outcome.response_text.is_some());
 
@@ -164,14 +166,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_expand_goal() {
-        let dot = parse_dot(r#"
+        let dot = parse_dot(
+            r#"
             digraph test {
                 graph [goal="Build a widget"]
                 start [shape=Mdiamond]
                 finish [shape=Msquare]
                 start -> finish
             }
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         let graph = PipelineGraph::from_dot(&dot).unwrap();
         let context = Context::new();
 
@@ -181,13 +186,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_expand_context() {
-        let dot = parse_dot(r#"
+        let dot = parse_dot(
+            r#"
             digraph test {
                 start [shape=Mdiamond]
                 finish [shape=Msquare]
                 start -> finish
             }
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         let graph = PipelineGraph::from_dot(&dot).unwrap();
         let context = Context::new();
         context.set("name", serde_json::json!("Alice")).await;

@@ -4,8 +4,8 @@ name = "reviewer"
 description = "Code review agent using Claude Opus for thorough analysis"
 
 [model]
-harness = "claude"
-model = "opus"
+harness = "rho"
+model = "claude-opus"
 
 [prompt]
 template = """You are reviewing SCUD task {task.id}: {task.title}

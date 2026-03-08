@@ -80,8 +80,7 @@ impl Checkpoint {
 
     /// Save checkpoint to a file.
     pub fn save(&self, path: &Path) -> Result<()> {
-        let json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize checkpoint")?;
+        let json = serde_json::to_string_pretty(self).context("Failed to serialize checkpoint")?;
         std::fs::write(path, json).context("Failed to write checkpoint file")?;
         Ok(())
     }

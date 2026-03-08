@@ -11,8 +11,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use scud_core::{compute_waves, Phase, Storage, Task, TaskStatus};
 use scud::storage::Storage as CliStorage;
+use scud_core::{compute_waves, Phase, Storage, Task, TaskStatus};
 
 use crate::state::RalphConfig;
 
@@ -213,6 +213,9 @@ pub enum ScudCommand {
     /// Load available agent types from .scud/agents
     LoadAvailableAgents,
 
+    /// Update the bridge working directory (used when switching projects)
+    SetWorkingDirectory { path: PathBuf },
+
     /// Start swarm execution (headless runners with streaming output)
     StartSwarm {
         tag: String,
@@ -408,6 +411,14 @@ impl From<ScudJsonTask> for TaskInfo {
     }
 }
 
+fn reconcile_task_success(
+    process_success: bool,
+    stream_terminal: bool,
+    stream_success: bool,
+) -> bool {
+    process_success && (!stream_terminal || stream_success)
+}
+
 /// Bridge between Iced GUI and SCUD Core
 ///
 /// Uses direct scud-core library calls for task operations (load, complete, block, waves)
@@ -504,6 +515,13 @@ impl ScudBridge {
                 }
                 ScudCommand::LoadAvailableAgents => {
                     self.load_available_agents().await;
+                }
+                ScudCommand::SetWorkingDirectory { path } => {
+                    info!(
+                        "ScudBridge switching working directory to {}",
+                        path.display()
+                    );
+                    self.working_dir = path;
                 }
                 ScudCommand::StartSwarm {
                     tag,
@@ -681,7 +699,10 @@ impl ScudBridge {
         // Returns (flat task list, computed waves, resolved tag name)
         let working_dir = self.working_dir.clone();
         #[allow(clippy::type_complexity)]
-        let result: Result<Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String>, _> = tokio::task::spawn_blocking(
+        let result: Result<
+            Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String>,
+            _,
+        > = tokio::task::spawn_blocking(
             move || -> Result<(Vec<TaskInfo>, Vec<Vec<TaskInfo>>, Option<String>), String> {
                 let storage = Storage::new(Some(working_dir.clone()));
 
@@ -744,10 +765,7 @@ impl ScudBridge {
             Ok(Ok((task_infos, waves, resolved_tag))) => {
                 // If we resolved the active tag, notify the GUI so it stays in sync
                 if let Some(tag) = resolved_tag {
-                    let _ = self
-                        .event_tx
-                        .send(ScudEvent::ActiveTagChanged(tag))
-                        .await;
+                    let _ = self.event_tx.send(ScudEvent::ActiveTagChanged(tag)).await;
                 }
                 let _ = self.event_tx.send(ScudEvent::TasksLoaded(task_infos)).await;
                 if !waves.is_empty() {
@@ -755,14 +773,8 @@ impl ScudBridge {
                 }
             }
             Ok(Err(e)) if e == "__not_initialized__" => {
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::ProjectNotInitialized)
-                    .await;
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::TasksLoaded(Vec::new()))
-                    .await;
+                let _ = self.event_tx.send(ScudEvent::ProjectNotInitialized).await;
+                let _ = self.event_tx.send(ScudEvent::TasksLoaded(Vec::new())).await;
             }
             Ok(Err(e)) => {
                 error!("Failed to load tasks: {}", e);
@@ -811,11 +823,12 @@ impl ScudBridge {
     /// and maps the results to TaskInfo for the GUI.
     async fn compute_waves_impl(&self, tag: &str) {
         let tag = tag.to_string();
+        let working_dir = self.working_dir.clone();
         debug!("Computing waves via scud-core for tag: {}", tag);
 
         // Run blocking storage operations in a spawn_blocking task
         let result = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<TaskInfo>>, String> {
-            let storage = Storage::new(None);
+            let storage = Storage::new(Some(working_dir));
             let phase = storage.load_group(&tag).map_err(|e| e.to_string())?;
 
             // Get actionable tasks (filters out expanded parents, etc.)
@@ -966,10 +979,11 @@ impl ScudBridge {
     async fn complete_task(&self, task_id: &str) {
         let task_id = task_id.to_string();
         let task_id_log = task_id.clone();
+        let working_dir = self.working_dir.clone();
         debug!("Completing task {} via scud-core", task_id);
 
         let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
-            let storage = Storage::new(None);
+            let storage = Storage::new(Some(working_dir));
 
             // Get the active group tag
             let tag = storage
@@ -1019,10 +1033,11 @@ impl ScudBridge {
     async fn block_task(&self, task_id: &str) {
         let task_id = task_id.to_string();
         let task_id_log = task_id.clone();
+        let working_dir = self.working_dir.clone();
         debug!("Blocking task {} via scud-core", task_id);
 
         let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
-            let storage = Storage::new(None);
+            let storage = Storage::new(Some(working_dir));
 
             // Get the active group tag
             let tag = storage
@@ -1151,6 +1166,11 @@ impl ScudBridge {
                     session_id.to_string(),
                 ]
             }
+            "rho" => vec![
+                "rho-cli".to_string(),
+                "--resume".to_string(),
+                session_id.to_string(),
+            ],
             _ => {
                 error!("Unknown harness for attach: {}", harness_name);
                 let _ = self
@@ -1355,9 +1375,10 @@ impl ScudBridge {
 
         // Load tasks and compute waves
         let tag_owned = tag.to_string();
+        let storage_dir = working_dir.clone();
         let wave_result =
             tokio::task::spawn_blocking(move || -> Result<(Vec<Vec<Task>>, Phase), String> {
-                let storage = Storage::new(None);
+                let storage = Storage::new(Some(storage_dir));
                 let phase = storage.load_group(&tag_owned).map_err(|e| e.to_string())?;
 
                 let actionable: Vec<&Task> = phase.get_actionable_tasks();
@@ -1534,8 +1555,9 @@ impl ScudBridge {
 
         // Load task details
         let task_id_clone = task_id.to_string();
+        let storage_dir = self.working_dir.clone();
         let task_result = tokio::task::spawn_blocking(move || -> Result<(Task, String), String> {
-            let storage = Storage::new(None);
+            let storage = Storage::new(Some(storage_dir));
             let tag = storage
                 .get_active_group()
                 .map_err(|e| e.to_string())?
@@ -1637,6 +1659,8 @@ impl ScudBridge {
         // Stream events from the session
         let task_id_owned = task_id.to_string();
         let event_tx = self.event_tx.clone();
+        let mut stream_terminal = false;
+        let mut stream_success = false;
 
         while let Some(stream_event) = session.events.recv().await {
             // Store event in stream store for persistence/replay
@@ -1692,6 +1716,8 @@ impl ScudBridge {
                         .await;
                 }
                 StreamEventKind::Complete { success } => {
+                    stream_terminal = true;
+                    stream_success = success;
                     let _ = event_tx
                         .send(ScudEvent::TaskCompleted {
                             task_id: task_id_owned.clone(),
@@ -1706,6 +1732,8 @@ impl ScudBridge {
                     break;
                 }
                 StreamEventKind::Error { message } => {
+                    stream_terminal = true;
+                    stream_success = false;
                     error!("Headless task {} error: {}", task_id_owned, message);
                     let _ = event_tx
                         .send(ScudEvent::Error(format!(
@@ -1725,16 +1753,40 @@ impl ScudBridge {
         }
 
         // Wait for the session to fully complete
-        match session.wait().await {
+        let process_success = match session.wait().await {
             Ok(success) => {
                 info!(
                     "Headless session for task {} finished with success={}",
                     task_id, success
                 );
+                success
             }
             Err(e) => {
                 warn!("Error waiting for headless session to complete: {}", e);
+                false
             }
+        };
+
+        let final_success =
+            reconcile_task_success(process_success, stream_terminal, stream_success);
+
+        // If stream never reported completion, or process contradicted a stream success,
+        // emit a final completion update based on the actual process result.
+        if !stream_terminal || final_success != stream_success {
+            if !process_success && stream_success {
+                let _ = event_tx
+                    .send(ScudEvent::Error(format!(
+                        "Task {} exited with non-zero status",
+                        task_id_owned
+                    )))
+                    .await;
+            }
+            let _ = event_tx
+                .send(ScudEvent::TaskCompleted {
+                    task_id: task_id_owned.clone(),
+                    success: final_success,
+                })
+                .await;
         }
 
         // Save session metadata for potential continuation
@@ -1822,7 +1874,8 @@ impl ScudBridge {
         }
 
         // Stream events
-        let mut task_success = false;
+        let mut stream_terminal = false;
+        let mut stream_success = false;
         while let Some(stream_event) = session.events.recv().await {
             stream_store.push_event(task_id, stream_event.clone());
 
@@ -1873,7 +1926,8 @@ impl ScudBridge {
                         .await;
                 }
                 StreamEventKind::Complete { success } => {
-                    task_success = success;
+                    stream_terminal = true;
+                    stream_success = success;
                     let _ = event_tx
                         .send(ScudEvent::TaskCompleted {
                             task_id: task_id.to_string(),
@@ -1883,6 +1937,8 @@ impl ScudBridge {
                     break;
                 }
                 StreamEventKind::Error { message } => {
+                    stream_terminal = true;
+                    stream_success = false;
                     let _ = event_tx
                         .send(ScudEvent::Error(format!(
                             "Task {} error: {}",
@@ -1901,8 +1957,34 @@ impl ScudBridge {
         }
 
         // Wait for session to finish
-        let _ = session.wait().await;
-        task_success
+        let process_success = match session.wait().await {
+            Ok(success) => success,
+            Err(e) => {
+                warn!("Error waiting for task {} session: {}", task_id, e);
+                false
+            }
+        };
+        let final_success =
+            reconcile_task_success(process_success, stream_terminal, stream_success);
+
+        if !stream_terminal || final_success != stream_success {
+            if !process_success && stream_success {
+                let _ = event_tx
+                    .send(ScudEvent::Error(format!(
+                        "Task {} exited with non-zero status",
+                        task_id
+                    )))
+                    .await;
+            }
+            let _ = event_tx
+                .send(ScudEvent::TaskCompleted {
+                    task_id: task_id.to_string(),
+                    success: final_success,
+                })
+                .await;
+        }
+
+        final_success
     }
 
     /// Scan directories for PRD markdown files
@@ -1957,8 +2039,7 @@ impl ScudBridge {
                 if let Ok(entries) = fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
-                        if path.is_file()
-                            && path.extension().and_then(|e| e.to_str()) == Some("md")
+                        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md")
                         {
                             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                                 if excluded.contains(&name) {
@@ -2027,7 +2108,9 @@ impl ScudBridge {
 
         let _ = self
             .event_tx
-            .send(ScudEvent::GenerateStatus("Starting generate pipeline...".to_string()))
+            .send(ScudEvent::GenerateStatus(
+                "Starting generate pipeline...".to_string(),
+            ))
             .await;
 
         let child_result = tokio::process::Command::new("scud")
@@ -2055,7 +2138,9 @@ impl ScudBridge {
             let event_tx = self.event_tx.clone();
             let mut reader = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                let _ = event_tx.send(ScudEvent::GenerateOutputLine(line.clone())).await;
+                let _ = event_tx
+                    .send(ScudEvent::GenerateOutputLine(line.clone()))
+                    .await;
                 let _ = event_tx.send(ScudEvent::GenerateStatus(line)).await;
             }
         }
@@ -2083,7 +2168,10 @@ impl ScudBridge {
                     let err = format!("Generate failed: {}", stderr_text);
                     error!("{}", err);
                     if !stderr_text.is_empty() {
-                        let _ = self.event_tx.send(ScudEvent::GenerateOutputLine(stderr_text.clone())).await;
+                        let _ = self
+                            .event_tx
+                            .send(ScudEvent::GenerateOutputLine(stderr_text.clone()))
+                            .await;
                     }
                     let _ = self
                         .event_tx
@@ -2195,10 +2283,7 @@ impl ScudBridge {
 
         match result {
             Ok(Ok(entries)) => {
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::ArchivesLoaded(entries))
-                    .await;
+                let _ = self.event_tx.send(ScudEvent::ArchivesLoaded(entries)).await;
             }
             Ok(Err(e)) => {
                 error!("Failed to load archives: {}", e);
@@ -2241,10 +2326,7 @@ impl ScudBridge {
                 error!("Failed to set active tag: {}", e);
                 let _ = self
                     .event_tx
-                    .send(ScudEvent::Error(format!(
-                        "Failed to set active tag: {}",
-                        e
-                    )))
+                    .send(ScudEvent::Error(format!("Failed to set active tag: {}", e)))
                     .await;
             }
             Err(e) => {
@@ -2257,14 +2339,12 @@ impl ScudBridge {
     async fn restore_archive(&self, filename: &str) {
         let filename = filename.to_string();
         let working_dir = self.working_dir.clone();
-        let result = tokio::task::spawn_blocking(
-            move || -> Result<Vec<String>, String> {
-                let cli_storage = CliStorage::new(Some(working_dir));
-                cli_storage
-                    .restore_archive(&filename, false)
-                    .map_err(|e| e.to_string())
-            },
-        )
+        let result = tokio::task::spawn_blocking(move || -> Result<Vec<String>, String> {
+            let cli_storage = CliStorage::new(Some(working_dir));
+            cli_storage
+                .restore_archive(&filename, false)
+                .map_err(|e| e.to_string())
+        })
         .await;
 
         match result {
@@ -2280,10 +2360,7 @@ impl ScudBridge {
             }
             Ok(Err(e)) => {
                 error!("Failed to restore archive: {}", e);
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::ArchiveRestored(Err(e)))
-                    .await;
+                let _ = self.event_tx.send(ScudEvent::ArchiveRestored(Err(e))).await;
             }
             Err(e) => {
                 error!("Task spawn error: {}", e);
@@ -2315,8 +2392,8 @@ impl ScudBridge {
                 }
             }
 
-            let bp_config =
-                scud::backpressure::BackpressureConfig::load(Some(&working_dir)).unwrap_or_default();
+            let bp_config = scud::backpressure::BackpressureConfig::load(Some(&working_dir))
+                .unwrap_or_default();
 
             (bp_config, is_auto_detected)
         })
@@ -2567,17 +2644,11 @@ impl ScudBridge {
         match result {
             Ok(Ok(())) => {
                 info!("LLM config saved");
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::LlmConfigSaved(Ok(())))
-                    .await;
+                let _ = self.event_tx.send(ScudEvent::LlmConfigSaved(Ok(()))).await;
             }
             Ok(Err(e)) => {
                 error!("Failed to save LLM config: {}", e);
-                let _ = self
-                    .event_tx
-                    .send(ScudEvent::LlmConfigSaved(Err(e)))
-                    .await;
+                let _ = self.event_tx.send(ScudEvent::LlmConfigSaved(Err(e))).await;
             }
             Err(e) => {
                 error!("Task spawn error: {}", e);
@@ -2672,8 +2743,9 @@ impl ScudBridge {
 
             // Find next task (spawn_blocking)
             let tag_owned = tag.to_string();
+            let storage_dir = working_dir.clone();
             let next_task = tokio::task::spawn_blocking(move || -> Option<Task> {
-                let storage = Storage::new(None);
+                let storage = Storage::new(Some(storage_dir));
                 let phase = match storage.load_group(&tag_owned) {
                     Ok(p) => p,
                     Err(e) => {
@@ -2723,8 +2795,9 @@ impl ScudBridge {
             {
                 let tid = task_id.clone();
                 let tag_owned = tag.to_string();
+                let storage_dir = working_dir.clone();
                 let _ = tokio::task::spawn_blocking(move || {
-                    let storage = Storage::new(None);
+                    let storage = Storage::new(Some(storage_dir));
                     if let Ok(mut phase) = storage.load_group(&tag_owned) {
                         if let Some(t) = phase.get_task_mut(&tid) {
                             t.set_status(TaskStatus::InProgress);
@@ -2806,8 +2879,9 @@ impl ScudBridge {
                 // Mark task failed
                 let tid = task_id.clone();
                 let tag_owned = tag.to_string();
+                let storage_dir = working_dir.clone();
                 let _ = tokio::task::spawn_blocking(move || {
-                    let storage = Storage::new(None);
+                    let storage = Storage::new(Some(storage_dir));
                     if let Ok(mut phase) = storage.load_group(&tag_owned) {
                         if let Some(t) = phase.get_task_mut(&tid) {
                             t.set_status(TaskStatus::Failed);
@@ -2997,8 +3071,9 @@ impl ScudBridge {
                 // Mark task failed
                 let tid = task_id.clone();
                 let tag_owned = tag.to_string();
+                let storage_dir = working_dir.clone();
                 let _ = tokio::task::spawn_blocking(move || {
-                    let storage = Storage::new(None);
+                    let storage = Storage::new(Some(storage_dir));
                     if let Ok(mut phase) = storage.load_group(&tag_owned) {
                         if let Some(t) = phase.get_task_mut(&tid) {
                             t.set_status(TaskStatus::Failed);
@@ -3023,8 +3098,9 @@ impl ScudBridge {
             {
                 let tid = task_id.clone();
                 let tag_owned = tag.to_string();
+                let storage_dir = working_dir.clone();
                 let _ = tokio::task::spawn_blocking(move || {
-                    let storage = Storage::new(None);
+                    let storage = Storage::new(Some(storage_dir));
                     if let Ok(mut phase) = storage.load_group(&tag_owned) {
                         if let Some(t) = phase.get_task_mut(&tid) {
                             t.set_status(TaskStatus::Done);
@@ -3096,6 +3172,14 @@ impl ScudBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_reconcile_task_success_uses_process_exit_as_source_of_truth() {
+        assert!(reconcile_task_success(true, false, false));
+        assert!(reconcile_task_success(true, true, true));
+        assert!(!reconcile_task_success(false, true, true));
+        assert!(!reconcile_task_success(false, false, false));
+    }
 
     #[test]
     fn test_scud_json_event_parsing() {

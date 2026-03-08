@@ -199,11 +199,9 @@ fn bench_parse_manifest_from_str(c: &mut Criterion) {
 
     group.bench_function("full_manifest", |b| {
         b.iter(|| {
-            let manifest = ExtensionManifest::from_str(
-                black_box(FULL_MANIFEST),
-                &PathBuf::from("test.toml"),
-            )
-            .unwrap();
+            let manifest =
+                ExtensionManifest::from_str(black_box(FULL_MANIFEST), &PathBuf::from("test.toml"))
+                    .unwrap();
             black_box(manifest)
         })
     });
@@ -360,7 +358,13 @@ fn create_deep_tree(dir: &TempDir, depth: usize, extensions_per_level: usize) {
     // Reset counter for each test
     COUNTER.store(0, Ordering::SeqCst);
 
-    fn create_level(path: &std::path::Path, current_depth: usize, max_depth: usize, ext_count: usize, counter: &AtomicUsize) {
+    fn create_level(
+        path: &std::path::Path,
+        current_depth: usize,
+        max_depth: usize,
+        ext_count: usize,
+        counter: &AtomicUsize,
+    ) {
         if current_depth > max_depth {
             return;
         }
@@ -403,7 +407,8 @@ fn bench_discover_extensions(c: &mut Criterion) {
     group.bench_function("empty_directory", |b| {
         let temp_dir = TempDir::new().unwrap();
         b.iter(|| {
-            let result = discover(black_box(temp_dir.path()), DiscoveryOptions::standard()).unwrap();
+            let result =
+                discover(black_box(temp_dir.path()), DiscoveryOptions::standard()).unwrap();
             black_box(result)
         })
     });
@@ -497,8 +502,7 @@ fn bench_discover_options(c: &mut Criterion) {
 
     group.bench_function("lenient_options", |b| {
         b.iter(|| {
-            let result =
-                discover(black_box(temp_dir.path()), DiscoveryOptions::lenient()).unwrap();
+            let result = discover(black_box(temp_dir.path()), DiscoveryOptions::lenient()).unwrap();
             black_box(result)
         })
     });
@@ -573,7 +577,11 @@ model = "opus"
             prefix, i, i
         );
 
-        std::fs::write(agents_dir.join(format!("agent-{}-{}.toml", prefix, i)), manifest).unwrap();
+        std::fs::write(
+            agents_dir.join(format!("agent-{}-{}.toml", prefix, i)),
+            manifest,
+        )
+        .unwrap();
     }
 }
 
@@ -585,7 +593,8 @@ fn bench_discover_all_multiple_roots(c: &mut Criterion) {
             BenchmarkId::new("roots", root_count),
             &root_count,
             |b, &root_count| {
-                let temp_dirs: Vec<TempDir> = (0..root_count).map(|_| TempDir::new().unwrap()).collect();
+                let temp_dirs: Vec<TempDir> =
+                    (0..root_count).map(|_| TempDir::new().unwrap()).collect();
 
                 for (i, dir) in temp_dirs.iter().enumerate() {
                     let prefix = format!("root{}", i);

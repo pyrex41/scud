@@ -1,0 +1,7 @@
+{
+  "run_id": "simple_linear-20260223-174823",
+  "pipeline_name": "simple_linear",
+  "pipeline_file": "examples/attractor/simple_linear.dot",
+  "started_at": "2026-02-23T17:48:23.656230+00:00",
+  "status": "running"
+}

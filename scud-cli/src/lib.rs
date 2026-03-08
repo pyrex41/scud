@@ -122,15 +122,6 @@ pub mod backend;
 /// and edges represent transitions with optional conditions.
 pub mod attractor;
 
-/// Heavy Mode — 16-agent multi-agent reasoning ensemble.
-///
-/// A Captain coordinator decomposes queries, routes to domain specialists,
-/// agents work in parallel, and the Captain synthesizes a final answer.
-///
-/// Feature-gated behind `direct-api`.
-#[cfg(feature = "direct-api")]
-pub mod heavy;
-
 /// Agent definitions for model routing.
 ///
 /// Allows tasks to specify which AI harness and model should run them.

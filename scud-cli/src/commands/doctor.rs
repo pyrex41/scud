@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use crate::commands::spawn::terminal::{find_harness_binary, Harness};
 use crate::models::task::TaskStatus;
 use crate::storage::Storage;
 
@@ -127,6 +128,18 @@ fn run_workflow_diagnostics(
         Err(_) => {
             results.missing_active_epic = true;
         }
+    }
+
+    // Validate rho backend availability when using rho-first orchestration.
+    if let Err(e) = find_harness_binary(Harness::Rho) {
+        results.issues.push(DiagnosticIssue {
+            severity: Severity::Critical,
+            epic_tag: "runtime".to_string(),
+            task_id: None,
+            message: format!("Rho backend check failed: {}", e),
+            suggestion: "Install/build a functional rho-cli binary or set SCUD_RHO_BIN to its path"
+                .to_string(),
+        });
     }
 
     // If we couldn't load tasks, show what we found and exit
@@ -455,7 +468,6 @@ fn print_recovery_instructions() {
 }
 
 pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
-    use crate::commands::spawn::terminal::{find_harness_binary, Harness};
     use crate::extensions::loader::ExtensionManifest;
     use std::os::unix::fs::PermissionsExt;
 
@@ -601,7 +613,8 @@ pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
                             epic_tag: "extensions".to_string(),
                             task_id: Some(filename.to_string()),
                             message: format!(r#"Invalid harness name '{}': {}"#, harness_str, e),
-                            suggestion: r#"Use 'claude' or 'opencode'"#.to_string(),
+                            suggestion: r#"Use 'rho', 'claude', 'opencode', or 'cursor'"#
+                                .to_string(),
                         });
                     }
                 }

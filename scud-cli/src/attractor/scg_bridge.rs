@@ -231,10 +231,7 @@ fn build_extra_attrs(task: &Task) -> HashMap<String, AttrValue> {
     // Store tool_command from task.details if present
     if let Some(ref details) = task.details {
         if !details.is_empty() {
-            attrs.insert(
-                "tool_command".to_string(),
-                AttrValue::Str(details.clone()),
-            );
+            attrs.insert("tool_command".to_string(), AttrValue::Str(details.clone()));
         }
     }
     attrs

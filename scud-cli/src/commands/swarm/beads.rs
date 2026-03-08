@@ -26,6 +26,9 @@ use colored::Colorize;
 
 use crate::commands::spawn::agent;
 use crate::commands::spawn::terminal::{self, Harness};
+use crate::commands::task_selection::{
+    count_in_progress_tasks, is_actionable_pending_task, scoped_phases,
+};
 use crate::models::phase::Phase;
 use crate::models::task::{Task, TaskStatus};
 use crate::storage::Storage;
@@ -123,25 +126,8 @@ pub fn get_ready_tasks(
 
 /// Check if a task is ready to execute
 fn is_task_ready(task: &Task, phase: &Phase, all_tasks: &[&Task]) -> bool {
-    // Must be pending
-    if task.status != TaskStatus::Pending {
+    if !is_actionable_pending_task(task, phase) {
         return false;
-    }
-
-    // Skip expanded tasks (they have subtasks to do instead)
-    if task.is_expanded() {
-        return false;
-    }
-
-    // If subtask, parent must be expanded
-    if let Some(ref parent_id) = task.parent_id {
-        let parent_expanded = phase
-            .get_task(parent_id)
-            .map(|p| p.is_expanded())
-            .unwrap_or(false);
-        if !parent_expanded {
-            return false;
-        }
     }
 
     // All dependencies must be Done (not just "not pending")
@@ -155,20 +141,7 @@ pub fn count_in_progress(
     phase_tag: &str,
     all_tags: bool,
 ) -> usize {
-    let tags: Vec<&String> = if all_tags {
-        all_phases.keys().collect()
-    } else {
-        all_phases
-            .keys()
-            .filter(|t| t.as_str() == phase_tag)
-            .collect()
-    };
-
-    tags.iter()
-        .filter_map(|tag| all_phases.get(*tag))
-        .flat_map(|phase| &phase.tasks)
-        .filter(|t| t.status == TaskStatus::InProgress)
-        .count()
+    count_in_progress_tasks(all_phases, phase_tag, all_tags)
 }
 
 /// Count remaining tasks (pending or in-progress)
@@ -177,17 +150,8 @@ pub fn count_remaining(
     phase_tag: &str,
     all_tags: bool,
 ) -> usize {
-    let tags: Vec<&String> = if all_tags {
-        all_phases.keys().collect()
-    } else {
-        all_phases
-            .keys()
-            .filter(|t| t.as_str() == phase_tag)
-            .collect()
-    };
-
-    tags.iter()
-        .filter_map(|tag| all_phases.get(*tag))
+    scoped_phases(all_phases, phase_tag, all_tags)
+        .into_iter()
         .flat_map(|phase| &phase.tasks)
         .filter(|t| {
             t.status == TaskStatus::InProgress

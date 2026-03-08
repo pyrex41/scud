@@ -78,22 +78,13 @@ pub fn run(
         "Max attempts:".dimmed(),
         max_attempts.to_string().cyan()
     );
-    println!(
-        "{:<20} {}",
-        "Repair agent:".dimmed(),
-        agent_type.cyan()
-    );
+    println!("{:<20} {}", "Repair agent:".dimmed(), agent_type.cyan());
     println!("{:<20} {}", "Harness:".dimmed(), harness.name().cyan());
     println!();
 
     // Main loop
     for attempt in 1..=max_attempts {
-        println!(
-            "{} {}/{}",
-            "Attempt".blue().bold(),
-            attempt,
-            max_attempts
-        );
+        println!("{} {}/{}", "Attempt".blue().bold(), attempt, max_attempts);
         println!("{}", "-".repeat(40).blue());
 
         // Run validation
@@ -127,16 +118,15 @@ pub fn run(
                 "!".red().bold(),
                 max_attempts
             );
-            return Err(anyhow::anyhow!("Tests failed after {} attempts", max_attempts));
+            return Err(anyhow::anyhow!(
+                "Tests failed after {} attempts",
+                max_attempts
+            ));
         }
 
         // Spawn repair agent
         println!();
-        println!(
-            "  {} Spawning {} agent to fix...",
-            "→".dimmed(),
-            agent_type
-        );
+        println!("  {} Spawning {} agent to fix...", "→".dimmed(), agent_type);
 
         let repair_marker = working_dir
             .join(".scud")
@@ -286,11 +276,7 @@ echo "BLOCKED: <reason>" > {marker_path}
 }
 
 /// Wait for repair to complete by polling for marker file
-fn wait_for_repair(
-    marker_path: &std::path::Path,
-    attach: bool,
-    session_name: &str,
-) -> Result<()> {
+fn wait_for_repair(marker_path: &std::path::Path, attach: bool, session_name: &str) -> Result<()> {
     // If attach mode, tell user to come back when done
     if attach {
         println!(
@@ -325,10 +311,7 @@ fn wait_for_repair(
 
     loop {
         if start.elapsed() > timeout {
-            println!(
-                "    {} Repair timed out after 1 hour",
-                "!".yellow()
-            );
+            println!("    {} Repair timed out after 1 hour", "!".yellow());
             return Ok(());
         }
 

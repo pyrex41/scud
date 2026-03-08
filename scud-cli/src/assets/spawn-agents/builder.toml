@@ -4,5 +4,5 @@ name = "builder"
 description = "Fast code implementation agent using Grok"
 
 [model]
-harness = "claude"
-model = "opus"
+harness = "rho"
+model = "claude-opus"

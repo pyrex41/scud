@@ -90,10 +90,7 @@ impl MigrationShim {
     }
 
     /// Load a legacy agent TOML file, emitting deprecation warning if configured
-    pub fn load_legacy_agent(
-        &mut self,
-        path: &Path,
-    ) -> Result<ExtensionManifest, ExtensionError> {
+    pub fn load_legacy_agent(&mut self, path: &Path) -> Result<ExtensionManifest, ExtensionError> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| ExtensionError::Io(format!("Failed to read {}: {}", path.display(), e)))?;
 
@@ -122,8 +119,7 @@ impl MigrationShim {
         let manifest = legacy.into_extension_manifest(path);
 
         // Cache by agent name for future lookups
-        self.agent_type_cache
-            .insert(agent_name, manifest.clone());
+        self.agent_type_cache.insert(agent_name, manifest.clone());
 
         Ok(manifest)
     }
@@ -177,9 +173,9 @@ impl MigrationShim {
             "reviewer" => Some(include_str!("../assets/spawn-agents/reviewer.toml")),
             "repairer" => Some(include_str!("../assets/spawn-agents/repairer.toml")),
             "fast-builder" => Some(include_str!("../assets/spawn-agents/fast-builder.toml")),
-            "outside-generalist" => {
-                Some(include_str!("../assets/spawn-agents/outside-generalist.toml"))
-            }
+            "outside-generalist" => Some(include_str!(
+                "../assets/spawn-agents/outside-generalist.toml"
+            )),
             _ => None,
         }?;
 
@@ -190,7 +186,8 @@ impl MigrationShim {
         let manifest = legacy.into_extension_manifest(&path);
 
         // Cache for future lookups
-        self.agent_type_cache.insert(name.to_string(), manifest.clone());
+        self.agent_type_cache
+            .insert(name.to_string(), manifest.clone());
 
         Some(manifest)
     }
@@ -273,8 +270,7 @@ impl Default for MigrationShim {
 /// Utility function to check if content is in legacy agent format
 pub fn is_legacy_agent_format(content: &str) -> bool {
     // Try to parse as legacy format
-    toml::from_str::<LegacyAgentToml>(content).is_ok()
-        && !content.contains("[extension]")
+    toml::from_str::<LegacyAgentToml>(content).is_ok() && !content.contains("[extension]")
 }
 
 /// Utility function to check if a file is in legacy agent format
@@ -724,7 +720,10 @@ model = "custom-model"
         let manifest = shim.resolve_agent_type("builder", temp.path());
 
         assert!(manifest.is_some());
-        assert_eq!(manifest.as_ref().unwrap().extension.description, "Custom project builder");
+        assert_eq!(
+            manifest.as_ref().unwrap().extension.description,
+            "Custom project builder"
+        );
         // The custom model should be present
         assert_eq!(
             manifest.as_ref().unwrap().config.get("model"),

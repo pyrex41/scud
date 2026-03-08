@@ -362,9 +362,21 @@ fn build_output_panel<'a>(
                         color: Some(theme::text::PRIMARY),
                     });
 
-                let header_meta = text(format!("{} | {}", session.harness, status_label))
-                    .size(theme::font_size::SMALL)
-                    .style(theme::secondary_text());
+                let session_meta = session
+                    .session_id
+                    .as_deref()
+                    .map(|id| {
+                        let short = if id.len() > 10 { &id[..10] } else { id };
+                        format!(" | session {}", short)
+                    })
+                    .unwrap_or_default();
+
+                let header_meta = text(format!(
+                    "{} | {}{}",
+                    session.harness, status_label, session_meta
+                ))
+                .size(theme::font_size::SMALL)
+                .style(theme::secondary_text());
 
                 // Copy button (always available when there's output)
                 let copy_btn = button(text("Copy").size(theme::font_size::SMALL))

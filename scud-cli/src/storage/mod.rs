@@ -475,7 +475,9 @@ impl Storage {
             .tasks
             .iter_mut()
             .find(|t| t.id == task_id)
-            .ok_or_else(|| anyhow::anyhow!("Task '{}' not found in group '{}'", task_id, group_tag))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Task '{}' not found in group '{}'", task_id, group_tag)
+            })?;
 
         task.status = status;
         self.update_group(group_tag, &group)

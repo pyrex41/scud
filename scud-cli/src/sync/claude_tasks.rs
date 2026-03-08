@@ -190,7 +190,9 @@ pub fn sync_phase(phase: &Phase, tag: &str) -> Result<PathBuf> {
         })
         .collect();
 
-    let task_list = ClaudeTaskList { tasks: claude_tasks };
+    let task_list = ClaudeTaskList {
+        tasks: claude_tasks,
+    };
     let json = serde_json::to_string_pretty(&task_list)?;
     std::fs::write(&task_file, json)?;
 
@@ -247,38 +249,23 @@ mod tests {
 
         // Pending -> pending
         task.status = TaskStatus::Pending;
-        assert_eq!(
-            ClaudeTask::from_scud_task(&task, "t").status,
-            "pending"
-        );
+        assert_eq!(ClaudeTask::from_scud_task(&task, "t").status, "pending");
 
         // InProgress -> in_progress
         task.status = TaskStatus::InProgress;
-        assert_eq!(
-            ClaudeTask::from_scud_task(&task, "t").status,
-            "in_progress"
-        );
+        assert_eq!(ClaudeTask::from_scud_task(&task, "t").status, "in_progress");
 
         // Done -> completed
         task.status = TaskStatus::Done;
-        assert_eq!(
-            ClaudeTask::from_scud_task(&task, "t").status,
-            "completed"
-        );
+        assert_eq!(ClaudeTask::from_scud_task(&task, "t").status, "completed");
 
         // Review -> in_progress
         task.status = TaskStatus::Review;
-        assert_eq!(
-            ClaudeTask::from_scud_task(&task, "t").status,
-            "in_progress"
-        );
+        assert_eq!(ClaudeTask::from_scud_task(&task, "t").status, "in_progress");
 
         // Failed -> completed (with metadata flag)
         task.status = TaskStatus::Failed;
-        assert_eq!(
-            ClaudeTask::from_scud_task(&task, "t").status,
-            "completed"
-        );
+        assert_eq!(ClaudeTask::from_scud_task(&task, "t").status, "completed");
     }
 
     #[test]
@@ -305,7 +292,11 @@ mod tests {
         // For now, just test the conversion logic
         let mut phase = Phase::new("test".to_string());
 
-        let task1 = Task::new("1".to_string(), "First".to_string(), "First task".to_string());
+        let task1 = Task::new(
+            "1".to_string(),
+            "First".to_string(),
+            "First task".to_string(),
+        );
         let mut task2 = Task::new(
             "2".to_string(),
             "Second".to_string(),

@@ -462,7 +462,10 @@ impl WaveAgent {
     where
         I: IntoIterator<Item = (Task, String)>,
     {
-        pairs.into_iter().map(|(task, tag)| Self::new(task, tag)).collect()
+        pairs
+            .into_iter()
+            .map(|(task, tag)| Self::new(task, tag))
+            .collect()
     }
 
     /// Get the task ID
@@ -506,7 +509,11 @@ impl WaveExecutionResult {
 
     /// Get total execution duration in milliseconds
     pub fn total_duration_ms(&self) -> u64 {
-        self.agent_results.iter().map(|r| r.duration_ms).max().unwrap_or(0)
+        self.agent_results
+            .iter()
+            .map(|r| r.duration_ms)
+            .max()
+            .unwrap_or(0)
     }
 }
 
@@ -926,10 +933,7 @@ mod tests {
             "Description".to_string(),
         );
 
-        let pairs = vec![
-            (task1, "tag-a".to_string()),
-            (task2, "tag-b".to_string()),
-        ];
+        let pairs = vec![(task1, "tag-a".to_string()), (task2, "tag-b".to_string())];
 
         let agents = WaveAgent::from_task_pairs(pairs);
 

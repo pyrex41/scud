@@ -4,8 +4,8 @@ name = "repairer"
 description = "Smart agent that fixes validation failures attributed to specific tasks"
 
 [model]
-harness = "claude"
-model = "opus"
+harness = "rho"
+model = "claude-opus"
 
 [prompt]
 template = """You are a repair agent fixing validation failures for SCUD task {task.id}: {task.title}

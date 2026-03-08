@@ -4,7 +4,7 @@ name = "outside-generalist"
 description = "Generalist agent providing fresh perspective and secondary opinions"
 
 [model]
-harness = "opencode"
+harness = "rho"
 model = "xai/grok-4-1-fast"
 
 [prompt]

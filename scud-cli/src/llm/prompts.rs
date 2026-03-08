@@ -351,6 +351,154 @@ Return ONLY the JSON object, no additional explanation."#,
         )
     }
 
+    pub fn generate_pipeline(
+        prd_content: &str,
+        goal: &str,
+        workflow_shape: &str,
+        human_checkpoints: &str,
+        tool_steps: &str,
+        model_tier: &str,
+    ) -> String {
+        format!(
+            r#"You are an expert at designing AI workflow pipelines. Given a PRD and context from the user, produce a pipeline execution graph in structured JSON.
+
+## PRD Document
+
+{prd_content}
+
+## User Context
+
+- **Goal**: {goal}
+- **Workflow shape**: {workflow_shape}
+- **Human review gates**: {human_checkpoints}
+- **Tool/shell commands**: {tool_steps}
+- **Model tier**: {model_tier}
+
+## Pipeline SCG Format (by example)
+
+Here is a complete example of what a pipeline SCG looks like when serialized:
+
+```
+# SCUD Graph v1
+# Phase: build-api
+
+@meta {{
+  name build-api
+  mode pipeline
+  goal Build a REST API
+  model_stylesheet * {{ model: "claude-3-haiku"; reasoning_effort: "medium" }}
+}}
+
+@nodes
+# id | title | status | complexity | priority
+start | Start | P | 0 | M
+design | Design API Schema | P | 5 | H
+review | Approve Design | P | 0 | M
+implement | Write Code | P | 8 | H
+test | Run Tests | P | 3 | M
+finish | Done | P | 0 | M
+
+@edges
+# from -> to [| label | condition | weight]
+start -> design
+design -> review
+review -> implement | Approve | | 10
+review -> design | Revise | | 0
+implement -> test
+test -> finish | | outcome=success
+test -> implement | | outcome=failure
+
+@pipeline
+# id | handler_type | max_retries | retry_target | goal_gate | timeout
+start | start
+design | codergen | 3
+review | wait.human
+implement | codergen | 2 | | false | 5m
+test | tool
+finish | exit | 0 | design | true
+```
+
+## Handler Types
+
+- `start` — entry point, no processing
+- `codergen` — LLM-powered code generation / analysis step
+- `tool` — runs a shell command (set `tool_command`)
+- `wait.human` — pauses for human review / approval
+- `exit` — pipeline completion point; use `goal_gate: true` + `retry_target` to loop back on failure
+
+## Model Stylesheet
+
+Map the user's model tier choice:
+- "Fast (Haiku)" → `* {{ model: "claude-3-haiku"; reasoning_effort: "medium" }}`
+- "Balanced (Sonnet)" → `* {{ model: "claude-sonnet-4-20250514"; reasoning_effort: "medium" }}`
+- "Powerful (Opus)" → `* {{ model: "claude-opus-4-20250514"; reasoning_effort: "high" }}`
+
+## Instructions
+
+1. Every pipeline MUST have exactly one `start` node and at least one `exit` node.
+2. If human checkpoints are requested, add `wait.human` nodes at review gates.
+3. If tool commands are provided, create `tool` nodes with `tool_command` set.
+4. Use `codergen` for LLM-powered steps. Provide a `prompt` describing what the LLM should do.
+5. For iterative workflows, create edges that loop back (e.g., test failure → re-implement).
+6. For branching workflows, use labeled edges with weights (higher weight = preferred path).
+7. Use conditions on edges where appropriate (e.g., `outcome=success`, `outcome=failure`).
+8. Keep node IDs short and descriptive (lowercase, hyphens OK).
+
+## Response Format
+
+Return ONLY a JSON object with this exact structure:
+
+```json
+{{
+  "name": "<pipeline-name>",
+  "goal": "<high-level goal>",
+  "model_stylesheet": "<CSS-like model config>",
+  "nodes": [
+    {{
+      "id": "start",
+      "title": "Start",
+      "handler_type": "start"
+    }},
+    {{
+      "id": "design",
+      "title": "Design API",
+      "handler_type": "codergen",
+      "max_retries": 3,
+      "prompt": "Design the API schema based on..."
+    }},
+    {{
+      "id": "test",
+      "title": "Run Tests",
+      "handler_type": "tool",
+      "tool_command": "cargo test"
+    }},
+    {{
+      "id": "finish",
+      "title": "Done",
+      "handler_type": "exit",
+      "goal_gate": true,
+      "retry_target": "design"
+    }}
+  ],
+  "edges": [
+    {{ "from": "start", "to": "design" }},
+    {{ "from": "design", "to": "test" }},
+    {{ "from": "test", "to": "finish", "condition": "outcome=success" }},
+    {{ "from": "test", "to": "design", "label": "Fix", "condition": "outcome=failure" }}
+  ]
+}}
+```
+
+Return ONLY the JSON object, no additional explanation."#,
+            prd_content = prd_content,
+            goal = goal,
+            workflow_shape = workflow_shape,
+            human_checkpoints = human_checkpoints,
+            tool_steps = tool_steps,
+            model_tier = model_tier,
+        )
+    }
+
     pub fn fix_prd_issues(
         prd_content: &str,
         tasks_json: &str,

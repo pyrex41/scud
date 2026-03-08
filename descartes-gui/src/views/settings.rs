@@ -2,7 +2,9 @@
 //!
 //! Application settings, project selection, and backpressure configuration.
 
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input, Column};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_input, Column,
+};
 use iced::{Alignment, Background, Border, Element, Length};
 use std::path::Path;
 
@@ -164,12 +166,8 @@ fn llm_provider_model_row<'a>(
     label_width: Length,
 ) -> Element<'a, Message> {
     let provider_options: Vec<String> = LLM_PROVIDERS.iter().map(|s| s.to_string()).collect();
-    let provider_picker = pick_list(
-        provider_options,
-        Some(provider.to_string()),
-        on_provider,
-    )
-    .width(Length::Fixed(140.0));
+    let provider_picker = pick_list(provider_options, Some(provider.to_string()), on_provider)
+        .width(Length::Fixed(140.0));
 
     let model_options: Vec<String> = scud::config::Config::suggested_models_for_provider(provider)
         .into_iter()
@@ -183,12 +181,8 @@ fn llm_provider_model_row<'a>(
         }
         opts
     };
-    let model_picker = pick_list(
-        model_options,
-        Some(model.to_string()),
-        on_model,
-    )
-    .width(Length::Fixed(220.0));
+    let model_picker =
+        pick_list(model_options, Some(model.to_string()), on_model).width(Length::Fixed(220.0));
 
     row![
         text(label)
@@ -206,10 +200,7 @@ fn llm_provider_model_row<'a>(
 }
 
 /// Build the LLM configuration section
-fn build_llm_section(
-    state: &LlmConfigState,
-    label_width: Length,
-) -> Element<'_, Message> {
+fn build_llm_section(state: &LlmConfigState, label_width: Length) -> Element<'_, Message> {
     let mut section = Column::new().spacing(theme::SPACING_MD);
 
     section = section.push(
@@ -281,9 +272,7 @@ fn build_llm_section(
                 .style(theme::primary_button()),
         );
     } else {
-        action_row = action_row.push(
-            button("Save to config.toml").style(theme::ghost_button()),
-        );
+        action_row = action_row.push(button("Save to config.toml").style(theme::ghost_button()));
     }
 
     if let Some(ref status) = state.status {
@@ -431,9 +420,7 @@ fn build_backpressure_section(
                 .style(theme::primary_button()),
         );
     } else {
-        action_row = action_row.push(
-            button("Save to config.toml").style(theme::ghost_button()),
-        );
+        action_row = action_row.push(button("Save to config.toml").style(theme::ghost_button()));
     }
 
     action_row = action_row.push(

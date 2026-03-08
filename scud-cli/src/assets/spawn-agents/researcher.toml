@@ -4,8 +4,8 @@ name = "researcher"
 description = "Research agent for codebase investigation and documentation"
 
 [model]
-harness = "claude"
-model = "opus"
+harness = "rho"
+model = "claude-opus"
 
 [prompt]
 template = """You are researching SCUD task {task.id}: {task.title}

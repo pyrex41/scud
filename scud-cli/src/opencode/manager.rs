@@ -169,7 +169,9 @@ impl OpenCodeManager {
 
         find_harness_binary(Harness::OpenCode)
             .map(PathBuf::from)
-            .context("Could not find opencode binary. Install with: npm install -g @anthropics/opencode")
+            .context(
+                "Could not find opencode binary. Install with: npm install -g @anthropics/opencode",
+            )
     }
 
     /// Connect to the event stream

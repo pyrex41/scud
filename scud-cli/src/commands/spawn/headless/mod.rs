@@ -10,10 +10,10 @@ pub mod store;
 #[cfg(feature = "direct-api")]
 pub mod direct_api;
 
+#[cfg(feature = "direct-api")]
+pub use direct_api::DirectApiRunner;
 pub use events::{StreamEvent, StreamEventKind};
 pub use runner::{
     create_runner, AnyRunner, ClaudeHeadless, HeadlessRunner, OpenCodeHeadless, SessionHandle,
 };
-#[cfg(feature = "direct-api")]
-pub use direct_api::DirectApiRunner;
-pub use store::{SessionStream, SessionStatus, StreamStore};
+pub use store::{SessionStatus, SessionStream, StreamStore};

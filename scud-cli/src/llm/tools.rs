@@ -260,11 +260,11 @@ async fn execute_read(input: &Value, working_dir: &Path) -> ToolResult {
 
     match std::fs::read_to_string(&path) {
         Ok(content) => {
-            let offset = input
-                .get("offset")
+            let offset = input.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let limit = input
+                .get("limit")
                 .and_then(|v| v.as_u64())
-                .unwrap_or(0) as usize;
-            let limit = input.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+                .map(|v| v as usize);
 
             let lines: Vec<&str> = content.lines().collect();
             let start = offset.min(lines.len());
@@ -295,10 +295,7 @@ async fn execute_write(input: &Value, working_dir: &Path) -> ToolResult {
         .get("file_path")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let content = input
-        .get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("");
     let path = resolve_path(file_path, working_dir);
 
     if let Some(parent) = path.parent() {
@@ -373,10 +370,7 @@ async fn execute_edit(input: &Value, working_dir: &Path) -> ToolResult {
 }
 
 async fn execute_bash(input: &Value, working_dir: &Path) -> ToolResult {
-    let command = input
-        .get("command")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let command = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
     let timeout_ms = input
         .get("timeout")
         .and_then(|v| v.as_u64())
@@ -428,10 +422,7 @@ async fn execute_bash(input: &Value, working_dir: &Path) -> ToolResult {
 }
 
 async fn execute_search(input: &Value, working_dir: &Path) -> ToolResult {
-    let pattern = input
-        .get("pattern")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
     let path = input.get("path").and_then(|v| v.as_str());
     let glob_filter = input.get("glob").and_then(|v| v.as_str());
     let context_lines = input.get("context").and_then(|v| v.as_u64());
@@ -475,10 +466,7 @@ async fn execute_search(input: &Value, working_dir: &Path) -> ToolResult {
 }
 
 async fn execute_find(input: &Value, working_dir: &Path) -> ToolResult {
-    let pattern = input
-        .get("pattern")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
     let path = input.get("path").and_then(|v| v.as_str());
 
     let search_path = path
