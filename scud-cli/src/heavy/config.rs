@@ -8,45 +8,47 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Runtime configuration for a Heavy execution.
+#[derive(Default)]
 pub struct HeavyConfig {
     /// The user's query to reason about.
     pub query: String,
-    /// LLM provider (default: "xai").
-    pub provider: String,
-    /// Model to use (default: "grok-4-0709").
-    pub model: String,
+    /// LLM provider (None = use TOML default or "xai").
+    pub provider: Option<String>,
+    /// Model to use (None = use TOML default or "grok-4-0709").
+    pub model: Option<String>,
     /// Optional stronger model for Captain synthesis calls.
     pub captain_model: Option<String>,
     /// Max agents to activate (None = let Captain decide).
     pub max_agents: Option<usize>,
     /// Number of debate rounds (default: 0).
     pub debate_rounds: usize,
-    /// Max agentic tool turns per agent (default: 10).
-    pub max_turns: usize,
+    /// Max agentic tool turns per agent (None = use TOML default or 10).
+    pub max_turns: Option<usize>,
     /// Show intermediate agent outputs and tool calls.
     pub verbose: bool,
     /// Output structured JSON.
     pub json_output: bool,
 }
 
-impl Default for HeavyConfig {
-    fn default() -> Self {
-        Self {
-            query: String::new(),
-            provider: "xai".to_string(),
-            model: "grok-4-0709".to_string(),
-            captain_model: None,
-            max_agents: None,
-            debate_rounds: 0,
-            max_turns: 10,
-            verbose: false,
-            json_output: false,
-        }
-    }
-}
-
 impl HeavyConfig {
+    /// Resolve provider, falling back to hardcoded default.
+    pub fn provider(&self) -> &str {
+        self.provider.as_deref().unwrap_or("xai")
+    }
+
+    /// Resolve model, falling back to hardcoded default.
+    pub fn model(&self) -> &str {
+        self.model.as_deref().unwrap_or("grok-4-0709")
+    }
+
+    /// Resolve max_turns, falling back to hardcoded default.
+    pub fn max_turns(&self) -> usize {
+        self.max_turns.unwrap_or(10)
+    }
+
     /// Apply overrides from a `.scud/heavy.toml` file if it exists.
+    ///
+    /// Only fills in `None` fields — CLI-provided values are never overwritten.
     pub fn apply_toml_defaults(&mut self, project_dir: &Path) -> Result<()> {
         let toml_path = project_dir.join(".scud").join("heavy.toml");
         if !toml_path.exists() {
@@ -57,24 +59,17 @@ impl HeavyConfig {
         let file: HeavyToml = toml::from_str(&content)?;
 
         if let Some(defaults) = file.defaults {
-            // Only apply TOML defaults for fields not explicitly set by CLI
-            if self.provider == "xai" {
-                if let Some(p) = defaults.provider {
-                    self.provider = p;
-                }
+            if self.provider.is_none() {
+                self.provider = defaults.provider;
             }
-            if self.model == "grok-4-0709" {
-                if let Some(m) = defaults.model {
-                    self.model = m;
-                }
+            if self.model.is_none() {
+                self.model = defaults.model;
             }
             if self.captain_model.is_none() {
                 self.captain_model = defaults.captain_model;
             }
-            if self.max_turns == 10 {
-                if let Some(t) = defaults.max_turns {
-                    self.max_turns = t;
-                }
+            if self.max_turns.is_none() {
+                self.max_turns = defaults.max_turns;
             }
         }
 
@@ -124,9 +119,13 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = HeavyConfig::default();
-        assert_eq!(config.provider, "xai");
-        assert_eq!(config.model, "grok-4-0709");
-        assert_eq!(config.max_turns, 10);
+        assert!(config.provider.is_none());
+        assert!(config.model.is_none());
+        assert!(config.max_turns.is_none());
+        // Resolver methods return hardcoded defaults
+        assert_eq!(config.provider(), "xai");
+        assert_eq!(config.model(), "grok-4-0709");
+        assert_eq!(config.max_turns(), 10);
         assert_eq!(config.debate_rounds, 0);
         assert!(!config.verbose);
         assert!(!config.json_output);

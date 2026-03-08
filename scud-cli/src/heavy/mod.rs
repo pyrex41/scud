@@ -90,11 +90,17 @@ pub async fn run_heavy(
         let query = config.query.clone();
         let name = role.name.to_string();
         let system_prompt = role.system_prompt.to_string();
-        let model = config.model.clone();
-        let provider = config.provider.clone();
-        let max_turns = config.max_turns;
+        let model = config.model().to_string();
+        let provider = config.provider().to_string();
+        let max_turns = config.max_turns();
         let working_dir = working_dir.clone();
         let event_tx = event_tx.clone();
+        let allowed_tools = {
+            let role_tools: Vec<String> = role.tools.iter().map(|s| s.to_string()).collect();
+            let overrides = HeavyConfig::agent_tool_override(&working_dir, role.name);
+            let tools = overrides.unwrap_or(role_tools);
+            if tools.is_empty() { None } else { Some(tools) }
+        };
 
         join_set.spawn(async move {
             let start = Instant::now();
@@ -108,6 +114,7 @@ pub async fn run_heavy(
                 max_turns: Some(max_turns),
                 timeout: Some(Duration::from_secs(300)),
                 reasoning_effort: None,
+                allowed_tools,
             };
 
             let result = match backend.execute(req).await {
@@ -207,6 +214,26 @@ pub async fn run_heavy(
         }
     }
 
+    // Aggregate token usage from all agents
+    let total_usage = {
+        let (mut inp, mut out, mut any) = (0u64, 0u64, false);
+        for r in agent_outputs.values() {
+            if let Some(ref u) = r.usage {
+                inp += u.input_tokens;
+                out += u.output_tokens;
+                any = true;
+            }
+        }
+        if any {
+            Some(TokenUsage {
+                input_tokens: inp,
+                output_tokens: out,
+            })
+        } else {
+            None
+        }
+    };
+
     // ── Phase 3: Synthesis ──────────────────────────────────────────
     let _ = event_tx.send(HeavyEvent::SynthesisStarted).await;
 
@@ -224,14 +251,14 @@ pub async fn run_heavy(
     let captain_model = config
         .captain_model
         .as_deref()
-        .unwrap_or(&config.model)
+        .unwrap_or(config.model())
         .to_string();
 
     let synthesis_text = run_captain_call(
         &backend,
         &synthesis_prompt,
         &captain_model,
-        &config.provider,
+        config.provider(),
         &working_dir,
         &event_tx,
     )
@@ -260,8 +287,8 @@ pub async fn run_heavy(
             let backend = Arc::clone(&backend);
             let name = role.name.to_string();
             let system_prompt = role.system_prompt.to_string();
-            let model = config.model.clone();
-            let provider = config.provider.clone();
+            let model = config.model().to_string();
+            let provider = config.provider().to_string();
             let critique_prompt = critique_prompt.clone();
             let working_dir = working_dir.clone();
 
@@ -275,6 +302,7 @@ pub async fn run_heavy(
                     max_turns: Some(1), // Critiques don't need tools
                     timeout: Some(Duration::from_secs(120)),
                     reasoning_effort: None,
+                    allowed_tools: None,
                 };
 
                 let result = match backend.execute(req).await {
@@ -306,7 +334,7 @@ pub async fn run_heavy(
             &backend,
             &resynth_prompt,
             &captain_model,
-            &config.provider,
+            config.provider(),
             &working_dir,
             &event_tx,
         )
@@ -321,7 +349,7 @@ pub async fn run_heavy(
         agents_activated: agent_names,
         agent_outputs,
         debate_critiques,
-        total_usage: None,
+        total_usage,
     };
 
     let _ = event_tx.send(HeavyEvent::Complete(result.clone())).await;
@@ -344,13 +372,14 @@ async fn route_query(
             config
                 .captain_model
                 .as_deref()
-                .unwrap_or(&config.model)
+                .unwrap_or(config.model())
                 .to_string(),
         ),
-        provider: Some(config.provider.clone()),
+        provider: Some(config.provider().to_string()),
         max_turns: Some(1),
         timeout: Some(Duration::from_secs(60)),
         reasoning_effort: None,
+        allowed_tools: None,
     };
 
     let handle = backend.execute(req).await?;
@@ -376,9 +405,10 @@ async fn route_query(
         }
     }
 
-    // Apply cap
+    // Apply cap, but never drop core agents
     if let Some(max) = config.max_agents {
-        roles.truncate(max);
+        let core_count = agents::core_roles().len();
+        roles.truncate(max.max(core_count));
     }
 
     Ok(roles)
@@ -426,6 +456,7 @@ async fn run_captain_call(
         max_turns: Some(1),
         timeout: Some(Duration::from_secs(120)),
         reasoning_effort: None,
+        allowed_tools: None,
     };
 
     let handle = backend.execute(req).await?;
@@ -480,5 +511,12 @@ mod tests {
     fn test_parse_agent_selection_invalid() {
         let result = parse_agent_selection("not json at all");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_max_agents_preserves_core() {
+        let core_count = agents::core_roles().len();
+        assert_eq!(2_usize.max(core_count), 4); // clamped up
+        assert_eq!(6_usize.max(core_count), 6); // not clamped
     }
 }

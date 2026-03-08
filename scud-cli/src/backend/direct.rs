@@ -54,6 +54,7 @@ impl AgentBackend for DirectApiBackend {
         let prompt = req.prompt.clone();
         let working_dir = req.working_dir.clone();
         let system_prompt = req.system_prompt.clone();
+        let allowed_tools = req.allowed_tools.clone();
 
         // Bridge: run_agent_loop emits StreamEvent, we convert to AgentEvent
         let (stream_tx, mut stream_rx) = mpsc::channel::<StreamEvent>(1000);
@@ -70,6 +71,7 @@ impl AgentBackend for DirectApiBackend {
                 max_tokens,
                 stream_tx,
                 &provider,
+                allowed_tools.as_deref(),
             )
             .await
             {

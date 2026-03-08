@@ -1,7 +1,6 @@
 //! CLI handler for `scud heavy` — multi-agent Heavy reasoning mode.
 
 use anyhow::Result;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -13,8 +12,8 @@ use crate::heavy::{self, HeavyConfig, HeavyEvent};
 /// Run the Heavy command from CLI args.
 pub async fn run(
     query: String,
-    provider: String,
-    model: String,
+    provider: Option<String>,
+    model: Option<String>,
     captain_model: Option<String>,
     max_agents: Option<usize>,
     debate_rounds: usize,
@@ -39,7 +38,7 @@ pub async fn run(
         captain_model,
         max_agents,
         debate_rounds,
-        max_turns: 10,
+        max_turns: None,
         verbose,
         json_output: json,
     };
@@ -89,8 +88,6 @@ async fn display_events(
     verbose: bool,
     json_output: bool,
 ) {
-    let mut agent_states: HashMap<String, AgentDisplayState> = HashMap::new();
-
     while let Some(event) = rx.recv().await {
         match event {
             HeavyEvent::RoutingStarted => {
@@ -100,9 +97,6 @@ async fn display_events(
             }
             HeavyEvent::RoutingComplete { agents } => {
                 if !json_output {
-                    let specialist_count = agents.iter().filter(|a| {
-                        !["Captain", "Harper", "Benjamin", "Lucas"].contains(&a.as_str())
-                    }).count();
                     let specialist_names: Vec<&str> = agents
                         .iter()
                         .filter(|a| !["Captain"].contains(&a.as_str()))
@@ -113,27 +107,17 @@ async fn display_events(
                         specialist_names.join(", "),
                         agents.len()
                     );
-                    let _ = specialist_count; // used in the count above
                 }
             }
             HeavyEvent::AgentStarted { name, role } => {
-                agent_states.insert(name.clone(), AgentDisplayState::default());
                 if verbose && !json_output {
                     eprintln!("\x1b[2m[{}]\x1b[0m     Started ({})", name, role);
                 }
             }
             HeavyEvent::AgentEvent { name, inner } => {
                 if verbose && !json_output {
-                    match &inner {
-                        crate::backend::AgentEvent::ToolCallStart { name: tool_name, .. } => {
-                            eprintln!("\x1b[2m[{}]\x1b[0m       {}...", name, tool_name);
-                        }
-                        crate::backend::AgentEvent::TextDelta(t) => {
-                            if let Some(state) = agent_states.get_mut(&name) {
-                                state.text_len += t.len();
-                            }
-                        }
-                        _ => {}
+                    if let crate::backend::AgentEvent::ToolCallStart { name: tool_name, .. } = &inner {
+                        eprintln!("\x1b[2m[{}]\x1b[0m       {}...", name, tool_name);
                     }
                 }
             }
@@ -199,9 +183,4 @@ fn padding(name: &str) -> &'static str {
         10 => "    ",
         _ => "   ",
     }
-}
-
-#[derive(Default)]
-struct AgentDisplayState {
-    text_len: usize,
 }

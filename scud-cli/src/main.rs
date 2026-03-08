@@ -941,12 +941,12 @@ enum Commands {
         query: String,
 
         /// LLM provider (xai, anthropic, openai, openrouter)
-        #[arg(long, default_value = "xai")]
-        provider: String,
+        #[arg(long)]
+        provider: Option<String>,
 
         /// Model to use
-        #[arg(long, default_value = "grok-4-0709")]
-        model: String,
+        #[arg(long)]
+        model: Option<String>,
 
         /// Stronger model for Captain synthesis (defaults to --model)
         #[arg(long)]
