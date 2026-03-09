@@ -54,19 +54,17 @@ jobs:
 
       - name: Build with cross
         if: matrix.use_cross
-        working-directory: ./scud-cli
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --target ${{ matrix.target }} -p scud-cli
 
       - name: Build with cargo
         if: "!matrix.use_cross"
-        working-directory: ./scud-cli
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} -p scud-cli
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: scud-cli/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
   release:
     name: Create Release
