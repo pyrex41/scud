@@ -22,11 +22,25 @@ Desktop application for visual task management and real-time AI agent control.
 
 ## Install
 
+### macOS / Linux
+
 ```bash
 curl -sSf https://raw.githubusercontent.com/pyrex41/scud/master/install.sh | sh
 ```
 
-This installs both `scud` (CLI) and `rho-cli` (default AI harness). Works on macOS, Linux, and WSL. Requires Rust — the script will install it via rustup if needed.
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/pyrex41/scud/master/install.ps1 | iex
+```
+
+Or via WSL:
+
+```powershell
+wsl curl -sSf https://raw.githubusercontent.com/pyrex41/scud/master/install.sh | sh
+```
+
+Installs both `scud` (CLI) and `rho-cli` (default AI harness). Downloads prebuilt binaries when available, falls back to `cargo install`.
 
 ### Manual Install
 
