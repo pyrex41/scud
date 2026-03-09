@@ -461,6 +461,9 @@ impl Default for AppState {
                         "claude-haiku".to_string(),
                         "xai/grok-code-fast-1".to_string(),
                         "xai/grok-4-1-fast".to_string(),
+                        "xai/grok-4.20-experimental-beta-0304-reasoning".to_string(),
+                        "xai/grok-4.20-experimental-beta-0304-non-reasoning".to_string(),
+                        "xai/grok-4.20-multi-agent-experimental-beta-0304".to_string(),
                     ],
                 );
                 // Others will be populated on startup

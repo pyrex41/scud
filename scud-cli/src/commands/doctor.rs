@@ -132,14 +132,44 @@ fn run_workflow_diagnostics(
 
     // Validate rho backend availability when using rho-first orchestration.
     if let Err(e) = find_harness_binary(Harness::Rho) {
-        results.issues.push(DiagnosticIssue {
-            severity: Severity::Critical,
-            epic_tag: "runtime".to_string(),
-            task_id: None,
-            message: format!("Rho backend check failed: {}", e),
-            suggestion: "Install/build a functional rho-cli binary or set SCUD_RHO_BIN to its path"
-                .to_string(),
-        });
+        if fix {
+            println!(
+                "{} rho-cli not found, attempting install via cargo...",
+                "⟳".blue()
+            );
+            let install_result = std::process::Command::new("cargo")
+                .args(["install", "rho-agent"])
+                .status();
+            match install_result {
+                Ok(status) if status.success() => {
+                    println!(
+                        "{} rho-cli installed successfully via cargo install rho-agent",
+                        "✓".green()
+                    );
+                }
+                _ => {
+                    results.issues.push(DiagnosticIssue {
+                        severity: Severity::Critical,
+                        epic_tag: "runtime".to_string(),
+                        task_id: None,
+                        message: format!("Rho backend check failed: {}", e),
+                        suggestion:
+                            "cargo install rho-agent failed. Install manually or set SCUD_RHO_BIN"
+                                .to_string(),
+                    });
+                }
+            }
+        } else {
+            results.issues.push(DiagnosticIssue {
+                severity: Severity::Critical,
+                epic_tag: "runtime".to_string(),
+                task_id: None,
+                message: format!("Rho backend check failed: {}", e),
+                suggestion:
+                    "Run 'scud doctor workflow --fix' to auto-install, or: cargo install rho-agent"
+                        .to_string(),
+            });
+        }
     }
 
     // If we couldn't load tasks, show what we found and exit

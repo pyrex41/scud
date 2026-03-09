@@ -223,6 +223,9 @@ impl Config {
             "xai" => vec![
                 "xai/grok-code-fast-1",
                 "xai/grok-4-1-fast",
+                "xai/grok-4.20-experimental-beta-0304-reasoning",
+                "xai/grok-4.20-experimental-beta-0304-non-reasoning",
+                "xai/grok-4.20-multi-agent-experimental-beta-0304",
                 "xai/grok-4-fast",
                 "xai/grok-3-fast",
             ],

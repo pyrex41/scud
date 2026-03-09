@@ -34,6 +34,17 @@ cargo build --release --quiet
 echo "📦 Installing SCUD globally..."
 ./target/release/scud install
 
+# Install rho-cli (default AI harness)
+echo
+echo "📦 Installing rho-cli (default AI harness)..."
+if cargo install rho-agent --quiet 2>/dev/null; then
+    echo "✅ rho-cli installed successfully!"
+else
+    echo "⚠️  rho-cli installation failed. You can install it later with:"
+    echo "   cargo install rho-agent"
+    echo "   Or set SCUD_RHO_BIN to point to an existing rho-cli binary."
+fi
+
 echo
 echo "✅ SCUD CLI installed successfully!"
 echo
