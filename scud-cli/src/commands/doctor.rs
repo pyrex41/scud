@@ -134,30 +134,25 @@ fn run_workflow_diagnostics(
     if let Err(e) = find_harness_binary(Harness::Rho) {
         if fix {
             println!(
-                "{} rho-cli not found, attempting install via cargo...",
+                "{} rho-cli not found, attempting install...",
                 "⟳".blue()
             );
-            let install_result = std::process::Command::new("cargo")
-                .args(["install", "rho-agent"])
-                .status();
-            match install_result {
-                Ok(status) if status.success() => {
-                    println!(
-                        "{} rho-cli installed successfully via cargo install rho-agent",
-                        "✓".green()
-                    );
-                }
-                _ => {
-                    results.issues.push(DiagnosticIssue {
-                        severity: Severity::Critical,
-                        epic_tag: "runtime".to_string(),
-                        task_id: None,
-                        message: format!("Rho backend check failed: {}", e),
-                        suggestion:
-                            "cargo install rho-agent failed. Install manually or set SCUD_RHO_BIN"
-                                .to_string(),
-                    });
-                }
+            let installed = try_install_rho_binary() || try_install_rho_cargo();
+            if installed {
+                println!(
+                    "{} rho-cli installed successfully",
+                    "✓".green()
+                );
+            } else {
+                results.issues.push(DiagnosticIssue {
+                    severity: Severity::Critical,
+                    epic_tag: "runtime".to_string(),
+                    task_id: None,
+                    message: format!("Rho backend check failed: {}", e),
+                    suggestion:
+                        "Auto-install failed. Install manually: cargo install rho-agent"
+                            .to_string(),
+                });
             }
         } else {
             results.issues.push(DiagnosticIssue {
@@ -495,6 +490,108 @@ fn print_recovery_instructions() {
         "{}",
         "with full codebase access to inspect and repair the files.".yellow()
     );
+}
+
+/// Try to download a prebuilt rho-cli binary from GitHub releases.
+fn try_install_rho_binary() -> bool {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    let os_name = match os {
+        "linux" => "linux",
+        "macos" => "macos",
+        _ => return false,
+    };
+    let arch_name = match arch {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        _ => return false,
+    };
+
+    let asset = format!("rho-cli-{}-{}", os_name, arch_name);
+
+    // Get latest release tag
+    let tag_output = std::process::Command::new("curl")
+        .args([
+            "-sSf",
+            "https://api.github.com/repos/pyrex41/rho/releases/latest",
+        ])
+        .output();
+
+    let tag = match tag_output {
+        Ok(output) => {
+            let body = String::from_utf8_lossy(&output.stdout);
+            body.lines()
+                .find(|l| l.contains("\"tag_name\""))
+                .and_then(|l| {
+                    let after_key = &l[l.find("tag_name")? + 8..];
+                    let q1 = after_key.find('"')? + 1;
+                    let q2 = after_key[q1..].find('"')? + q1;
+                    Some(after_key[q1..q2].to_string())
+                })
+        }
+        Err(_) => None,
+    };
+
+    let tag = match tag {
+        Some(t) => t,
+        None => return false,
+    };
+
+    let url = format!(
+        "https://github.com/pyrex41/rho/releases/download/{}/{}",
+        tag, asset
+    );
+
+    // Install to ~/.local/bin or ~/.cargo/bin
+    let install_dir = dirs::home_dir()
+        .map(|h| {
+            let local_bin = h.join(".local").join("bin");
+            if local_bin.exists() {
+                local_bin
+            } else {
+                h.join(".cargo").join("bin")
+            }
+        })
+        .unwrap_or_else(|| PathBuf::from("/usr/local/bin"));
+
+    let dest = install_dir.join("rho-cli");
+
+    println!(
+        "  Downloading rho-cli {} ({}/{})...",
+        tag, os_name, arch_name
+    );
+
+    let status = std::process::Command::new("curl")
+        .args(["-sSfL", "-o"])
+        .arg(&dest)
+        .arg(&url)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755));
+            }
+            println!("  Installed rho-cli to {}", dest.display());
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Fallback: install rho-cli via cargo.
+fn try_install_rho_cargo() -> bool {
+    println!("  Trying cargo install rho-agent...");
+    match std::process::Command::new("cargo")
+        .args(["install", "rho-agent"])
+        .status()
+    {
+        Ok(s) if s.success() => true,
+        _ => false,
+    }
 }
 
 pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
