@@ -20,42 +20,25 @@ Desktop application for visual task management and real-time AI agent control.
 
 ---
 
+## Install
+
+```bash
+curl -sSf https://raw.githubusercontent.com/pyrex41/scud/master/install.sh | sh
+```
+
+This installs both `scud` (CLI) and `rho-cli` (default AI harness). Works on macOS, Linux, and WSL. Requires Rust — the script will install it via rustup if needed.
+
+### Manual Install
+
+```bash
+cargo install scud-cli      # CLI
+cargo install rho-agent      # AI harness (provides rho-cli)
+cargo install descartes-gui  # Desktop GUI (optional)
+```
+
+---
+
 ## Quick Start
-
-### Choose Your Interface
-
-#### CLI Interface (SCUD)
-For developers who prefer terminal workflows and scripting.
-
-#### GUI Interface (Descartes)
-For visual task management and real-time agent control.
-
-### Install
-
-#### SCUD CLI
-```bash
-# From crates.io (recommended)
-cargo install scud-cli
-scud init
-
-# From source
-git clone https://github.com/pyrex41/scud.git
-cd scud/scud-cli
-cargo build --release
-./target/release/scud init
-```
-
-#### Descartes GUI
-```bash
-# From crates.io (recommended)
-cargo install descartes-gui
-
-# From source
-git clone https://github.com/pyrex41/scud.git
-cd scud/descartes-gui
-cargo build --release
-./target/release/descartes-gui
-```
 
 ### Basic Usage
 ```bash
