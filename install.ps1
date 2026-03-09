@@ -67,13 +67,22 @@ if (-not (Download-Binary -Repo $RhoRepo -BinName "rho-cli" -AssetPrefix "rho-cl
 
 Write-Host ""
 
-# Check PATH
+# Add to PATH (both permanently and for current session)
 if ($env:PATH -notlike "*$InstallDir*") {
-    Write-Host "Add $InstallDir to your PATH:"
-    Write-Host "  [Environment]::SetEnvironmentVariable('PATH', `"$InstallDir;`$env:PATH`", 'User')"
-    Write-Host ""
-    Write-Host "Or run this to add it now (current session only):"
-    Write-Host "  `$env:PATH = `"$InstallDir;`$env:PATH`""
+    # Add to current session immediately
+    $env:PATH = "$InstallDir;$env:PATH"
+    Write-Host "Added $InstallDir to current session PATH."
+
+    # Add permanently to user PATH
+    $UserPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    if ($UserPath -notlike "*$InstallDir*") {
+        if ($UserPath) {
+            [Environment]::SetEnvironmentVariable('PATH', "$InstallDir;$UserPath", 'User')
+        } else {
+            [Environment]::SetEnvironmentVariable('PATH', "$InstallDir", 'User')
+        }
+        Write-Host "Added $InstallDir to user PATH permanently."
+    }
     Write-Host ""
 }
 
