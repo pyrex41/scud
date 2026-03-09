@@ -596,6 +596,7 @@ fn try_install_rho_cargo() -> bool {
 
 pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
     use crate::extensions::loader::ExtensionManifest;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     println!(
@@ -681,31 +682,37 @@ pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
             }
         };
 
-        // 2. Check file permissions
-        match std::fs::metadata(&path) {
-            Ok(metadata) => {
-                let permissions = metadata.permissions();
+        // 2. Check file permissions (Unix only)
+        #[cfg(unix)]
+        {
+            match std::fs::metadata(&path) {
+                Ok(metadata) => {
+                    let permissions = metadata.permissions();
+                    #[cfg(unix)]
                 let mode = permissions.mode();
+                #[cfg(not(unix))]
+                let mode: u32 = 0o755;
 
-                // Check if readable by owner
-                if mode & 0o400 == 0 {
+                    // Check if readable by owner
+                    if mode & 0o400 == 0 {
+                        issues.push(DiagnosticIssue {
+                            severity: Severity::Error,
+                            epic_tag: "extensions".to_string(),
+                            task_id: Some(filename.to_string()),
+                            message: format!("Extension file not readable: {}", path.display()),
+                            suggestion: r#"Run: chmod +r <file>.toml"#.to_string(),
+                        });
+                    }
+                }
+                Err(e) => {
                     issues.push(DiagnosticIssue {
                         severity: Severity::Error,
                         epic_tag: "extensions".to_string(),
                         task_id: Some(filename.to_string()),
-                        message: format!("Extension file not readable: {}", path.display()),
-                        suggestion: r#"Run: chmod +r <file>.toml"#.to_string(),
+                        message: format!("Cannot access extension file: {}", e),
+                        suggestion: r#"Check file permissions"#.to_string(),
                     });
                 }
-            }
-            Err(e) => {
-                issues.push(DiagnosticIssue {
-                    severity: Severity::Error,
-                    epic_tag: "extensions".to_string(),
-                    task_id: Some(filename.to_string()),
-                    message: format!("Cannot access extension file: {}", e),
-                    suggestion: r#"Check file permissions"#.to_string(),
-                });
             }
         }
 
@@ -770,7 +777,10 @@ pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
                 match std::fs::metadata(&script_full_path) {
                     Ok(metadata) => {
                         let permissions = metadata.permissions();
-                        let mode = permissions.mode();
+                        #[cfg(unix)]
+                let mode = permissions.mode();
+                #[cfg(not(unix))]
+                let mode: u32 = 0o755;
 
                         // Check if executable by owner
                         if mode & 0o100 == 0 {
@@ -818,7 +828,10 @@ pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
                     match std::fs::metadata(&script_full_path) {
                         Ok(metadata) => {
                             let permissions = metadata.permissions();
-                            let mode = permissions.mode();
+                            #[cfg(unix)]
+                let mode = permissions.mode();
+                #[cfg(not(unix))]
+                let mode: u32 = 0o755;
 
                             if mode & 0o100 == 0 {
                                 issues.push(DiagnosticIssue {
@@ -866,7 +879,10 @@ pub fn scan_ext(project_root: Option<PathBuf>) -> Result<()> {
                     match std::fs::metadata(&script_full_path) {
                         Ok(metadata) => {
                             let permissions = metadata.permissions();
-                            let mode = permissions.mode();
+                            #[cfg(unix)]
+                let mode = permissions.mode();
+                #[cfg(not(unix))]
+                let mode: u32 = 0o755;
 
                             if mode & 0o100 == 0 {
                                 issues.push(DiagnosticIssue {
