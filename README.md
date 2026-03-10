@@ -151,7 +151,8 @@ The interactive setup walks you through three choices:
 
 ? Select smart model
   xai/grok-code-fast-1
-> xai/grok-4-1-fast                       # <-- pick a stronger model
+  xai/grok-4-1-fast
+> xai/grok-4.20-experimental-beta-0304-reasoning  # <-- strongest model
   Custom (enter model name)
 ```
 
@@ -177,7 +178,7 @@ SCUD initialized successfully!
 Configuration:
   Default Provider: xai (grok-code-fast-1)
   Fast Provider:    xai (grok-code-fast-1)
-  Smart Provider:   xai (grok-4-1-fast)
+  Smart Provider:   xai (grok-4.20-experimental-beta-0304-reasoning)
 ```
 
 You can also skip the interactive prompts: `scud init --provider xai`
