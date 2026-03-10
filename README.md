@@ -112,10 +112,8 @@ Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across sess
 <summary><b>Windows (PowerShell)</b></summary>
 
 ```powershell
-# Current session
+# Current session + permanent (persists across terminals)
 $env:XAI_API_KEY = "xai-..."
-
-# Permanent (persists across terminals)
 [Environment]::SetEnvironmentVariable('XAI_API_KEY', 'xai-...', 'User')
 ```
 
@@ -130,57 +128,231 @@ cd your-project
 scud init
 ```
 
-This creates the `.scud/` directory and walks you through provider/model selection.
+The interactive setup walks you through three choices:
+
+**Fast model** (used for parsing, expanding, and most AI calls):
+```
+? Select fast LLM provider
+> xAI (Grok)                              # <-- select xAI
+  Anthropic API key (ANTHROPIC_API_KEY)
+  OpenAI (GPT API)
+  ...
+
+? Select fast model
+> xai/grok-code-fast-1                    # <-- default, great for speed
+  xai/grok-4-1-fast
+  Custom (enter model name)
+```
+
+**Smart model** (used for complex analysis like PRD coverage validation):
+```
+? Select smart LLM provider
+> xAI (Grok)
+
+? Select smart model
+  xai/grok-code-fast-1
+> xai/grok-4-1-fast                       # <-- pick a stronger model
+  Custom (enter model name)
+```
+
+**Backpressure validation** (commands run between swarm waves to catch failures):
+```
+=== VALIDATION COMMANDS (BACKPRESSURE) ===
+Auto-detected commands:
+  · cargo build
+  · cargo test
+
+? How would you like to configure validation?
+> Use auto-detect (recommended)
+  Configure custom commands
+  Skip (configure later)
+```
+
+Output:
+```
+Initializing SCUD...
+
+SCUD initialized successfully!
+
+Configuration:
+  Default Provider: xai (grok-code-fast-1)
+  Fast Provider:    xai (grok-code-fast-1)
+  Smart Provider:   xai (grok-4-1-fast)
+```
+
+You can also skip the interactive prompts: `scud init --provider xai`
 
 ### 4. Generate tasks from a PRD
 
-Write a PRD (or use an existing doc), then run the full pipeline:
+Write a PRD (or use an existing markdown doc), then run the full pipeline:
 
 ```bash
-scud generate docs/feature.md --tag my-feature
+scud generate docs/prd.md --tag todo-app
 ```
 
 This runs three phases automatically:
-1. **Parse** — converts your PRD into tasks
-2. **Expand** — breaks complex tasks into subtasks
-3. **Check deps** — validates the dependency graph
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generate Pipeline (tag: todo-app)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 1: Parsing PRD into tasks...
+Reading PRD from: docs/prd.md
+Using fast model: xai/grok-code-fast-1
+
+✅ PRD parsed and task group created!
+Tag:                 todo-app
+Tasks created:       10
+
+Phase 2: Expanding complex tasks into subtasks...
+Expanding 3 task(s) with 10 concurrent requests...
+✓ Task 10 expanded into 2 subtasks
+✓ Task 8 expanded into 2 subtasks
+✓ Task 9 expanded into 2 subtasks
+
+✅ Task expansion complete!
+Expanded:                 3 (3 succeeded, 0 failed)
+Total subtasks created:   6
+
+Phase 3: Validating task dependencies...
+✓ No dependency issues found!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Generate pipeline complete!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 Inspect the results:
 
 ```bash
-scud list --tag my-feature     # See all tasks
-scud waves --tag my-feature    # See parallel execution waves
+$ scud list --tag todo-app
+```
+```
+Phase: todo-app
+
+   #  ID          Title                            Status         Cplx  Pri   Agent
+──────────────────────────────────────────────────────────────────────────────────────
+   1  1           Plan application structure ...   ○ Pending         2  High  planner
+   2  2           Set up project file and imp...   ○ Pending         1  High  fast-builder
+   3  3           Implement JSON data persist...   ○ Pending         3  Med   builder
+   4  4           Implement add task function...   ○ Pending         3  High  builder
+   5  5           Implement list tasks functi...   ○ Pending         3  High  builder
+   6  6           Implement complete task fun...   ○ Pending         3  High  builder
+   7  7           Implement delete task funct...   ○ Pending         3  High  builder
+   8  8           Implement command-line inte...   ◈ Expanded        5  High  builder
+   9  8.1         Set up argparse structure f...   ○ Pending         0  High  -
+  10  8.2         Implement routing and user-...   ○ Pending         0  Med   -
+  11  9           Write unit tests for core f...   ◈ Expanded        5  Med   tester
+  12  9.1         Write unit tests for CRUD o...   ○ Pending         0  High  -
+  13  9.2         Write unit tests for persis...   ○ Pending         0  Med   -
+  14  10          Perform integration testing...   ◈ Expanded        5  High  reviewer
+  15  10.1        Perform End-to-End Integrat...   ○ Pending         0  High  -
+  16  10.2        Fix Bugs and Validate Requi...   ○ Pending         0  High  -
+
+Total: 16 tasks
+```
+
+```bash
+$ scud waves --tag todo-app
+```
+```
+Execution Waves (max 5 parallel)
+==================================================
+
+Wave 1: 4 tasks
+    ○ 1 Plan application structure and data model [2] @planner
+    ○ 9.1 Write unit tests for CRUD operations
+    ○ 10.1 Perform End-to-End Integration Testing
+    ○ 8.1 Set up argparse structure for CLI commands
+
+Wave 2: 4 tasks
+    ○ 8.2 Implement routing and user-friendly integration <- 8.1
+    ○ 10.2 Fix Bugs and Validate Requirements <- 10.1
+    ○ 2 Set up project file and imports [1] @fast-builder <- 1
+    ○ 9.2 Write unit tests for persistence function <- 9.1
+
+Wave 3: 1 task
+    ○ 3 Implement JSON data persistence [3] @builder <- 2
+
+...
+
+Summary
+------------------------------
+  Total tasks:   13
+  Total waves:   7
+  Speedup:       1.9x
+  (from 13 sequential to 7 parallel rounds)
 ```
 
 ### 5. Launch a swarm
 
-Run tasks in parallel with AI agents:
+Preview the execution plan first:
+
+```bash
+$ scud swarm --tag todo-app --dry-run
+```
+```
+SCUD Swarm Mode
+══════════════════════════════════════════════════
+Tag:                 todo-app
+Round size:          5
+Validation:          enabled
+Terminal:            tmux
+Harness:             claude
+
+Execution Plan (dry-run)
+══════════════════════════════════════════════════
+
+Wave 1 - 4 task(s), 1 round(s)
+  Round 1:
+    ○ 1 | Plan application structure and data model
+    ○ 8.1 | Set up argparse structure for CLI commands
+    ○ 9.1 | Write unit tests for CRUD operations
+    ○ 10.1 | Perform End-to-End Integration Testing
+
+Wave 2 - 4 task(s), 1 round(s)
+  Round 1:
+    ○ 2 | Set up project file and imports
+    ○ 8.2 | Implement routing and user-friendly integration
+    ○ 9.2 | Write unit tests for persistence function
+    ○ 10.2 | Fix Bugs and Validate Requirements
+
+...
+
+Summary
+------------------------------
+  Total waves:  7
+  Total tasks:  13
+  Speedup:      1.9x
+
+No agents spawned (dry-run mode).
+```
+
+Then launch for real:
 
 ```bash
 # Default: wave mode with tmux sessions (interactive)
-scud swarm --tag my-feature
+scud swarm --tag todo-app
 
 # Or headless (no tmux, runs in background)
-scud swarm --tag my-feature --headless
+scud swarm --tag todo-app --headless
 
 # Limit concurrency
-scud swarm --tag my-feature --round-size 3
-
-# Preview without executing
-scud swarm --tag my-feature --dry-run
+scud swarm --tag todo-app --round-size 3
 ```
 
 The swarm will:
 - Compute ready tasks from the dependency graph
 - Spawn an AI agent per task (in isolated git worktrees)
-- Wait for completion, run validation (build/test)
+- Run backpressure validation (build/test) between waves
 - Advance to the next wave automatically
 
 Monitor progress:
 
 ```bash
-scud stats --tag my-feature    # Completion stats
-scud retro                     # Session retrospective
+scud stats --tag todo-app     # Completion stats
+scud retro                    # Session retrospective
 ```
 
 ### 6. Work manually (optional)
@@ -188,7 +360,26 @@ scud retro                     # Session retrospective
 You can also work through tasks one at a time:
 
 ```bash
-scud next --tag my-feature           # Find the next ready task
+$ scud next --tag todo-app
+```
+```
+Next Available Task:
+
+ID:                  1
+Title:               Plan application structure and data model
+Complexity:          2
+Priority:            High
+
+Description:
+Design the overall architecture of the single-file todo.py application,
+including the data model for tasks. Define the structure for storing tasks
+in memory and persisting to JSON.
+
+To start this task:
+  scud set-status 1 in-progress
+```
+
+```bash
 scud set-status 1 in-progress        # Claim it
 # ... do the work ...
 scud set-status 1 done               # Mark complete
