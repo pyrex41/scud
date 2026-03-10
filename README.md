@@ -52,45 +52,150 @@ cargo install descartes-gui  # Desktop GUI (optional)
 
 ---
 
-## Quick Start
+## Quickstart
 
-### Basic Usage
+Get from zero to a running AI swarm in under 5 minutes.
+
+### 1. Install
+
+<details>
+<summary><b>macOS / Linux</b></summary>
+
 ```bash
-# Initialize SCUD project
-scud init
-
-# Generate tasks from PRD (full pipeline: parse → expand → validate)
-scud generate docs/feature.md --tag my-feature
-
-# Or just parse PRD into initial tasks
-scud parse docs/feature.md --tag my-feature
-
-# View tasks and dependencies
-scud list --tag my-feature
-scud waves --tag my-feature    # Show parallel execution plan
-
-# Find and work on next ready task
-scud next --tag my-feature
-scud set-status 1 in-progress
-
-# When done, mark complete
-scud set-status 1 done
-
-# Visualize in browser
-scud view
+curl -sSf https://raw.githubusercontent.com/pyrex41/scud/master/install.sh | sh
 ```
 
-#### Descartes GUI Workflow
+Verify:
 ```bash
-# Initialize SCUD first (GUI reads from SCUD data)
-scud init
-scud generate docs/feature.md --tag my-feature
-
-# Launch GUI
-descartes-gui
-
-# In GUI: View waves, start tasks, monitor progress
+scud --help
 ```
+
+</details>
+
+<details>
+<summary><b>Windows (PowerShell)</b></summary>
+
+```powershell
+irm https://raw.githubusercontent.com/pyrex41/scud/master/install.ps1 | iex
+```
+
+The installer adds `scud` to your PATH automatically. Verify in the same terminal:
+```powershell
+scud --help
+```
+
+</details>
+
+### 2. Set up your API key
+
+SCUD needs an LLM provider for AI features. Pick one:
+
+<details>
+<summary><b>macOS / Linux</b></summary>
+
+```bash
+# xAI (default provider)
+export XAI_API_KEY=xai-...
+
+# Or Anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Or OpenAI
+export OPENAI_API_KEY=sk-...
+```
+
+Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to persist across sessions.
+
+</details>
+
+<details>
+<summary><b>Windows (PowerShell)</b></summary>
+
+```powershell
+# Current session
+$env:XAI_API_KEY = "xai-..."
+
+# Permanent (persists across terminals)
+[Environment]::SetEnvironmentVariable('XAI_API_KEY', 'xai-...', 'User')
+```
+
+Substitute `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` if using a different provider.
+
+</details>
+
+### 3. Initialize a project
+
+```bash
+cd your-project
+scud init
+```
+
+This creates the `.scud/` directory and walks you through provider/model selection.
+
+### 4. Generate tasks from a PRD
+
+Write a PRD (or use an existing doc), then run the full pipeline:
+
+```bash
+scud generate docs/feature.md --tag my-feature
+```
+
+This runs three phases automatically:
+1. **Parse** — converts your PRD into tasks
+2. **Expand** — breaks complex tasks into subtasks
+3. **Check deps** — validates the dependency graph
+
+Inspect the results:
+
+```bash
+scud list --tag my-feature     # See all tasks
+scud waves --tag my-feature    # See parallel execution waves
+```
+
+### 5. Launch a swarm
+
+Run tasks in parallel with AI agents:
+
+```bash
+# Default: wave mode with tmux sessions (interactive)
+scud swarm --tag my-feature
+
+# Or headless (no tmux, runs in background)
+scud swarm --tag my-feature --headless
+
+# Limit concurrency
+scud swarm --tag my-feature --round-size 3
+
+# Preview without executing
+scud swarm --tag my-feature --dry-run
+```
+
+The swarm will:
+- Compute ready tasks from the dependency graph
+- Spawn an AI agent per task (in isolated git worktrees)
+- Wait for completion, run validation (build/test)
+- Advance to the next wave automatically
+
+Monitor progress:
+
+```bash
+scud stats --tag my-feature    # Completion stats
+scud retro                     # Session retrospective
+```
+
+### 6. Work manually (optional)
+
+You can also work through tasks one at a time:
+
+```bash
+scud next --tag my-feature           # Find the next ready task
+scud set-status 1 in-progress        # Claim it
+# ... do the work ...
+scud set-status 1 done               # Mark complete
+scud commit -m "Implement feature"   # Task-aware git commit
+```
+
+---
 
 **SCUD CLI Quick Reference:** [docs/reference/QUICK_REFERENCE.md](docs/reference/QUICK_REFERENCE.md)
 **Orchestrator Pattern:** [docs/orchestrator.md](docs/orchestrator.md)
