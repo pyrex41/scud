@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code — scud-go tracking</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          background: #0f1117; color: #e2e8f0; padding: 24px; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 4px; color: #f8fafc; }
+  .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 24px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+             gap: 12px; margin-bottom: 28px; }
+  .stat { background: #1e2330; border: 1px solid #2d3748; border-radius: 10px;
+           padding: 14px 16px; }
+  .stat-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase;
+                  letter-spacing: 0.05em; margin-bottom: 4px; }
+  .stat-value { font-size: 1.4rem; font-weight: 700; color: #f8fafc; }
+  .stat-sub { font-size: 0.7rem; color: #94a3b8; margin-top: 2px; }
+  .section { margin-bottom: 36px; }
+  .section-header { font-size: 0.75rem; font-weight: 600; color: #64748b;
+                     text-transform: uppercase; letter-spacing: 0.08em;
+                     padding: 0 0 10px 12px; margin-bottom: 16px;
+                     border-bottom: 1px solid #2d3748; }
+  .section-header.cost  { border-left: 3px solid #6366f1; color: #818cf8; }
+  .section-header.time  { border-left: 3px solid #34d399; color: #34d399; }
+  .section-header.prompts { border-left: 3px solid #a78bfa; color: #a78bfa; }
+  .section-header.agents { border-left: 3px solid #f97316; color: #fb923c; }
+  .section-header.friction { border-left: 3px solid #ef4444; color: #f87171; }
+  .section-header.errors { border-left: 3px solid #e11d48; color: #fb7185; }
+  .section-header.skills { border-left: 3px solid #f59e0b; color: #fbbf24; }
+  .section-header.compaction { border-left: 3px solid #8b5cf6; color: #a78bfa; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card { background: #1e2330; border: 1px solid #2d3748; border-radius: 10px;
+           padding: 16px; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { font-size: 0.78rem; font-weight: 600; color: #94a3b8;
+               text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 14px; }
+  canvas { max-height: 240px; }
+  .wide canvas { max-height: 200px; }
+  .notice { font-size: 0.78rem; color: #94a3b8; background: #1e2330;
+             border: 1px solid #3b4a6b; border-left: 3px solid #6366f1;
+             border-radius: 6px; padding: 10px 14px; margin-bottom: 20px; }
+  .notice strong { color: #e2e8f0; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>Claude Code — scud-go</h1>
+<p class="subtitle">Updated after every session &mdash; open in browser to view</p>
+<p class="notice">&#9432; Cost figures are <strong>API list-price equivalents</strong> (what pay-as-you-go API customers would be charged). If you are on a Max subscription, these are <em>not</em> amounts billed to you.</p>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label">API list-price equivalent</div>
+    <div class="stat-value">$32.61</div>
+    <div class="stat-sub">across 1 day (not billed)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Sessions</div>
+    <div class="stat-value">3</div>
+    <div class="stat-sub">115 prompts total</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Output tokens</div>
+    <div class="stat-value">70,245</div>
+    <div class="stat-sub">&nbsp;</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Input tokens</div>
+    <div class="stat-value">2,974</div>
+    <div class="stat-sub">&nbsp;</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Cache read share</div>
+    <div class="stat-value">86.9%</div>
+    <div class="stat-sub">of all tokens</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Active time</div>
+    <div class="stat-value">25m 59s</div>
+    <div class="stat-sub">avg 0m 13s / prompt</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Key prompts captured</div>
+    <div class="stat-value">0</div>
+    <div class="stat-sub">of 11 total prompts</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Prompt efficiency</div>
+    <div class="stat-value">0.0%</div>
+    <div class="stat-sub">key / non-trivial (higher = better)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Agent cost</div>
+    <div class="stat-value">$6.64</div>
+    <div class="stat-sub">6 invocations</div>
+  </div>
+
+  <div class="stat">
+    <div class="stat-label">Friction events</div>
+    <div class="stat-value">4</div>
+    <div class="stat-sub">3.5 per 100 prompts</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Retry resolution</div>
+    <div class="stat-value">100.0%</div>
+    <div class="stat-sub">1 of 1 retries succeeded</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Errors</div>
+    <div class="stat-value">1</div>
+    <div class="stat-sub">0.9 per 100 prompts</div>
+  </div>
+
+</div>
+
+<div class="section">
+  <div class="section-header cost">Cost &amp; Usage</div>
+  <div class="grid">
+
+    <div class="card wide">
+      <h2>Cumulative cost</h2>
+      <canvas id="cumul"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Cost per day</h2>
+      <canvas id="costDay"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Prompts per day</h2>
+      <canvas id="sessDay"></canvas>
+    </div>
+
+    <div class="card wide">
+      <h2>Cost by model</h2>
+      <canvas id="modelStack"></canvas>
+    </div>
+
+    <div class="card wide">
+      <h2>Token composition per day</h2>
+      <canvas id="tokenComp"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header agents">Agents</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Cost by agent type</h2>
+      <canvas id="agentCost"></canvas>
+    </div>
+    <div class="card">
+      <h2>Invocations by agent type</h2>
+      <canvas id="agentCount"></canvas>
+    </div>
+    <div class="card">
+      <h2>Cost per turn by agent type</h2>
+      <canvas id="agentCPT"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header friction">Friction</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Friction per day</h2>
+      <canvas id="frictionDay"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction by category</h2>
+      <canvas id="frictionCat"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction by tool</h2>
+      <canvas id="frictionTool"></canvas>
+    </div>
+    <div class="card">
+      <h2>Friction rate trend</h2>
+      <canvas id="frictionRate"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header errors">Errors</div>
+  <div class="grid">
+    <div class="card">
+      <h2>Error types</h2>
+      <canvas id="errorTypes"></canvas>
+    </div>
+    <div class="card">
+      <h2>Errors by tool</h2>
+      <canvas id="errorTools"></canvas>
+    </div>
+    <div class="card wide">
+      <h2>Error trend per day</h2>
+      <canvas id="errorTrend"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header prompts">Key Prompts</div>
+  <div class="grid">
+
+    <div class="card wide">
+      <h2>Prompts per day</h2>
+      <canvas id="promptsVsTotal"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Efficiency per day (%)</h2>
+      <canvas id="promptEfficiency"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Category breakdown</h2>
+      <canvas id="promptDonut"></canvas>
+    </div>
+
+    <div class="card wide">
+      <h2>Categories per day</h2>
+      <canvas id="promptStack"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header time">Time</div>
+  <div class="grid">
+
+    <div class="card">
+      <h2>Duration per day</h2>
+      <canvas id="durationDay"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Avg duration per day</h2>
+      <canvas id="avgDurationDay"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Tokens per minute</h2>
+      <canvas id="tokensPerMin"></canvas>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h2 style="margin-bottom:0">Prompt length distribution</h2>
+        <select id="durRange" style="background:#0f1521;color:#94a3b8;border:1px solid #2d3748;
+          border-radius:6px;padding:4px 8px;font-size:0.75rem;cursor:pointer">
+          <option value="30s" selected>0–30s</option>
+          <option value="60s">0–60s</option>
+          <option value="30m">0–30m</option>
+          <option value="60m">0–60m</option>
+        </select>
+      </div>
+      <canvas id="durationDist"></canvas>
+    </div>
+
+    <div class="card wide">
+      <h2>Cumulative time</h2>
+      <canvas id="cumulTime"></canvas>
+    </div>
+
+    <div class="card wide">
+      <h2>Time vs cost</h2>
+      <canvas id="timeVsCost"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const DATES = ["2026-03-11"];
+const COST_BY_DATE = [32.6052];
+const SESSIONS_BY_DATE = [115];
+const OUTPUT_BY_DATE = [70245];
+const INPUT_BY_DATE = [2974];
+const CACHE_CREATE_BY_DATE = [925448];
+const CACHE_READ_BY_DATE = [6626612];
+const OPUS_BY_DATE = [32.6052];
+const SONNET_BY_DATE = [0];
+const CUMUL_LABELS = ["2026-03-11 446d451e#0", "2026-03-11 446d451e#1", "2026-03-11 446d451e#2", "2026-03-11 446d451e#3", "2026-03-11 446d451e#4", "2026-03-11 446d451e#5", "2026-03-11 446d451e#6", "2026-03-11 446d451e#7", "2026-03-11 446d451e#8", "2026-03-11 446d451e#9", "2026-03-11 446d451e#10", "2026-03-11 446d451e#11", "2026-03-11 446d451e#12", "2026-03-11 446d451e#13", "2026-03-11 446d451e#14", "2026-03-11 446d451e#15", "2026-03-11 446d451e#16", "2026-03-11 446d451e#17", "2026-03-11 446d451e#18", "2026-03-11 446d451e#19", "2026-03-11 446d451e#20", "2026-03-11 446d451e#21", "2026-03-11 446d451e#22", "2026-03-11 446d451e#23", "2026-03-11 446d451e#24", "2026-03-11 446d451e#25", "2026-03-11 446d451e#26", "2026-03-11 446d451e#27", "2026-03-11 446d451e#28", "2026-03-11 446d451e#29", "2026-03-11 446d451e#30", "2026-03-11 446d451e#31", "2026-03-11 446d451e#32", "2026-03-11 446d451e#33", "2026-03-11 446d451e#34", "2026-03-11 446d451e#35", "2026-03-11 446d451e#36", "2026-03-11 446d451e#37", "2026-03-11 446d451e#38", "2026-03-11 446d451e#39", "2026-03-11 446d451e#40", "2026-03-11 446d451e#41", "2026-03-11 446d451e#42", "2026-03-11 446d451e#43", "2026-03-11 446d451e#44", "2026-03-11 446d451e#45", "2026-03-11 446d451e#46", "2026-03-11 446d451e#47", "2026-03-11 446d451e#48", "2026-03-11 446d451e#49", "2026-03-11 446d451e#50", "2026-03-11 446d451e#51", "2026-03-11 446d451e#52", "2026-03-11 446d451e#53", "2026-03-11 446d451e#54", "2026-03-11 446d451e#55", "2026-03-11 446d451e#56", "2026-03-11 446d451e#57", "2026-03-11 446d451e#58", "2026-03-11 446d451e#59", "2026-03-11 446d451e#60", "2026-03-11 446d451e#61", "2026-03-11 446d451e#62", "2026-03-11 5acfc1d0#1", "2026-03-11 5acfc1d0#2", "2026-03-11 5acfc1d0#3", "2026-03-11 5acfc1d0#4", "2026-03-11 5acfc1d0#5", "2026-03-11 5acfc1d0#6", "2026-03-11 5acfc1d0#7", "2026-03-11 5acfc1d0#8", "2026-03-11 5acfc1d0#9", "2026-03-11 5acfc1d0#10", "2026-03-11 5acfc1d0#11", "2026-03-11 5acfc1d0#12", "2026-03-11 5acfc1d0#13", "2026-03-11 5acfc1d0#14", "2026-03-11 5acfc1d0#15", "2026-03-11 5acfc1d0#16", "2026-03-11 5acfc1d0#17", "2026-03-11 5acfc1d0#18", "2026-03-11 5acfc1d0#19", "2026-03-11 8df66505#0", "2026-03-11 8df66505#1", "2026-03-11 8df66505#2", "2026-03-11 8df66505#3", "2026-03-11 8df66505#4", "2026-03-11 8df66505#5", "2026-03-11 8df66505#6", "2026-03-11 8df66505#7", "2026-03-11 8df66505#8", "2026-03-11 8df66505#9", "2026-03-11 8df66505#10", "2026-03-11 8df66505#11", "2026-03-11 8df66505#12", "2026-03-11 8df66505#13", "2026-03-11 8df66505#14", "2026-03-11 8df66505#15", "2026-03-11 8df66505#16", "2026-03-11 8df66505#17", "2026-03-11 8df66505#18", "2026-03-11 8df66505#19", "2026-03-11 8df66505#20", "2026-03-11 8df66505#21", "2026-03-11 8df66505#22", "2026-03-11 8df66505#23", "2026-03-11 8df66505#24", "2026-03-11 8df66505#25", "2026-03-11 8df66505#26", "2026-03-11 8df66505#27", "2026-03-11 8df66505#28", "2026-03-11 8df66505#29", "2026-03-11 8df66505#30", "2026-03-11 8df66505#31", "2026-03-11 8df66505#32"];
+const CUMUL_VALUES = [0.2159, 0.4318, 0.6477, 0.8636, 1.101, 1.178, 1.4397, 1.7101, 1.7859, 1.8617, 1.9955, 2.2338, 2.4721, 2.7357, 2.8408, 2.9308, 3.0208, 3.1108, 3.5627, 3.7453, 3.9279, 4.6039, 4.8276, 5.0513, 5.275, 5.7618, 5.936, 6.1102, 6.2844, 6.4586, 6.6328, 7.2007, 7.4168, 7.6329, 8.2017, 8.4111, 8.6205, 8.8299, 9.0393, 9.2487, 9.4581, 10.0602, 10.3937, 10.5545, 10.7153, 10.8761, 11.0369, 11.4431, 11.6454, 11.8553, 11.9995, 12.1437, 12.2879, 12.4321, 12.5763, 13.322, 13.6287, 13.8012, 13.9661, 14.1279, 14.2981, 14.4692, 14.6404, 15.5157, 16.391, 17.2663, 18.1416, 19.0169, 19.8922, 20.8808, 21.5177, 22.1546, 22.7915, 23.447, 23.5778, 24.4136, 24.747, 24.9859, 25.2248, 25.4637, 25.749, 25.9917, 26.4209, 26.8501, 27.2793, 27.7362, 27.8774, 28.0186, 28.1598, 28.301, 28.4422, 28.6072, 28.7453, 28.8834, 29.0215, 29.1781, 29.3394, 29.5007, 29.6788, 29.7652, 29.8598, 29.9356, 30.0114, 30.0872, 30.768, 30.9954, 31.2228, 31.4502, 31.6776, 31.9655, 32.0725, 32.1866, 32.2746, 32.4815, 32.6052];
+const MODEL_LABELS = ["claude-opus-4-6"];
+const MODEL_COSTS = [32.6052];
+const MODEL_SESSIONS = [115];
+const PROMPT_DATES = [];
+const PROMPT_TOTALS = [];
+const PROMPT_CAT_DATASETS = [];
+const DONUT_LABELS = [];
+const DONUT_VALUES = [];
+const DONUT_COLORS = [];
+const ALL_PROMPT_DATES = ["2026-03-11"];
+const TOTAL_MSGS_BY_DATE = [11];
+const TRIVIAL_BY_DATE = [3];
+const KEY_PROMPTS_BY_DATE = [0];
+const EFFICIENCY_BY_DATE = [0.0];
+const DURATION_BY_DATE = [1559];
+const CUMUL_DURATION = [47, 47, 55, 72, 85, 99, 106, 108, 114, 119, 175, 179, 192, 196, 205, 219, 234, 245, 259, 271, 275, 278, 311, 316, 324, 344, 349, 356, 359, 375, 379, 382, 395, 398, 400, 403, 408, 438, 448, 464, 469, 473, 478, 483, 486, 491, 493, 496, 500, 504, 522, 528, 528, 528, 532, 532, 541, 544, 554, 607, 611, 615, 618, 627, 824, 824, 826, 1048, 1061, 1070, 1118, 1121, 1121, 1121, 1129, 1131, 1145, 1157, 1276, 1282, 1294, 1299, 1305, 1386, 1386, 1386, 1386, 1389, 1389, 1393, 1393, 1397, 1435, 1449, 1485, 1496, 1499, 1499, 1501, 1502, 1504, 1506, 1509, 1511, 1521, 1523, 1528, 1533, 1536, 1538, 1540, 1543, 1547, 1552, 1559];
+const AVG_DURATION_BY_DATE = [14];
+const SCATTER_DATA = [{"x": 47, "y": 0.2159, "label": "2026-03-11 446d45#0"}, {"x": 8, "y": 0.2159, "label": "2026-03-11 446d45#2"}, {"x": 17, "y": 0.2159, "label": "2026-03-11 446d45#3"}, {"x": 13, "y": 0.2374, "label": "2026-03-11 446d45#4"}, {"x": 14, "y": 0.077, "label": "2026-03-11 446d45#5"}, {"x": 7, "y": 0.2617, "label": "2026-03-11 446d45#6"}, {"x": 2, "y": 0.2704, "label": "2026-03-11 446d45#7"}, {"x": 6, "y": 0.0758, "label": "2026-03-11 446d45#8"}, {"x": 5, "y": 0.0758, "label": "2026-03-11 446d45#9"}, {"x": 56, "y": 0.1338, "label": "2026-03-11 446d45#10"}, {"x": 4, "y": 0.2383, "label": "2026-03-11 446d45#11"}, {"x": 13, "y": 0.2383, "label": "2026-03-11 446d45#12"}, {"x": 4, "y": 0.2636, "label": "2026-03-11 446d45#13"}, {"x": 9, "y": 0.1051, "label": "2026-03-11 446d45#14"}, {"x": 14, "y": 0.09, "label": "2026-03-11 446d45#15"}, {"x": 15, "y": 0.09, "label": "2026-03-11 446d45#16"}, {"x": 11, "y": 0.09, "label": "2026-03-11 446d45#17"}, {"x": 14, "y": 0.4519, "label": "2026-03-11 446d45#18"}, {"x": 12, "y": 0.1826, "label": "2026-03-11 446d45#19"}, {"x": 4, "y": 0.1826, "label": "2026-03-11 446d45#20"}, {"x": 3, "y": 0.676, "label": "2026-03-11 446d45#21"}, {"x": 33, "y": 0.2237, "label": "2026-03-11 446d45#22"}, {"x": 5, "y": 0.2237, "label": "2026-03-11 446d45#23"}, {"x": 8, "y": 0.2237, "label": "2026-03-11 446d45#24"}, {"x": 20, "y": 0.4868, "label": "2026-03-11 446d45#25"}, {"x": 5, "y": 0.1742, "label": "2026-03-11 446d45#26"}, {"x": 7, "y": 0.1742, "label": "2026-03-11 446d45#27"}, {"x": 3, "y": 0.1742, "label": "2026-03-11 446d45#28"}, {"x": 16, "y": 0.1742, "label": "2026-03-11 446d45#29"}, {"x": 4, "y": 0.1742, "label": "2026-03-11 446d45#30"}, {"x": 3, "y": 0.5679, "label": "2026-03-11 446d45#31"}, {"x": 13, "y": 0.2161, "label": "2026-03-11 446d45#32"}, {"x": 3, "y": 0.2161, "label": "2026-03-11 446d45#33"}, {"x": 2, "y": 0.5688, "label": "2026-03-11 446d45#34"}, {"x": 3, "y": 0.2094, "label": "2026-03-11 446d45#35"}, {"x": 5, "y": 0.2094, "label": "2026-03-11 446d45#36"}, {"x": 30, "y": 0.2094, "label": "2026-03-11 446d45#37"}, {"x": 10, "y": 0.2094, "label": "2026-03-11 446d45#38"}, {"x": 16, "y": 0.2094, "label": "2026-03-11 446d45#39"}, {"x": 5, "y": 0.2094, "label": "2026-03-11 446d45#40"}, {"x": 4, "y": 0.6021, "label": "2026-03-11 446d45#41"}, {"x": 5, "y": 0.3335, "label": "2026-03-11 446d45#42"}, {"x": 5, "y": 0.1608, "label": "2026-03-11 446d45#43"}, {"x": 3, "y": 0.1608, "label": "2026-03-11 446d45#44"}, {"x": 5, "y": 0.1608, "label": "2026-03-11 446d45#45"}, {"x": 2, "y": 0.1608, "label": "2026-03-11 446d45#46"}, {"x": 3, "y": 0.4062, "label": "2026-03-11 446d45#47"}, {"x": 4, "y": 0.2023, "label": "2026-03-11 446d45#48"}, {"x": 4, "y": 0.2099, "label": "2026-03-11 446d45#49"}, {"x": 18, "y": 0.1442, "label": "2026-03-11 446d45#50"}, {"x": 6, "y": 0.1442, "label": "2026-03-11 446d45#51"}, {"x": 4, "y": 0.1442, "label": "2026-03-11 446d45#54"}, {"x": 9, "y": 0.3067, "label": "2026-03-11 446d45#56"}, {"x": 3, "y": 0.1725, "label": "2026-03-11 446d45#57"}, {"x": 10, "y": 0.1649, "label": "2026-03-11 446d45#58"}, {"x": 53, "y": 0.1618, "label": "2026-03-11 446d45#59"}, {"x": 4, "y": 0.1702, "label": "2026-03-11 446d45#60"}, {"x": 4, "y": 0.1711, "label": "2026-03-11 446d45#61"}, {"x": 3, "y": 0.1712, "label": "2026-03-11 446d45#62"}, {"x": 9, "y": 0.8753, "label": "2026-03-11 5acfc1#1"}, {"x": 197, "y": 0.8753, "label": "2026-03-11 5acfc1#2"}, {"x": 2, "y": 0.8753, "label": "2026-03-11 5acfc1#4"}, {"x": 222, "y": 0.8753, "label": "2026-03-11 5acfc1#5"}, {"x": 13, "y": 0.8753, "label": "2026-03-11 5acfc1#6"}, {"x": 9, "y": 0.9886, "label": "2026-03-11 5acfc1#7"}, {"x": 48, "y": 0.6369, "label": "2026-03-11 5acfc1#8"}, {"x": 3, "y": 0.6369, "label": "2026-03-11 5acfc1#9"}, {"x": 8, "y": 0.1308, "label": "2026-03-11 5acfc1#12"}, {"x": 2, "y": 0.8358, "label": "2026-03-11 5acfc1#13"}, {"x": 14, "y": 0.3334, "label": "2026-03-11 5acfc1#14"}, {"x": 12, "y": 0.2389, "label": "2026-03-11 5acfc1#15"}, {"x": 119, "y": 0.2389, "label": "2026-03-11 5acfc1#16"}, {"x": 6, "y": 0.2389, "label": "2026-03-11 5acfc1#17"}, {"x": 12, "y": 0.2853, "label": "2026-03-11 5acfc1#18"}, {"x": 5, "y": 0.2427, "label": "2026-03-11 5acfc1#19"}, {"x": 6, "y": 0.4292, "label": "2026-03-11 8df665#0"}, {"x": 81, "y": 0.4292, "label": "2026-03-11 8df665#1"}, {"x": 3, "y": 0.1412, "label": "2026-03-11 8df665#5"}, {"x": 4, "y": 0.1412, "label": "2026-03-11 8df665#7"}, {"x": 4, "y": 0.165, "label": "2026-03-11 8df665#9"}, {"x": 38, "y": 0.1381, "label": "2026-03-11 8df665#10"}, {"x": 14, "y": 0.1381, "label": "2026-03-11 8df665#11"}, {"x": 36, "y": 0.1381, "label": "2026-03-11 8df665#12"}, {"x": 11, "y": 0.1566, "label": "2026-03-11 8df665#13"}, {"x": 3, "y": 0.1613, "label": "2026-03-11 8df665#14"}, {"x": 2, "y": 0.1781, "label": "2026-03-11 8df665#16"}, {"x": 1, "y": 0.0864, "label": "2026-03-11 8df665#17"}, {"x": 2, "y": 0.0946, "label": "2026-03-11 8df665#18"}, {"x": 2, "y": 0.0758, "label": "2026-03-11 8df665#19"}, {"x": 3, "y": 0.0758, "label": "2026-03-11 8df665#20"}, {"x": 2, "y": 0.0758, "label": "2026-03-11 8df665#21"}, {"x": 10, "y": 0.6808, "label": "2026-03-11 8df665#22"}, {"x": 2, "y": 0.2274, "label": "2026-03-11 8df665#23"}, {"x": 5, "y": 0.2274, "label": "2026-03-11 8df665#24"}, {"x": 5, "y": 0.2274, "label": "2026-03-11 8df665#25"}, {"x": 3, "y": 0.2274, "label": "2026-03-11 8df665#26"}, {"x": 2, "y": 0.2879, "label": "2026-03-11 8df665#27"}, {"x": 2, "y": 0.107, "label": "2026-03-11 8df665#28"}, {"x": 3, "y": 0.1141, "label": "2026-03-11 8df665#29"}, {"x": 4, "y": 0.088, "label": "2026-03-11 8df665#30"}, {"x": 5, "y": 0.2069, "label": "2026-03-11 8df665#31"}, {"x": 7, "y": 0.1237, "label": "2026-03-11 8df665#32"}];
+const TPM_DATA = [{"x": 47, "y": 11.5, "label": "2026-03-11 446d45#0"}, {"x": 8, "y": 67.5, "label": "2026-03-11 446d45#2"}, {"x": 17, "y": 31.8, "label": "2026-03-11 446d45#3"}, {"x": 13, "y": 1361.5, "label": "2026-03-11 446d45#4"}, {"x": 14, "y": 295.7, "label": "2026-03-11 446d45#5"}, {"x": 7, "y": 8.6, "label": "2026-03-11 446d45#6"}, {"x": 2, "y": 3540.0, "label": "2026-03-11 446d45#7"}, {"x": 6, "y": 10.0, "label": "2026-03-11 446d45#8"}, {"x": 5, "y": 12.0, "label": "2026-03-11 446d45#9"}, {"x": 56, "y": 830.4, "label": "2026-03-11 446d45#10"}, {"x": 4, "y": 135.0, "label": "2026-03-11 446d45#11"}, {"x": 13, "y": 41.5, "label": "2026-03-11 446d45#12"}, {"x": 4, "y": 5190.0, "label": "2026-03-11 446d45#13"}, {"x": 9, "y": 853.3, "label": "2026-03-11 446d45#14"}, {"x": 14, "y": 4.3, "label": "2026-03-11 446d45#15"}, {"x": 15, "y": 4.0, "label": "2026-03-11 446d45#16"}, {"x": 11, "y": 5.5, "label": "2026-03-11 446d45#17"}, {"x": 14, "y": 20687.1, "label": "2026-03-11 446d45#18"}, {"x": 12, "y": 120.0, "label": "2026-03-11 446d45#19"}, {"x": 4, "y": 360.0, "label": "2026-03-11 446d45#20"}, {"x": 3, "y": 132060.0, "label": "2026-03-11 446d45#21"}, {"x": 33, "y": 1.8, "label": "2026-03-11 446d45#22"}, {"x": 5, "y": 12.0, "label": "2026-03-11 446d45#23"}, {"x": 8, "y": 7.5, "label": "2026-03-11 446d45#24"}, {"x": 20, "y": 10527.0, "label": "2026-03-11 446d45#25"}, {"x": 5, "y": 48.0, "label": "2026-03-11 446d45#26"}, {"x": 7, "y": 34.3, "label": "2026-03-11 446d45#27"}, {"x": 3, "y": 80.0, "label": "2026-03-11 446d45#28"}, {"x": 16, "y": 15.0, "label": "2026-03-11 446d45#29"}, {"x": 4, "y": 60.0, "label": "2026-03-11 446d45#30"}, {"x": 3, "y": 105060.0, "label": "2026-03-11 446d45#31"}, {"x": 13, "y": 4.6, "label": "2026-03-11 446d45#32"}, {"x": 3, "y": 20.0, "label": "2026-03-11 446d45#33"}, {"x": 2, "y": 141090.0, "label": "2026-03-11 446d45#34"}, {"x": 3, "y": 20.0, "label": "2026-03-11 446d45#35"}, {"x": 5, "y": 12.0, "label": "2026-03-11 446d45#36"}, {"x": 30, "y": 2.0, "label": "2026-03-11 446d45#37"}, {"x": 10, "y": 6.0, "label": "2026-03-11 446d45#38"}, {"x": 16, "y": 3.8, "label": "2026-03-11 446d45#39"}, {"x": 5, "y": 12.0, "label": "2026-03-11 446d45#40"}, {"x": 4, "y": 78555.0, "label": "2026-03-11 446d45#41"}, {"x": 5, "y": 16212.0, "label": "2026-03-11 446d45#42"}, {"x": 5, "y": 12.0, "label": "2026-03-11 446d45#43"}, {"x": 3, "y": 20.0, "label": "2026-03-11 446d45#44"}, {"x": 5, "y": 12.0, "label": "2026-03-11 446d45#45"}, {"x": 2, "y": 30.0, "label": "2026-03-11 446d45#46"}, {"x": 3, "y": 65460.0, "label": "2026-03-11 446d45#47"}, {"x": 4, "y": 30.0, "label": "2026-03-11 446d45#48"}, {"x": 4, "y": 1560.0, "label": "2026-03-11 446d45#49"}, {"x": 18, "y": 3.3, "label": "2026-03-11 446d45#50"}, {"x": 6, "y": 10.0, "label": "2026-03-11 446d45#51"}, {"x": 4, "y": 15.0, "label": "2026-03-11 446d45#54"}, {"x": 9, "y": 620.0, "label": "2026-03-11 446d45#56"}, {"x": 3, "y": 2800.0, "label": "2026-03-11 446d45#57"}, {"x": 10, "y": 468.0, "label": "2026-03-11 446d45#58"}, {"x": 53, "y": 1.1, "label": "2026-03-11 446d45#59"}, {"x": 4, "y": 1695.0, "label": "2026-03-11 446d45#60"}, {"x": 4, "y": 1665.0, "label": "2026-03-11 446d45#61"}, {"x": 3, "y": 2300.0, "label": "2026-03-11 446d45#62"}, {"x": 9, "y": 66.7, "label": "2026-03-11 5acfc1#1"}, {"x": 197, "y": 3.0, "label": "2026-03-11 5acfc1#2"}, {"x": 2, "y": 300.0, "label": "2026-03-11 5acfc1#4"}, {"x": 222, "y": 2.7, "label": "2026-03-11 5acfc1#5"}, {"x": 13, "y": 46.2, "label": "2026-03-11 5acfc1#6"}, {"x": 9, "y": 10140.0, "label": "2026-03-11 5acfc1#7"}, {"x": 48, "y": 10.0, "label": "2026-03-11 5acfc1#8"}, {"x": 3, "y": 160.0, "label": "2026-03-11 5acfc1#9"}, {"x": 8, "y": 690.0, "label": "2026-03-11 5acfc1#12"}, {"x": 2, "y": 287040.0, "label": "2026-03-11 5acfc1#13"}, {"x": 14, "y": 2100.0, "label": "2026-03-11 5acfc1#14"}, {"x": 12, "y": 50.0, "label": "2026-03-11 5acfc1#15"}, {"x": 119, "y": 5.0, "label": "2026-03-11 5acfc1#16"}, {"x": 6, "y": 100.0, "label": "2026-03-11 5acfc1#17"}, {"x": 12, "y": 3145.0, "label": "2026-03-11 5acfc1#18"}, {"x": 5, "y": 96.0, "label": "2026-03-11 5acfc1#19"}, {"x": 6, "y": 90.0, "label": "2026-03-11 8df665#0"}, {"x": 81, "y": 6.7, "label": "2026-03-11 8df665#1"}, {"x": 3, "y": 160.0, "label": "2026-03-11 8df665#5"}, {"x": 4, "y": 120.0, "label": "2026-03-11 8df665#7"}, {"x": 4, "y": 4875.0, "label": "2026-03-11 8df665#9"}, {"x": 38, "y": 12.6, "label": "2026-03-11 8df665#10"}, {"x": 14, "y": 34.3, "label": "2026-03-11 8df665#11"}, {"x": 36, "y": 13.3, "label": "2026-03-11 8df665#12"}, {"x": 11, "y": 1385.5, "label": "2026-03-11 8df665#13"}, {"x": 3, "y": 20.0, "label": "2026-03-11 8df665#14"}, {"x": 2, "y": 6750.0, "label": "2026-03-11 8df665#16"}, {"x": 1, "y": 60.0, "label": "2026-03-11 8df665#17"}, {"x": 2, "y": 3300.0, "label": "2026-03-11 8df665#18"}, {"x": 2, "y": 750.0, "label": "2026-03-11 8df665#19"}, {"x": 3, "y": 500.0, "label": "2026-03-11 8df665#20"}, {"x": 2, "y": 750.0, "label": "2026-03-11 8df665#21"}, {"x": 10, "y": 48552.0, "label": "2026-03-11 8df665#22"}, {"x": 2, "y": 60.0, "label": "2026-03-11 8df665#23"}, {"x": 5, "y": 24.0, "label": "2026-03-11 8df665#24"}, {"x": 5, "y": 24.0, "label": "2026-03-11 8df665#25"}, {"x": 3, "y": 40.0, "label": "2026-03-11 8df665#26"}, {"x": 2, "y": 24240.0, "label": "2026-03-11 8df665#27"}, {"x": 2, "y": 120.0, "label": "2026-03-11 8df665#28"}, {"x": 3, "y": 1960.0, "label": "2026-03-11 8df665#29"}, {"x": 4, "y": 15.0, "label": "2026-03-11 8df665#30"}, {"x": 5, "y": 19044.0, "label": "2026-03-11 8df665#31"}, {"x": 7, "y": 814.3, "label": "2026-03-11 8df665#32"}];
+const DUR_HIST_RANGES = {"30s": {"labels": ["0\u20135s", "5\u201310s", "10\u201315s", "15\u201320s", "20\u201325s", "25\u201330s", "30s+"], "values": [41, 26, 17, 5, 1, 0, 12]}, "60s": {"labels": ["0\u201310s", "10\u201320s", "20\u201330s", "30\u201340s", "40\u201350s", "50\u201360s", "60s+"], "values": [67, 22, 1, 4, 2, 2, 4]}, "30m": {"labels": ["0\u20135m", "5\u201310m", "10\u201315m", "15\u201320m", "20\u201325m", "25\u201330m", "30m+"], "values": [102, 0, 0, 0, 0, 0, 0]}, "60m": {"labels": ["0\u201310m", "10\u201320m", "20\u201330m", "30\u201340m", "40\u201350m", "50\u201360m", "60m+"], "values": [102, 0, 0, 0, 0, 0, 0]}};
+const AGENT_LABELS = ["Explore", "Plan"];
+const AGENT_COSTS  = [4.412, 2.2302];
+const AGENT_COUNTS = [5, 1];
+const AGENT_CPT = [0.0298, 0.2027];
+
+const FRICTION_DATES = ["2026-03-11"];
+const FRICTION_MAIN = [4];
+const FRICTION_SUB = [0];
+const FRICTION_CAT_LABELS = ["permission_denied", "command_failed", "retry"];
+const FRICTION_CAT_VALUES = [2, 1, 1];
+const FRICTION_CAT_COLORS = ["#dc2626", "#eab308", "#06b6d4"];
+const FRICTION_TOOL_LABELS = ["ExitPlanMode", "Bash"];
+const FRICTION_TOOL_VALUES = [2, 2];
+const FRICTION_RATE_DATES = ["2026-03-11"];
+const FRICTION_RATE_VALUES = [3.5];
+const ERROR_TYPE_LABELS = ["exit_code_1"];
+const ERROR_TYPE_VALUES = [1];
+const ERROR_TOOL_LABELS = ["Bash"];
+const ERROR_TOOL_VALUES = [1];
+const ERROR_DATES = ["2026-03-11"];
+const ERROR_DATE_VALUES = [1];
+
+
+function formatDuration(s) {
+  if (s <= 0) return '0s';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.round(s % 60);
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm' + (sec > 0 ? ' ' + sec + 's' : '');
+  return sec + 's';
+}
+
+const GRID = '#2d3748';
+const TEXT = '#94a3b8';
+const baseOpts = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: { legend: { labels: { color: TEXT, boxWidth: 12, font: { size: 11 } } } },
+  scales: {
+    x: { ticks: { color: TEXT, font: { size: 10 } }, grid: { color: GRID } },
+    y: { ticks: { color: TEXT, font: { size: 10 } }, grid: { color: GRID } }
+  }
+};
+
+// Cumulative cost line
+new Chart(document.getElementById('cumul'), {
+  type: 'line',
+  data: {
+    labels: CUMUL_LABELS,
+    datasets: [{ label: 'Cumulative cost ($)', data: CUMUL_VALUES,
+      borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.15)',
+      fill: true, tension: 0.3, pointRadius: 2 }]
+  },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(2) } } } }
+});
+
+// Cost per day bar
+new Chart(document.getElementById('costDay'), {
+  type: 'bar',
+  data: {
+    labels: DATES,
+    datasets: [{ label: 'Cost ($)', data: COST_BY_DATE,
+      backgroundColor: '#6366f1', borderRadius: 4 }]
+  },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(2) } } } }
+});
+
+// Prompts per day
+new Chart(document.getElementById('sessDay'), {
+  type: 'bar',
+  data: {
+    labels: DATES,
+    datasets: [{ label: 'Prompts', data: SESSIONS_BY_DATE,
+      backgroundColor: '#22d3ee', borderRadius: 4 }]
+  },
+  options: baseOpts
+});
+
+// Model stacked per day
+new Chart(document.getElementById('modelStack'), {
+  type: 'bar',
+  data: {
+    labels: DATES,
+    datasets: [
+      { label: 'Opus', data: OPUS_BY_DATE, backgroundColor: '#f59e0b', borderRadius: 2 },
+      { label: 'Sonnet', data: SONNET_BY_DATE, backgroundColor: '#6366f1', borderRadius: 2 }
+    ]
+  },
+  options: { ...baseOpts, scales: { ...baseOpts.scales, x: { ...baseOpts.scales.x, stacked: true },
+    y: { ...baseOpts.scales.y, stacked: true } },
+    plugins: { ...baseOpts.plugins,
+      tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(2) } } } }
+});
+
+// Token composition per day (stacked bar)
+new Chart(document.getElementById('tokenComp'), {
+  type: 'bar',
+  data: {
+    labels: DATES,
+    datasets: [
+      { label: 'Input', data: INPUT_BY_DATE, backgroundColor: '#6366f1', borderRadius: 2 },
+      { label: 'Cache creation', data: CACHE_CREATE_BY_DATE, backgroundColor: '#f59e0b', borderRadius: 2 },
+      { label: 'Cache read', data: CACHE_READ_BY_DATE, backgroundColor: '#22d3ee', borderRadius: 2 },
+      { label: 'Output', data: OUTPUT_BY_DATE, backgroundColor: '#a78bfa', borderRadius: 2 }
+    ]
+  },
+  options: { ...baseOpts, scales: { ...baseOpts.scales,
+    x: { ...baseOpts.scales.x, stacked: true },
+    y: { ...baseOpts.scales.y, stacked: true } } }
+});
+
+// Session duration per day
+new Chart(document.getElementById('durationDay'), {
+  type: 'bar',
+  data: {
+    labels: DATES,
+    datasets: [{ label: 'Duration', data: DURATION_BY_DATE,
+      backgroundColor: '#f59e0b', borderRadius: 4 }]
+  },
+  options: { ...baseOpts,
+    scales: { ...baseOpts.scales,
+      y: { ...baseOpts.scales.y,
+        ticks: { ...baseOpts.scales.y.ticks, callback: v => formatDuration(v) } } },
+    plugins: { ...baseOpts.plugins,
+      tooltip: { callbacks: { label: ctx => ' ' + formatDuration(ctx.parsed.y) } } } }
+});
+
+// Avg session duration per day
+new Chart(document.getElementById('avgDurationDay'), {
+  type: 'line',
+  data: {
+    labels: DATES,
+    datasets: [{ label: 'Avg duration', data: AVG_DURATION_BY_DATE,
+      borderColor: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3 }]
+  },
+  options: { ...baseOpts,
+    scales: { ...baseOpts.scales,
+      y: { ...baseOpts.scales.y,
+        ticks: { ...baseOpts.scales.y.ticks, callback: v => formatDuration(v) } } },
+    plugins: { ...baseOpts.plugins,
+      tooltip: { callbacks: { label: ctx => ' ' + formatDuration(ctx.parsed.y) } } } }
+});
+
+// Cumulative time line
+new Chart(document.getElementById('cumulTime'), {
+  type: 'line',
+  data: {
+    labels: CUMUL_LABELS,
+    datasets: [{ label: 'Cumulative time', data: CUMUL_DURATION,
+      borderColor: '#22d3ee', backgroundColor: 'rgba(34,211,238,0.15)',
+      fill: true, tension: 0.3, pointRadius: 2 }]
+  },
+  options: { ...baseOpts,
+    scales: { ...baseOpts.scales,
+      y: { ...baseOpts.scales.y,
+        ticks: { ...baseOpts.scales.y.ticks, callback: v => formatDuration(v) } } },
+    plugins: { ...baseOpts.plugins,
+      tooltip: { callbacks: { label: ctx => ' ' + formatDuration(ctx.parsed.y) } } } }
+});
+
+// Time vs cost scatter
+new Chart(document.getElementById('timeVsCost'), {
+  type: 'scatter',
+  data: {
+    datasets: [{ label: 'Prompt', data: SCATTER_DATA,
+      backgroundColor: '#34d399', pointRadius: 5, pointHoverRadius: 7 }]
+  },
+  options: { ...baseOpts,
+    scales: { ...baseOpts.scales,
+      x: { ...baseOpts.scales.x, type: 'linear', min: 0,
+        ticks: { ...baseOpts.scales.x.ticks, callback: v => formatDuration(v) },
+        title: { display: true, text: 'Duration', color: TEXT, font: { size: 10 } } },
+      y: { ...baseOpts.scales.y,
+        ticks: { ...baseOpts.scales.y.ticks, callback: v => '$' + v.toFixed(2) },
+        title: { display: true, text: 'Cost (USD)', color: TEXT, font: { size: 10 } } } },
+    plugins: { ...baseOpts.plugins,
+      tooltip: { callbacks: {
+        label: ctx => {
+          const d = ctx.raw;
+          return ` ${d.label}: ${formatDuration(d.x)} / $${d.y.toFixed(4)}`;
+        }
+      } } } }
+});
+
+// Tokens per minute scatter
+new Chart(document.getElementById('tokensPerMin'), {
+  type: 'scatter',
+  data: {
+    datasets: [{ label: 'Prompt', data: TPM_DATA,
+      backgroundColor: '#818cf8', pointRadius: 5, pointHoverRadius: 7 }]
+  },
+  options: { ...baseOpts,
+    scales: { ...baseOpts.scales,
+      x: { ...baseOpts.scales.x, type: 'linear', min: 0,
+        ticks: { ...baseOpts.scales.x.ticks, callback: v => formatDuration(v) },
+        title: { display: true, text: 'Duration', color: TEXT, font: { size: 10 } } },
+      y: { ...baseOpts.scales.y,
+        title: { display: true, text: 'Output tokens / min', color: TEXT, font: { size: 10 } } } },
+    plugins: { ...baseOpts.plugins,
+      tooltip: { callbacks: {
+        label: ctx => {
+          const d = ctx.raw;
+          return ` ${d.label}: ${formatDuration(d.x)} — ${d.y} tok/min`;
+        }
+      } } } }
+});
+
+// Prompt length distribution histogram
+const durChart = new Chart(document.getElementById('durationDist'), {
+  type: 'bar',
+  data: {
+    labels: DUR_HIST_RANGES['30s'].labels,
+    datasets: [{ label: 'Prompts', data: DUR_HIST_RANGES['30s'].values,
+      backgroundColor: '#34d399', borderRadius: 4 }]
+  },
+  options: { ...baseOpts,
+    plugins: { ...baseOpts.plugins, legend: { display: false } },
+    scales: { ...baseOpts.scales,
+      y: { ...baseOpts.scales.y, ticks: { ...baseOpts.scales.y.ticks, stepSize: 1 } } } }
+});
+document.getElementById('durRange').addEventListener('change', function() {
+  const r = DUR_HIST_RANGES[this.value];
+  durChart.data.labels = r.labels;
+  durChart.data.datasets[0].data = r.values;
+  durChart.update();
+});
+
+// Total vs key prompts per day
+new Chart(document.getElementById('promptsVsTotal'), {
+  type: 'bar',
+  data: {
+    labels: ALL_PROMPT_DATES,
+    datasets: [
+      { label: 'Total prompts', data: TOTAL_MSGS_BY_DATE,
+         backgroundColor: 'rgba(148,163,184,0.35)', borderRadius: 4 },
+      { label: 'Trivial prompts', data: TRIVIAL_BY_DATE,
+         backgroundColor: '#34d399', borderRadius: 4 },
+      { label: 'Key prompts', data: KEY_PROMPTS_BY_DATE,
+         backgroundColor: '#a78bfa', borderRadius: 4 }
+    ]
+  },
+  options: baseOpts
+});
+
+// Efficiency % per day
+new Chart(document.getElementById('promptEfficiency'), {
+  type: 'line',
+  data: {
+    labels: ALL_PROMPT_DATES,
+    datasets: [{ label: 'Efficiency (%)', data: EFFICIENCY_BY_DATE,
+      borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3, spanGaps: true }]
+  },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' ' + ctx.parsed.y + '%' } } },
+    scales: { ...baseOpts.scales,
+      y: { ...baseOpts.scales.y, min: 0, max: 100,
+            ticks: { ...baseOpts.scales.y.ticks, callback: v => v + '%' } } } }
+});
+
+// Category doughnut
+new Chart(document.getElementById('promptDonut'), {
+  type: 'doughnut',
+  data: {
+    labels: DONUT_LABELS,
+    datasets: [{ data: DONUT_VALUES, backgroundColor: DONUT_COLORS,
+      borderWidth: 2, borderColor: '#1e2330' }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: {
+      legend: { position: 'right', labels: { color: TEXT, boxWidth: 12, font: { size: 11 } } }
+    }
+  }
+});
+
+// Category stacked per day
+new Chart(document.getElementById('promptStack'), {
+  type: 'bar',
+  data: {
+    labels: PROMPT_DATES,
+    datasets: PROMPT_CAT_DATASETS
+  },
+  options: { ...baseOpts,
+    scales: {
+      x: { ...baseOpts.scales.x, stacked: true },
+      y: { ...baseOpts.scales.y, stacked: true }
+    }
+  }
+});
+
+new Chart(document.getElementById('agentCost'), {
+  type: 'bar',
+  data: { labels: AGENT_LABELS,
+    datasets: [{ label: 'Cost ($)', data: AGENT_COSTS,
+      backgroundColor: '#f97316', borderRadius: 4 }] },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(4) } } } }
+});
+
+new Chart(document.getElementById('agentCount'), {
+  type: 'bar',
+  data: { labels: AGENT_LABELS,
+    datasets: [{ label: 'Invocations', data: AGENT_COUNTS,
+      backgroundColor: '#fb923c', borderRadius: 4 }] },
+  options: baseOpts
+});
+
+new Chart(document.getElementById('agentCPT'), {
+  type: 'bar',
+  data: { labels: AGENT_LABELS,
+    datasets: [{ label: 'Cost/turn', data: AGENT_CPT,
+      backgroundColor: '#fbbf24', borderRadius: 4 }] },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' $' + ctx.parsed.y.toFixed(4) + '/turn' } } } }
+});
+
+
+// Friction per day (stacked bar)
+new Chart(document.getElementById('frictionDay'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_DATES,
+    datasets: [
+      { label: 'Main session', data: FRICTION_MAIN, backgroundColor: '#ef4444', borderRadius: 2 },
+      { label: 'Subagent', data: FRICTION_SUB, backgroundColor: '#f97316', borderRadius: 2 }
+    ]
+  },
+  options: { ...baseOpts, scales: { ...baseOpts.scales,
+    x: { ...baseOpts.scales.x, stacked: true },
+    y: { ...baseOpts.scales.y, stacked: true } } }
+});
+
+// Friction by category (horizontal bar)
+new Chart(document.getElementById('frictionCat'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_CAT_LABELS,
+    datasets: [{ label: 'Events', data: FRICTION_CAT_VALUES,
+      backgroundColor: FRICTION_CAT_COLORS, borderRadius: 4 }]
+  },
+  options: { ...baseOpts, indexAxis: 'y' }
+});
+
+// Friction by tool (bar)
+new Chart(document.getElementById('frictionTool'), {
+  type: 'bar',
+  data: {
+    labels: FRICTION_TOOL_LABELS,
+    datasets: [{ label: 'Events', data: FRICTION_TOOL_VALUES,
+      backgroundColor: '#ef4444', borderRadius: 4 }]
+  },
+  options: baseOpts
+});
+
+// Friction rate trend (line)
+new Chart(document.getElementById('frictionRate'), {
+  type: 'line',
+  data: {
+    labels: FRICTION_RATE_DATES,
+    datasets: [{ label: 'Per 100 prompts', data: FRICTION_RATE_VALUES,
+      borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3 }]
+  },
+  options: { ...baseOpts, plugins: { ...baseOpts.plugins,
+    tooltip: { callbacks: { label: ctx => ' ' + ctx.parsed.y + ' per 100 prompts' } } } }
+});
+
+// Error types (horizontal bar)
+new Chart(document.getElementById('errorTypes'), {
+  type: 'bar',
+  data: {
+    labels: ERROR_TYPE_LABELS,
+    datasets: [{ label: 'Errors', data: ERROR_TYPE_VALUES,
+      backgroundColor: '#fb7185', borderRadius: 4 }]
+  },
+  options: { ...baseOpts, indexAxis: 'y' }
+});
+
+// Errors by tool (bar)
+new Chart(document.getElementById('errorTools'), {
+  type: 'bar',
+  data: {
+    labels: ERROR_TOOL_LABELS,
+    datasets: [{ label: 'Errors', data: ERROR_TOOL_VALUES,
+      backgroundColor: '#e11d48', borderRadius: 4 }]
+  },
+  options: baseOpts
+});
+
+// Error trend per day (line)
+new Chart(document.getElementById('errorTrend'), {
+  type: 'line',
+  data: {
+    labels: ERROR_DATES,
+    datasets: [{ label: 'Errors', data: ERROR_DATE_VALUES,
+      borderColor: '#e11d48', backgroundColor: 'rgba(225,29,72,0.15)',
+      fill: true, tension: 0.3, pointRadius: 3 }]
+  },
+  options: baseOpts
+});
+
+</script>
+</body>
+</html>
