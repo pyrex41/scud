@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/reuben/scud/internal/config"
+	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/ui"
 	"golang.org/x/sync/errgroup"
@@ -35,6 +36,9 @@ type RunOpts struct {
 	JSON         bool
 	WorkingDir   string
 	TimeoutSecs  int
+	Native       bool   // Use xAI native multi-agent model instead of rho ensemble
+	NativeEffort string // "low"/"medium" (4 agents) or "high"/"xhigh" (16 agents)
+	NativeTools  []string // Server-side tools: "web_search", "x_search", "code_execution"
 }
 
 // Result holds the final output of a Heavy ensemble run.
@@ -44,10 +48,84 @@ type Result struct {
 	Outputs      []AgentOutput `json:"outputs,omitempty"`
 	Synthesis    string        `json:"synthesis"`
 	DebateRounds int           `json:"debate_rounds"`
+	Mode         string        `json:"mode"` // "ensemble" or "native"
+	InputTokens  int           `json:"input_tokens,omitempty"`
+	OutputTokens int           `json:"output_tokens,omitempty"`
+	TotalTokens  int           `json:"total_tokens,omitempty"`
+}
+
+// RunNative executes a query using the xAI native multi-agent model.
+func RunNative(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error) {
+	model := opts.Model
+	if model == "" {
+		if cfg != nil && cfg.LLM.MultiAgentModel != "" {
+			model = cfg.LLM.MultiAgentModel
+		} else {
+			model = "grok-4.20-multi-agent-beta-0309"
+		}
+	}
+	effort := opts.NativeEffort
+	if effort == "" {
+		if cfg != nil && cfg.LLM.MultiAgentEffort != "" {
+			effort = cfg.LLM.MultiAgentEffort
+		} else {
+			effort = "low"
+		}
+	}
+
+	if opts.Verbose {
+		agentCount := "4"
+		if effort == "high" || effort == "xhigh" {
+			agentCount = "16"
+		}
+		ui.Header("Heavy Native Multi-Agent", fmt.Sprintf("(model: %s, effort: %s, agents: %s)", model, effort, agentCount))
+	}
+
+	provider, err := llm.NewMultiAgentProvider()
+	if err != nil {
+		return nil, fmt.Errorf("multi-agent provider: %w", err)
+	}
+
+	spin := ui.NewSpinner("Running multi-agent query...")
+	start := time.Now()
+
+	req := &llm.MultiAgentRequest{
+		Model:  model,
+		Prompt: opts.Query,
+		Effort: effort,
+		Tools:  opts.NativeTools,
+	}
+
+	resp, err := provider.CompleteMultiAgent(ctx, req)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		spin.Stop(false, fmt.Sprintf("Failed: %v", err))
+		return nil, err
+	}
+	spin.Stop(true, fmt.Sprintf("Complete (%.1fs, %d tokens)", elapsed.Seconds(), resp.TotalTokens))
+
+	if opts.Verbose {
+		ui.Complete("Heavy native multi-agent complete!")
+	}
+
+	return &Result{
+		Query:        opts.Query,
+		Agents:       []string{"native-multi-agent"},
+		Synthesis:    resp.Text,
+		Mode:         "native",
+		InputTokens:  resp.InputTokens,
+		OutputTokens: resp.OutputTokens,
+		TotalTokens:  resp.TotalTokens,
+	}, nil
 }
 
 // Run executes the full Heavy reasoning ensemble pipeline.
 func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error) {
+	if opts.Native {
+		return RunNative(ctx, cfg, opts)
+	}
+
 	// Resolve defaults
 	model := resolveModel(opts.Model, cfg)
 	concurrency := opts.Concurrency
@@ -141,6 +219,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 		Agents:       agentNames,
 		Synthesis:    synthesis,
 		DebateRounds: opts.DebateRounds,
+		Mode:         "ensemble",
 	}
 	if opts.JSON {
 		result.Outputs = outputs

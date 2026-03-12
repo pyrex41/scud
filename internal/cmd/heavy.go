@@ -13,13 +13,16 @@ import (
 
 func NewHeavyCmd() *cobra.Command {
 	var (
-		model       string
-		debate      int
-		concurrency int
-		timeout     int
-		verbose     bool
-		jsonOutput  bool
-		queryFile   string
+		model        string
+		debate       int
+		concurrency  int
+		timeout      int
+		verbose      bool
+		jsonOutput   bool
+		queryFile    string
+		native       bool
+		nativeEffort string
+		nativeTools  []string
 	)
 
 	cmd := &cobra.Command{
@@ -50,6 +53,9 @@ a unified answer. Optional debate rounds improve quality through critique cycles
 				JSON:         jsonOutput,
 				WorkingDir:   cwd,
 				TimeoutSecs:  timeout,
+				Native:       native,
+				NativeEffort: nativeEffort,
+				NativeTools:  nativeTools,
 			}
 
 			result, err := heavy.Run(cmd.Context(), cfg, opts)
@@ -68,6 +74,9 @@ a unified answer. Optional debate rounds improve quality through critique cycles
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show agent details on stderr")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Structured JSON output")
 	cmd.Flags().StringVar(&queryFile, "query-file", "", "Read query from file")
+	cmd.Flags().BoolVar(&native, "native", false, "Use xAI native multi-agent model instead of rho ensemble")
+	cmd.Flags().StringVar(&nativeEffort, "effort", "", "Native agent effort: low/medium (4 agents), high/xhigh (16 agents)")
+	cmd.Flags().StringSliceVar(&nativeTools, "tools", nil, "Native server-side tools: web_search, x_search, code_execution")
 
 	return cmd
 }

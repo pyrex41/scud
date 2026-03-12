@@ -62,6 +62,7 @@ func main() {
 		cmd.NewReanalyzeDepsCmd(),
 		cmd.NewRunCmd(),
 		cmd.NewTestCmd(),
+		cmd.NewMultiAgentCmd(),
 	)
 
 	if err := root.Execute(); err != nil {

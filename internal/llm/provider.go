@@ -25,6 +25,29 @@ type Response struct {
 	Text string
 }
 
+// MultiAgentRequest extends Request with Responses API options.
+type MultiAgentRequest struct {
+	Model  string
+	Prompt string
+	System string
+	Effort string   // "low", "medium", "high", "xhigh"
+	Tools  []string // "web_search", "x_search", "code_execution"
+}
+
+// MultiAgentResponse includes the response text and token usage.
+type MultiAgentResponse struct {
+	Text         string
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+}
+
+// MultiAgentProvider can call the xAI Responses API for multi-agent queries.
+type MultiAgentProvider interface {
+	Name() string
+	CompleteMultiAgent(ctx context.Context, req *MultiAgentRequest) (*MultiAgentResponse, error)
+}
+
 // Provider is the interface for LLM provider implementations.
 type Provider interface {
 	Name() string
@@ -71,11 +94,26 @@ func NewProvider(name string) (Provider, error) {
 			return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
 		}
 		return &anthropicProvider{apiKey: key}, nil
+	case "xai-responses":
+		key := os.Getenv("XAI_API_KEY")
+		if key == "" {
+			return nil, fmt.Errorf("XAI_API_KEY not set")
+		}
+		return &xaiResponsesProvider{apiKey: key}, nil
 	case "rho":
 		return &rhoProvider{}, nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", name)
 	}
+}
+
+// NewMultiAgentProvider creates a MultiAgentProvider. Currently only xAI is supported.
+func NewMultiAgentProvider() (MultiAgentProvider, error) {
+	key := os.Getenv("XAI_API_KEY")
+	if key == "" {
+		return nil, fmt.Errorf("XAI_API_KEY not set")
+	}
+	return &xaiResponsesProvider{apiKey: key}, nil
 }
 
 // openAICompatProvider works with any OpenAI-compatible API (xAI, OpenAI, OpenRouter).
@@ -236,6 +274,105 @@ func (p *rhoProvider) Complete(ctx context.Context, req *Request) (*Response, er
 	}
 
 	return &Response{Text: stdout.String()}, nil
+}
+
+// xaiResponsesProvider calls the xAI Responses API for multi-agent queries.
+type xaiResponsesProvider struct {
+	apiKey string
+}
+
+func (p *xaiResponsesProvider) Name() string { return "xai-responses" }
+
+// Complete implements Provider for the Responses API (single-turn).
+func (p *xaiResponsesProvider) Complete(ctx context.Context, req *Request) (*Response, error) {
+	maReq := &MultiAgentRequest{
+		Model:  req.Model,
+		Prompt: req.Prompt,
+		System: req.SystemPrompt,
+		Effort: "low",
+	}
+	maResp, err := p.CompleteMultiAgent(ctx, maReq)
+	if err != nil {
+		return nil, err
+	}
+	return &Response{Text: maResp.Text}, nil
+}
+
+// CompleteMultiAgent calls the xAI Responses API with multi-agent support.
+func (p *xaiResponsesProvider) CompleteMultiAgent(ctx context.Context, req *MultiAgentRequest) (*MultiAgentResponse, error) {
+	var input []ResponsesMessage
+	if req.System != "" {
+		input = append(input, ResponsesMessage{Role: "developer", Content: req.System})
+	}
+	input = append(input, ResponsesMessage{Role: "user", Content: req.Prompt})
+
+	apiReq := ResponsesRequest{
+		Model: req.Model,
+		Input: input,
+	}
+
+	if req.Effort != "" {
+		apiReq.Reasoning = &ResponsesReasoning{Effort: req.Effort}
+	}
+
+	for _, tool := range req.Tools {
+		apiReq.Tools = append(apiReq.Tools, ResponsesTool{Type: tool})
+	}
+
+	body, err := json.Marshal(apiReq)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.x.ai/v1/responses", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("xai-responses request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading xai-responses response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("xai-responses returned status %d: %s", resp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	var apiResp ResponsesResponse
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("parsing xai-responses response: %w", err)
+	}
+
+	if apiResp.Error != nil {
+		return nil, fmt.Errorf("xai-responses error: %s", apiResp.Error.Message)
+	}
+
+	var texts []string
+	for _, out := range apiResp.Output {
+		for _, c := range out.Content {
+			if c.Type == "output_text" {
+				texts = append(texts, c.Text)
+			}
+		}
+	}
+	if len(texts) == 0 {
+		return nil, fmt.Errorf("xai-responses returned no text content")
+	}
+
+	return &MultiAgentResponse{
+		Text:         strings.Join(texts, "\n"),
+		InputTokens:  apiResp.Usage.InputTokens,
+		OutputTokens: apiResp.Usage.OutputTokens,
+		TotalTokens:  apiResp.Usage.TotalTokens,
+	}, nil
 }
 
 func truncate(s string, n int) string {

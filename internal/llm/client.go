@@ -17,6 +17,7 @@ type Caller interface {
 type Client struct {
 	fast       Provider
 	smart      Provider
+	multiAgent MultiAgentProvider
 	fastModel  string
 	smartModel string
 	maxTokens  int
@@ -36,9 +37,13 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		smart = &rhoProvider{}
 	}
 
+	// Try to create multi-agent provider (best-effort)
+	ma, _ := NewMultiAgentProvider()
+
 	return &Client{
 		fast:       fast,
 		smart:      smart,
+		multiAgent: ma,
 		fastModel:  cfg.LLM.FastModel,
 		smartModel: cfg.LLM.SmartModel,
 		maxTokens:  cfg.LLM.MaxTokens,
@@ -75,4 +80,18 @@ func (c *Client) CompleteJSON(ctx context.Context, prompt, system string, fast b
 	}
 
 	return nil
+}
+
+// CompleteMultiAgent calls the xAI Responses API for multi-agent queries.
+// Returns an error if no multi-agent provider is available.
+func (c *Client) CompleteMultiAgent(ctx context.Context, req *MultiAgentRequest) (*MultiAgentResponse, error) {
+	if c.multiAgent == nil {
+		return nil, fmt.Errorf("no multi-agent provider available (XAI_API_KEY not set?)")
+	}
+	return c.multiAgent.CompleteMultiAgent(ctx, req)
+}
+
+// HasMultiAgent returns true if a multi-agent provider is available.
+func (c *Client) HasMultiAgent() bool {
+	return c.multiAgent != nil
 }
