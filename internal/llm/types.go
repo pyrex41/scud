@@ -48,3 +48,67 @@ type AnthropicContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
+
+// --- xAI Responses API types ---
+
+// ResponsesRequest is a request to the xAI Responses API.
+type ResponsesRequest struct {
+	Model     string               `json:"model"`
+	Input     []ResponsesMessage   `json:"input"`
+	Tools     []ResponsesTool      `json:"tools,omitempty"`
+	Reasoning *ResponsesReasoning  `json:"reasoning,omitempty"`
+}
+
+// ResponsesMessage is a message in a Responses API request.
+type ResponsesMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// ResponsesTool is a server-side tool for the Responses API.
+type ResponsesTool struct {
+	Type string `json:"type"` // "web_search", "x_search", "code_execution", "collections_search"
+}
+
+// ResponsesReasoning controls agent count via effort level.
+type ResponsesReasoning struct {
+	Effort string `json:"effort"` // "low"/"medium" = 4 agents, "high"/"xhigh" = 16 agents
+}
+
+// ResponsesResponse is a response from the xAI Responses API.
+type ResponsesResponse struct {
+	ID        string                `json:"id"`
+	Model     string                `json:"model"`
+	Status    string                `json:"status"`
+	Output    []ResponsesOutput     `json:"output"`
+	Usage     ResponsesUsage        `json:"usage"`
+	Error     *ResponsesError       `json:"error,omitempty"`
+}
+
+// ResponsesOutput is an output block in a Responses API response.
+type ResponsesOutput struct {
+	ID      string             `json:"id"`
+	Role    string             `json:"role"`
+	Type    string             `json:"type"`
+	Status  string             `json:"status"`
+	Content []ResponsesContent `json:"content"`
+}
+
+// ResponsesContent is a content block within an output.
+type ResponsesContent struct {
+	Type string `json:"type"` // "output_text"
+	Text string `json:"text"`
+}
+
+// ResponsesUsage tracks token usage for a Responses API call.
+type ResponsesUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// ResponsesError is an error in a Responses API response.
+type ResponsesError struct {
+	Code    interface{} `json:"code"` // can be int or string
+	Message string      `json:"message"`
+}

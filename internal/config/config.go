@@ -16,13 +16,15 @@ type Config struct {
 }
 
 type LLMConfig struct {
-	Provider      string `toml:"provider"`
-	Model         string `toml:"model"`
-	SmartProvider string `toml:"smart_provider"`
-	SmartModel    string `toml:"smart_model"`
-	FastProvider  string `toml:"fast_provider"`
-	FastModel     string `toml:"fast_model"`
-	MaxTokens     int    `toml:"max_tokens"`
+	Provider           string `toml:"provider"`
+	Model              string `toml:"model"`
+	SmartProvider      string `toml:"smart_provider"`
+	SmartModel         string `toml:"smart_model"`
+	FastProvider       string `toml:"fast_provider"`
+	FastModel          string `toml:"fast_model"`
+	MultiAgentModel    string `toml:"multi_agent_model"`
+	MultiAgentEffort   string `toml:"multi_agent_effort"` // "low", "medium", "high", "xhigh"
+	MaxTokens          int    `toml:"max_tokens"`
 }
 
 type HeavyConfig struct {
@@ -66,13 +68,15 @@ func Default() *Config {
 			SmartModel: "grok-4.20-beta-0309-reasoning",
 		},
 		LLM: LLMConfig{
-			Provider:      "xai",
-			Model:         "grok-4.20-beta-0309-reasoning",
-			SmartProvider: "xai",
-			SmartModel:    "grok-4.20-beta-0309-reasoning",
-			FastProvider:  "xai",
-			FastModel:     "grok-code-fast-1",
-			MaxTokens:     4096,
+			Provider:         "xai",
+			Model:            "grok-4.20-multi-agent-beta-0309",
+			SmartProvider:    "xai-responses",
+			SmartModel:       "grok-4.20-multi-agent-beta-0309",
+			FastProvider:     "xai",
+			FastModel:        "grok-code-fast-1",
+			MultiAgentModel:  "grok-4.20-multi-agent-beta-0309",
+			MultiAgentEffort: "low",
+			MaxTokens:        4096,
 		},
 		Heavy: HeavyConfig{
 			Concurrency: 4,
@@ -157,6 +161,12 @@ func (c *Config) applyEnv() {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.LLM.MaxTokens = n
 		}
+	}
+	if v := os.Getenv("SCUD_MULTI_AGENT_MODEL"); v != "" {
+		c.LLM.MultiAgentModel = v
+	}
+	if v := os.Getenv("SCUD_MULTI_AGENT_EFFORT"); v != "" {
+		c.LLM.MultiAgentEffort = v
 	}
 }
 
