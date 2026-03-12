@@ -13,7 +13,7 @@ import (
 type Options struct {
 	Prompt       string
 	Model        string
-	OutputFormat string // "json" or "" for text
+	OutputFormat string // "stream-json" or "" for text
 	WorkingDir   string
 	TimeoutSecs  int
 	SystemPrompt string
@@ -27,14 +27,14 @@ type Result struct {
 	ExitCode int
 }
 
-// Run executes rho with the given options.
+// Run executes rho-cli with the given options.
 func Run(ctx context.Context, opts Options) (*Result, error) {
-	rhoPath, err := exec.LookPath("rho")
+	rhoPath, err := exec.LookPath("rho-cli")
 	if err != nil {
-		return nil, fmt.Errorf("rho not found in PATH: %w (install from https://github.com/reuben/rho)", err)
+		return nil, fmt.Errorf("rho-cli not found in PATH: %w", err)
 	}
 
-	args := []string{"-p", opts.Prompt}
+	var args []string
 
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
@@ -46,11 +46,14 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		args = append(args, "-C", opts.WorkingDir)
 	}
 	if opts.SystemPrompt != "" {
-		args = append(args, "--system", opts.SystemPrompt)
+		args = append(args, "--system-append", opts.SystemPrompt)
 	}
-	for _, tool := range opts.AllowedTools {
-		args = append(args, "--allowedTools", tool)
+	if len(opts.AllowedTools) > 0 {
+		args = append(args, "--tools", strings.Join(opts.AllowedTools, ","))
 	}
+
+	// Prompt is positional, must come last
+	args = append(args, opts.Prompt)
 
 	cmd := exec.CommandContext(ctx, rhoPath, args...)
 	if opts.WorkingDir != "" {
@@ -91,7 +94,8 @@ var (
 // RunJSON executes rho and parses the JSON output into T.
 func RunJSON[T any](ctx context.Context, opts Options) (T, error) {
 	var zero T
-	opts.OutputFormat = "json"
+	// Don't set output-format; use default "text" and extract JSON from response
+	opts.OutputFormat = ""
 	result, err := Run(ctx, opts)
 	if err != nil {
 		return zero, err

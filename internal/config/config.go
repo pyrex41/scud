@@ -50,9 +50,9 @@ type BackpressureCfg struct {
 func Default() *Config {
 	return &Config{
 		Rho: RhoConfig{
-			Model:      "sonnet",
-			FastModel:  "haiku",
-			SmartModel: "opus",
+			Model:      "grok-4.20-reasoning",
+			FastModel:  "grok-code-fast-1",
+			SmartModel: "grok-4.20-reasoning",
 		},
 		Heavy: HeavyConfig{
 			Concurrency: 4,
@@ -63,9 +63,9 @@ func Default() *Config {
 			MaxRalphAttempts: 3,
 			TaskTimeoutSecs:  600,
 			Tiers: TierConfig{
-				Fast:     "haiku",
-				Standard: "sonnet",
-				Smart:    "opus",
+				Fast:     "grok-code-fast-1",
+				Standard: "grok-4.20-reasoning",
+				Smart:    "grok-4.20-reasoning",
 			},
 			Backpressure: BackpressureCfg{
 				StopOnFailure: true,
@@ -132,9 +132,9 @@ func (c *Config) Save(scudDir string) error {
 // DefaultTOML returns the default config as TOML string.
 func DefaultTOML() string {
 	return `[rho]
-model = "sonnet"
-fast_model = "haiku"
-smart_model = "opus"
+model = "grok-4.20-reasoning"
+fast_model = "grok-code-fast-1"
+smart_model = "grok-4.20-reasoning"
 
 [swarm]
 round_size = 5
@@ -142,9 +142,9 @@ max_ralph_attempts = 3
 task_timeout_secs = 600
 
 [swarm.tiers]
-fast = "haiku"
-standard = "sonnet"
-smart = "opus"
+fast = "grok-code-fast-1"
+standard = "grok-4.20-reasoning"
+smart = "grok-4.20-reasoning"
 
 [swarm.backpressure]
 commands = []

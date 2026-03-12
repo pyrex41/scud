@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/internal/ui"
 	"github.com/reuben/scud/internal/wave"
 )
 
@@ -52,8 +54,7 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 		actionable := phase.ActionableTasks()
 		if len(actionable) == 0 {
 			stats := phase.Stats()
-			fmt.Printf("No more actionable tasks. Done=%d, Failed=%d, Total=%d\n",
-				stats.Done, stats.Failed, stats.Total)
+			ui.Complete(fmt.Sprintf("Swarm finished — Done=%d, Failed=%d, Total=%d", stats.Done, stats.Failed, stats.Total))
 			return nil
 		}
 
@@ -67,22 +68,23 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 		}
 
 		currentWave := wr.Waves[0]
-		fmt.Printf("\n=== Wave %d: %d tasks ===\n", currentWave.Number, len(currentWave.Tasks))
+		fmt.Fprintln(os.Stderr)
+		ui.Header(fmt.Sprintf("Wave %d", currentWave.Number), fmt.Sprintf("(%d tasks)", len(currentWave.Tasks)))
 		for _, id := range currentWave.Tasks {
 			if t := phase.FindTask(id); t != nil {
 				tierModel := resolveModel(t, cfg)
-				fmt.Printf("  %s: %s [%s/%s]\n", id, t.Title, t.AgentType, tierModel)
+				ui.Info(fmt.Sprintf("%s: %s %s", id, t.Title, ui.Dim(fmt.Sprintf("[%s/%s]", t.AgentType, tierModel))))
 			}
 		}
 
 		if opts.DryRun {
-			fmt.Println("(dry run - not executing)")
-			// Show remaining waves
+			ui.Info(ui.Dim("(dry run — not executing)"))
 			for _, w := range wr.Waves[1:] {
-				fmt.Printf("\n--- Wave %d: %d tasks ---\n", w.Number, len(w.Tasks))
+				fmt.Fprintln(os.Stderr)
+				fmt.Fprintf(os.Stderr, "  %s %s\n", ui.BoldYellow(fmt.Sprintf("Wave %d:", w.Number)), fmt.Sprintf("%d tasks", len(w.Tasks)))
 				for _, id := range w.Tasks {
 					if t := phase.FindTask(id); t != nil {
-						fmt.Printf("  %s: %s\n", id, t.Title)
+						ui.Info(fmt.Sprintf("%s: %s", id, t.Title))
 					}
 				}
 			}
@@ -98,7 +100,7 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 			}
 			chunk := waveTasks[i:end]
 
-			fmt.Printf("  Round: %d tasks\n", len(chunk))
+			ui.Info(fmt.Sprintf("Round: %d tasks", len(chunk)))
 			g, gctx := errgroup.WithContext(ctx)
 			g.SetLimit(roundSize)
 
@@ -110,31 +112,31 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 			}
 
 			if err := g.Wait(); err != nil {
-				fmt.Printf("  Round error: %v\n", err)
+				ui.Warn(fmt.Sprintf("Round error: %v", err))
 			}
 		}
 
 		// Backpressure gate
 		if !opts.NoValidate {
-			fmt.Println("  Running validation...")
+			spin := ui.NewSpinner("Running validation...")
 			vr := RunValidation(ctx, store.Root(), cfg)
 			if vr.AllPassed {
-				fmt.Println("  Validation passed!")
+				spin.Stop(true, "Validation passed")
 				continue
 			}
 
-			// Print failures
+			spin.Stop(false, "Validation failed")
 			for _, cr := range vr.Results {
 				if !cr.Passed {
-					fmt.Printf("  FAIL: %s (exit %d, %.1fs)\n", cr.Command, cr.ExitCode, cr.DurationSec)
+					ui.Fail(fmt.Sprintf("%s (exit %d, %.1fs)", cr.Command, cr.ExitCode, cr.DurationSec))
 					if cr.Stderr != "" {
-						fmt.Printf("    stderr: %s\n", firstLines(cr.Stderr, 5))
+						fmt.Fprintf(os.Stderr, "    %s\n", ui.Dim(firstLines(cr.Stderr, 5)))
 					}
 				}
 			}
 
-			// Ralph recovery
-			fmt.Println("\n  Wave failed backpressure. Switching to sequential recovery (smart model)...")
+			fmt.Fprintln(os.Stderr)
+			ui.Warn("Switching to sequential recovery (smart model)...")
 
 			// Reset wave tasks to pending for retry
 			if err := store.UpdatePhase(tag, func(p *model.Phase) error {
@@ -151,7 +153,7 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 
 			recovered := false
 			for attempt := 1; attempt <= maxRalph; attempt++ {
-				fmt.Printf("  Recovery attempt %d/%d...\n", attempt, maxRalph)
+				ui.Info(fmt.Sprintf("Recovery attempt %d/%d...", attempt, maxRalph))
 
 				for _, taskID := range waveTasks {
 					// Reload to check current status
@@ -160,7 +162,7 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 						if t := p.FindTask(taskID); t != nil && t.Status != model.Done {
 							// Execute with smart model
 							if err := executeTaskWithModel(ctx, store, cfg, tag, taskID, cfg.Rho.SmartModel, taskTimeout); err != nil {
-								fmt.Printf("    Task %s recovery error: %v\n", taskID, err)
+								ui.Fail(fmt.Sprintf("Task %s recovery: %v", taskID, err))
 							}
 
 							// Validate after each task in ralph mode
@@ -190,14 +192,14 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 				// Check overall validation
 				vr := RunValidation(ctx, store.Root(), cfg)
 				if vr.AllPassed {
-					fmt.Printf("  Recovery succeeded on attempt %d\n", attempt)
+					ui.Success(fmt.Sprintf("Recovery succeeded on attempt %d", attempt))
 					recovered = true
 					break
 				}
 			}
 
 			if !recovered {
-				fmt.Printf("  Recovery exhausted after %d attempts. Failed tasks left as-is.\n", maxRalph)
+				ui.Fail(fmt.Sprintf("Recovery exhausted after %d attempts", maxRalph))
 			}
 		}
 	}
@@ -244,7 +246,7 @@ func executeTaskWithModel(ctx context.Context, store *storage.Storage, cfg *conf
 	guidance := store.LoadGuidance()
 	prompt := buildTaskPrompt(t, tag, guidance, phase)
 
-	fmt.Printf("    [%s] Starting: %s (model=%s)\n", taskID, t.Title, taskModel)
+	ui.Info(fmt.Sprintf("[%s] %s %s", taskID, t.Title, ui.Dim(fmt.Sprintf("(model=%s)", taskModel))))
 
 	// Run rho with timeout
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
@@ -261,7 +263,7 @@ func executeTaskWithModel(ctx context.Context, store *storage.Storage, cfg *conf
 	if p, ok := phases[tag]; ok {
 		if current := p.FindTask(taskID); current != nil {
 			if current.Status == model.Done || current.Status == model.Failed || current.Status == model.Review {
-				fmt.Printf("    [%s] Agent set status: %s\n", taskID, current.Status)
+				ui.Success(fmt.Sprintf("[%s] Agent set status: %s", taskID, current.Status))
 				return nil
 			}
 		}
@@ -272,12 +274,12 @@ func executeTaskWithModel(ctx context.Context, store *storage.Storage, cfg *conf
 	if err != nil || (result != nil && result.ExitCode != 0) {
 		finalStatus = model.Failed
 		if err != nil {
-			fmt.Printf("    [%s] Error: %v\n", taskID, err)
+			ui.Fail(fmt.Sprintf("[%s] %v", taskID, err))
 		} else {
-			fmt.Printf("    [%s] Exited with code %d\n", taskID, result.ExitCode)
+			ui.Fail(fmt.Sprintf("[%s] exit code %d", taskID, result.ExitCode))
 		}
 	} else {
-		fmt.Printf("    [%s] Completed\n", taskID)
+		ui.Success(fmt.Sprintf("[%s] Completed", taskID))
 	}
 
 	return store.UpdatePhase(tag, func(p *model.Phase) error {
