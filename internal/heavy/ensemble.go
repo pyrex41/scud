@@ -11,6 +11,7 @@ import (
 
 	"github.com/reuben/scud/internal/config"
 	"github.com/reuben/scud/internal/rho"
+	"github.com/reuben/scud/internal/ui"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -69,9 +70,14 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 	}
 
 	// Step 1: Route — Captain selects specialists
-	progress(opts.Verbose, "[route] Captain selecting agents...")
+	if opts.Verbose {
+		ui.Header("Heavy Ensemble", fmt.Sprintf("(model: %s)", model))
+		ui.Phase(1, "Captain routing query to specialists...")
+	}
+	spin := ui.NewSpinner("Captain selecting agents...")
 	selected, err := routeAgents(ctx, opts.Query, model, timeout)
 	if err != nil {
+		spin.Stop(false, fmt.Sprintf("Routing failed: %v", err))
 		return nil, fmt.Errorf("routing: %w", err)
 	}
 
@@ -81,34 +87,53 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 	for i, a := range agents {
 		agentNames[i] = a.Name
 	}
-	progress(opts.Verbose, "[route] Captain selected: %s (%d agents)", strings.Join(agentNames, ", "), len(agents))
+	spin.Stop(true, fmt.Sprintf("Selected: %s (%d agents)", strings.Join(agentNames, ", "), len(agents)))
 
 	// Step 2: Parallel execution (skip Captain)
-	progress(opts.Verbose, "[execute] Running %d agents (concurrency=%d)...", len(agents)-1, concurrency)
+	if opts.Verbose {
+		fmt.Fprintln(os.Stderr)
+		ui.Phase(2, fmt.Sprintf("Running %d agents (concurrency=%d)...", len(agents)-1, concurrency))
+	}
 	outputs := executeAgents(ctx, agents, opts.Query, model, concurrency, timeout, opts)
 
 	// Step 3: Synthesize
-	progress(opts.Verbose, "[synthesize] Captain combining %d responses...", countSuccessful(outputs))
+	if opts.Verbose {
+		fmt.Fprintln(os.Stderr)
+		ui.Phase(3, "Captain synthesizing responses...")
+	}
+	spin = ui.NewSpinner(fmt.Sprintf("Synthesizing %d responses...", countSuccessful(outputs)))
 	synthesis, err := synthesize(ctx, opts.Query, outputs, model, timeout)
 	if err != nil {
+		spin.Stop(false, fmt.Sprintf("Synthesis failed: %v", err))
 		return nil, fmt.Errorf("synthesis: %w", err)
 	}
+	spin.Stop(true, "Synthesis complete")
 
 	// Step 4: Debate rounds
 	for round := 1; round <= opts.DebateRounds; round++ {
-		progress(opts.Verbose, "[debate %d] Collecting critiques...", round)
+		if opts.Verbose {
+			fmt.Fprintln(os.Stderr)
+			ui.Phase(3+round, fmt.Sprintf("Debate round %d...", round))
+		}
+		spin = ui.NewSpinner(fmt.Sprintf("Collecting critiques (round %d)...", round))
 		critiques := collectCritiques(ctx, agents, opts.Query, synthesis, model, concurrency, timeout, opts)
 		nCritiques := countSuccessful(critiques)
-		progress(opts.Verbose, "[debate %d] %d critiques → re-synthesis", round, nCritiques)
+		spin.Stop(true, fmt.Sprintf("%d critiques collected", nCritiques))
 
 		if nCritiques > 0 {
+			spin = ui.NewSpinner("Captain re-synthesizing...")
 			newSynthesis, err := resynthesize(ctx, opts.Query, synthesis, critiques, model, timeout)
 			if err != nil {
-				progress(opts.Verbose, "[debate %d] re-synthesis failed: %v", round, err)
+				spin.Stop(false, fmt.Sprintf("Re-synthesis failed: %v", err))
 			} else {
+				spin.Stop(true, "Re-synthesis complete")
 				synthesis = newSynthesis
 			}
 		}
+	}
+
+	if opts.Verbose {
+		ui.Complete("Heavy ensemble complete!")
 	}
 
 	result := &Result{
@@ -136,7 +161,7 @@ func resolveModel(override string, cfg *config.Config) string {
 			return cfg.Rho.SmartModel
 		}
 	}
-	return "opus"
+	return "grok-4.20-reasoning"
 }
 
 func routeAgents(ctx context.Context, query, model string, timeoutSecs int) ([]string, error) {
@@ -222,15 +247,21 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 			if err != nil {
 				out.Failed = true
 				out.Error = err.Error()
-				progress(opts.Verbose, "[%s] failed: %v (%.1fs)", strings.ToLower(a.Name), err, duration)
+				if opts.Verbose {
+					ui.Fail(fmt.Sprintf("%s: %v (%.1fs)", a.Name, err, duration))
+				}
 			} else if result.ExitCode != 0 {
 				out.Failed = true
 				out.Error = fmt.Sprintf("exit code %d", result.ExitCode)
 				out.Output = result.Stdout
-				progress(opts.Verbose, "[%s] failed: exit code %d (%.1fs)", strings.ToLower(a.Name), result.ExitCode, duration)
+				if opts.Verbose {
+					ui.Fail(fmt.Sprintf("%s: exit code %d (%.1fs)", a.Name, result.ExitCode, duration))
+				}
 			} else {
 				out.Output = result.Stdout
-				progress(opts.Verbose, "[%s] done (%.1fs)", strings.ToLower(a.Name), duration)
+				if opts.Verbose {
+					ui.Success(fmt.Sprintf("%s %s", a.Name, ui.Dim(fmt.Sprintf("(%.1fs)", duration))))
+				}
 			}
 
 			mu.Lock()
@@ -350,12 +381,6 @@ func countSuccessful(outputs []AgentOutput) int {
 		}
 	}
 	return n
-}
-
-func progress(verbose bool, format string, args ...any) {
-	if verbose {
-		fmt.Fprintf(os.Stderr, format+"\n", args...)
-	}
 }
 
 // PrintResult outputs the result to stdout.

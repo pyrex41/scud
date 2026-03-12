@@ -32,8 +32,6 @@ func ParsePRD(ctx context.Context, cfg *config.Config, store *storage.Storage, f
 	guidance := store.LoadGuidance()
 	prompt := ParsePRDPrompt(string(content), numTasks, guidance)
 
-	fmt.Printf("Parsing PRD with %s model (%d tasks requested)...\n", cfg.Rho.FastModel, numTasks)
-
 	parsed, err := rho.RunJSON[[]parsedTask](ctx, rho.Options{
 		Prompt: prompt,
 		Model:  cfg.Rho.FastModel,
@@ -41,8 +39,6 @@ func ParsePRD(ctx context.Context, cfg *config.Config, store *storage.Storage, f
 	if err != nil {
 		return fmt.Errorf("rho parse-prd: %w", err)
 	}
-
-	fmt.Printf("Generated %d tasks, saving to tag '%s'...\n", len(parsed), tag)
 
 	return store.UpdatePhase(tag, func(p *model.Phase) error {
 		now := time.Now().UTC().Format(time.RFC3339)

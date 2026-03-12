@@ -11,6 +11,7 @@ import (
 	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/internal/ui"
 )
 
 type expandedSubtask struct {
@@ -51,15 +52,14 @@ func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag
 	}
 
 	if len(toExpand) == 0 {
-		fmt.Println("No tasks need expansion.")
+		ui.Info("No tasks need expansion.")
 		return nil
 	}
 
-	fmt.Printf("Expanding %d task(s)...\n", len(toExpand))
-
 	guidance := store.LoadGuidance()
 
-	// Process up to 5 concurrent expansions
+	pb := ui.NewProgressBar(len(toExpand), "tasks expanded")
+
 	type expandResult struct {
 		parentID string
 		subtasks []expandedSubtask
@@ -79,10 +79,11 @@ func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag
 				Model:  cfg.Rho.FastModel,
 			})
 			if err != nil {
+				pb.Increment(fmt.Sprintf("Task %s: %s", t.ID, t.Title), false)
 				return fmt.Errorf("expanding task %s: %w", t.ID, err)
 			}
 			results[i] = expandResult{parentID: t.ID, subtasks: subs}
-			fmt.Printf("  Expanded task %s into %d subtasks\n", t.ID, len(subs))
+			pb.Increment(fmt.Sprintf("Task %s → %d subtasks: %s", t.ID, len(subs), t.Title), true)
 			return nil
 		})
 	}
@@ -90,6 +91,7 @@ func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag
 	if err := g.Wait(); err != nil {
 		return err
 	}
+	pb.Finish()
 
 	// Apply all expansions
 	return store.UpdatePhase(tag, func(p *model.Phase) error {
