@@ -8,6 +8,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/reuben/scud/internal/config"
+	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
@@ -23,7 +24,8 @@ type expandedSubtask struct {
 
 // Expand expands complex tasks into subtasks.
 // If taskID is empty, expands all tasks that need expansion.
-func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag, taskID string) error {
+// An optional llm.Caller can be passed to use direct LLM calls instead of rho.
+func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag, taskID string, caller ...llm.Caller) error {
 	phases, err := store.LoadPhases()
 	if err != nil {
 		return err
@@ -74,13 +76,23 @@ func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag
 		g.Go(func() error {
 			recommended := t.RecommendedSubtasks()
 			prompt := ExpandTaskPrompt(t.Title, t.Description, t.Complexity, recommended, t.Details, guidance)
-			subs, err := rho.RunJSON[[]expandedSubtask](gctx, rho.Options{
-				Prompt: prompt,
-				Model:  cfg.Rho.FastModel,
-			})
-			if err != nil {
-				pb.Increment(fmt.Sprintf("Task %s: %s", t.ID, t.Title), false)
-				return fmt.Errorf("expanding task %s: %w", t.ID, err)
+
+			var subs []expandedSubtask
+			if len(caller) > 0 && caller[0] != nil {
+				if err := caller[0].CompleteJSON(gctx, prompt, "", true, &subs); err != nil {
+					pb.Increment(fmt.Sprintf("Task %s: %s", t.ID, t.Title), false)
+					return fmt.Errorf("expanding task %s: %w", t.ID, err)
+				}
+			} else {
+				var err error
+				subs, err = rho.RunJSON[[]expandedSubtask](gctx, rho.Options{
+					Prompt: prompt,
+					Model:  cfg.Rho.FastModel,
+				})
+				if err != nil {
+					pb.Increment(fmt.Sprintf("Task %s: %s", t.ID, t.Title), false)
+					return fmt.Errorf("expanding task %s: %w", t.ID, err)
+				}
 			}
 			results[i] = expandResult{parentID: t.ID, subtasks: subs}
 			pb.Increment(fmt.Sprintf("Task %s → %d subtasks: %s", t.ID, len(subs), t.Title), true)

@@ -120,7 +120,7 @@ func (s *Spinner) run() {
 			return
 		case <-ticker.C:
 			frame := spinFrames[i%len(spinFrames)]
-			fmt.Fprintf(os.Stderr, "\r  %s%s%s %s", cyan, frame, reset, s.msg)
+			fmt.Fprintf(os.Stderr, "\033[2K\r  %s%s%s %s", cyan, frame, reset, s.msg)
 			i++
 		}
 	}
@@ -133,13 +133,13 @@ func (s *Spinner) Stop(success bool, msg string) {
 	if !success {
 		icon = Red("✗")
 	}
-	fmt.Fprintf(os.Stderr, "\r  %s %s\n", icon, msg)
+	fmt.Fprintf(os.Stderr, "\033[2K\r  %s %s\n", icon, msg)
 }
 
 // StopWarn stops the spinner with a warning.
 func (s *Spinner) StopWarn(msg string) {
 	close(s.done)
-	fmt.Fprintf(os.Stderr, "\r  %s %s\n", Yellow("⚠"), msg)
+	fmt.Fprintf(os.Stderr, "\033[2K\r  %s %s\n", Yellow("⚠"), msg)
 }
 
 // ProgressBar shows a progress bar with task count.
@@ -171,7 +171,7 @@ func (pb *ProgressBar) render() {
 		filled = pb.completed * pb.width / pb.total
 	}
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", pb.width-filled)
-	fmt.Fprintf(os.Stderr, "\r  %s [%s%s%s] %d/%d %s",
+	fmt.Fprintf(os.Stderr, "\033[2K\r  %s [%s%s%s] %d/%d %s",
 		Cyan("⠹"), cyan, bar, reset, pb.completed, pb.total, pb.label)
 }
 

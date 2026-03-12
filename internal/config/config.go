@@ -12,6 +12,17 @@ type Config struct {
 	Rho   RhoConfig   `toml:"rho"`
 	Swarm SwarmConfig `toml:"swarm"`
 	Heavy HeavyConfig `toml:"heavy"`
+	LLM   LLMConfig   `toml:"llm"`
+}
+
+type LLMConfig struct {
+	Provider      string `toml:"provider"`
+	Model         string `toml:"model"`
+	SmartProvider string `toml:"smart_provider"`
+	SmartModel    string `toml:"smart_model"`
+	FastProvider  string `toml:"fast_provider"`
+	FastModel     string `toml:"fast_model"`
+	MaxTokens     int    `toml:"max_tokens"`
 }
 
 type HeavyConfig struct {
@@ -50,9 +61,18 @@ type BackpressureCfg struct {
 func Default() *Config {
 	return &Config{
 		Rho: RhoConfig{
-			Model:      "grok-4.20-reasoning",
+			Model:      "grok-4.20-beta-0309-reasoning",
 			FastModel:  "grok-code-fast-1",
-			SmartModel: "grok-4.20-reasoning",
+			SmartModel: "grok-4.20-beta-0309-reasoning",
+		},
+		LLM: LLMConfig{
+			Provider:      "xai",
+			Model:         "grok-4.20-beta-0309-reasoning",
+			SmartProvider: "xai",
+			SmartModel:    "grok-4.20-beta-0309-reasoning",
+			FastProvider:  "xai",
+			FastModel:     "grok-code-fast-1",
+			MaxTokens:     4096,
 		},
 		Heavy: HeavyConfig{
 			Concurrency: 4,
@@ -64,8 +84,8 @@ func Default() *Config {
 			TaskTimeoutSecs:  600,
 			Tiers: TierConfig{
 				Fast:     "grok-code-fast-1",
-				Standard: "grok-4.20-reasoning",
-				Smart:    "grok-4.20-reasoning",
+				Standard: "grok-4.20-beta-0309-reasoning",
+				Smart:    "grok-4.20-beta-0309-reasoning",
 			},
 			Backpressure: BackpressureCfg{
 				StopOnFailure: true,
@@ -116,6 +136,28 @@ func (c *Config) applyEnv() {
 			c.Swarm.RoundSize = n
 		}
 	}
+
+	// LLM overrides
+	if v := os.Getenv("SCUD_PROVIDER"); v != "" {
+		c.LLM.Provider = v
+	}
+	if v := os.Getenv("SCUD_SMART_PROVIDER"); v != "" {
+		c.LLM.SmartProvider = v
+	}
+	if v := os.Getenv("SCUD_SMART_MODEL"); v != "" {
+		c.LLM.SmartModel = v
+	}
+	if v := os.Getenv("SCUD_FAST_PROVIDER"); v != "" {
+		c.LLM.FastProvider = v
+	}
+	if v := os.Getenv("SCUD_FAST_MODEL"); v != "" {
+		c.LLM.FastModel = v
+	}
+	if v := os.Getenv("SCUD_MAX_TOKENS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.LLM.MaxTokens = n
+		}
+	}
 }
 
 // Save writes the config to config.toml.
@@ -132,9 +174,9 @@ func (c *Config) Save(scudDir string) error {
 // DefaultTOML returns the default config as TOML string.
 func DefaultTOML() string {
 	return `[rho]
-model = "grok-4.20-reasoning"
+model = "grok-4.20-beta-0309-reasoning"
 fast_model = "grok-code-fast-1"
-smart_model = "grok-4.20-reasoning"
+smart_model = "grok-4.20-beta-0309-reasoning"
 
 [swarm]
 round_size = 5
@@ -143,8 +185,8 @@ task_timeout_secs = 600
 
 [swarm.tiers]
 fast = "grok-code-fast-1"
-standard = "grok-4.20-reasoning"
-smart = "grok-4.20-reasoning"
+standard = "grok-4.20-beta-0309-reasoning"
+smart = "grok-4.20-beta-0309-reasoning"
 
 [swarm.backpressure]
 commands = []
