@@ -1,10 +1,14 @@
 package generate
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/internal/storage"
 )
 
 // CheckDepsResult holds the results of dependency validation.
@@ -121,6 +125,143 @@ func detectCycles(tasks []*model.Task) [][]string {
 		}
 	}
 	return cycles
+}
+
+// CoverageResult holds the results of LLM-powered PRD coverage analysis.
+type CoverageResult struct {
+	CoverageScore       int      `json:"coverage_score"`
+	MissingRequirements []string `json:"missing_requirements"`
+	IncompleteCoverage  []string `json:"incomplete_coverage"`
+	MisalignedTasks     []string `json:"misaligned_tasks"`
+	Summary             string   `json:"summary"`
+}
+
+// CheckDepsWithPRD validates tasks against a PRD using an LLM.
+func CheckDepsWithPRD(ctx context.Context, caller llm.Caller, store *storage.Storage, tag, prdContent string) (*CoverageResult, error) {
+	phases, err := store.LoadPhases()
+	if err != nil {
+		return nil, fmt.Errorf("loading phases: %w", err)
+	}
+	phase, ok := phases[tag]
+	if !ok {
+		return nil, fmt.Errorf("tag '%s' not found", tag)
+	}
+
+	tasksJSON, err := json.Marshal(phase.Tasks)
+	if err != nil {
+		return nil, fmt.Errorf("serializing tasks: %w", err)
+	}
+
+	prompt := ValidateTasksAgainstPRD(prdContent, string(tasksJSON))
+
+	var result CoverageResult
+	if err := caller.CompleteJSON(ctx, prompt, "", false, &result); err != nil {
+		return nil, fmt.Errorf("llm validate: %w", err)
+	}
+
+	return &result, nil
+}
+
+// fixSuggestion represents LLM-suggested fixes for PRD coverage issues.
+type fixSuggestion struct {
+	UpdateTasks []struct {
+		ID          string `json:"id"`
+		Title       string `json:"title,omitempty"`
+		Description string `json:"description,omitempty"`
+	} `json:"update_tasks"`
+	AddTasks []struct {
+		Title        string   `json:"title"`
+		Description  string   `json:"description"`
+		Priority     string   `json:"priority"`
+		Complexity   int      `json:"complexity"`
+		Dependencies []string `json:"dependencies"`
+		AgentType    string   `json:"agent_type"`
+	} `json:"add_tasks"`
+}
+
+// FixPRDIssues uses an LLM to suggest and apply fixes for PRD coverage issues.
+func FixPRDIssues(ctx context.Context, caller llm.Caller, store *storage.Storage, tag, prdContent string, issues *CoverageResult) error {
+	phases, err := store.LoadPhases()
+	if err != nil {
+		return fmt.Errorf("loading phases: %w", err)
+	}
+	phase, ok := phases[tag]
+	if !ok {
+		return fmt.Errorf("tag '%s' not found", tag)
+	}
+
+	tasksJSON, err := json.Marshal(phase.Tasks)
+	if err != nil {
+		return fmt.Errorf("serializing tasks: %w", err)
+	}
+
+	issuesJSON, err := json.Marshal(issues)
+	if err != nil {
+		return fmt.Errorf("serializing issues: %w", err)
+	}
+
+	prompt := FixPRDIssuesPrompt(prdContent, string(tasksJSON), string(issuesJSON))
+
+	var fixes fixSuggestion
+	if err := caller.CompleteJSON(ctx, prompt, "", false, &fixes); err != nil {
+		return fmt.Errorf("llm fix: %w", err)
+	}
+
+	return store.UpdatePhase(tag, func(p *model.Phase) error {
+		// Apply updates to existing tasks
+		for _, upd := range fixes.UpdateTasks {
+			t := p.FindTask(upd.ID)
+			if t == nil {
+				continue
+			}
+			if upd.Title != "" {
+				t.Title = upd.Title
+			}
+			if upd.Description != "" {
+				t.Description = upd.Description
+			}
+			t.SetUpdatedNow()
+		}
+
+		// Add new tasks
+		for _, add := range fixes.AddTasks {
+			id := p.NextTaskID()
+			t := &model.Task{
+				ID:           id,
+				Title:        add.Title,
+				Description:  add.Description,
+				Status:       model.Pending,
+				Complexity:   add.Complexity,
+				Priority:     parsePriority(add.Priority),
+				Dependencies: add.Dependencies,
+			}
+			if add.AgentType != "" {
+				t.AgentType = model.AgentType(add.AgentType)
+			}
+			t.AutoAssignAgent()
+			p.Tasks = append(p.Tasks, t)
+		}
+		return nil
+	})
+}
+
+// FormatCoverageResult returns a human-readable string of coverage results.
+func FormatCoverageResult(r *CoverageResult) string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("Coverage Score: %d/100", r.CoverageScore))
+	if len(r.MissingRequirements) > 0 {
+		parts = append(parts, fmt.Sprintf("Missing Requirements:\n  - %s", strings.Join(r.MissingRequirements, "\n  - ")))
+	}
+	if len(r.IncompleteCoverage) > 0 {
+		parts = append(parts, fmt.Sprintf("Incomplete Coverage:\n  - %s", strings.Join(r.IncompleteCoverage, "\n  - ")))
+	}
+	if len(r.MisalignedTasks) > 0 {
+		parts = append(parts, fmt.Sprintf("Misaligned Tasks:\n  - %s", strings.Join(r.MisalignedTasks, "\n  - ")))
+	}
+	if r.Summary != "" {
+		parts = append(parts, fmt.Sprintf("Summary: %s", r.Summary))
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // FormatCheckResult returns a human-readable string of check results.

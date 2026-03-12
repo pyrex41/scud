@@ -91,6 +91,27 @@ var (
 	jsonObjRe   = regexp.MustCompile(`(?s)\{.*\}`)
 )
 
+// extractJSON tries multiple strategies to find JSON in the output.
+func extractJSON(output string) string {
+	if m := jsonFenceRe.FindStringSubmatch(output); len(m) > 1 {
+		return strings.TrimSpace(m[1])
+	}
+	if m := fenceRe.FindStringSubmatch(output); len(m) > 1 {
+		return strings.TrimSpace(m[1])
+	}
+	if m := jsonArrayRe.FindString(output); m != "" {
+		return m
+	}
+	if m := jsonObjRe.FindString(output); m != "" {
+		return m
+	}
+	trimmed := strings.TrimSpace(output)
+	if strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "{") {
+		return trimmed
+	}
+	return ""
+}
+
 // RunJSON executes rho and parses the JSON output into T.
 func RunJSON[T any](ctx context.Context, opts Options) (T, error) {
 	var zero T
@@ -114,32 +135,6 @@ func RunJSON[T any](ctx context.Context, opts Options) (T, error) {
 		return zero, fmt.Errorf("parsing JSON from rho: %w\nraw: %s", err, truncate(jsonStr, 500))
 	}
 	return v, nil
-}
-
-// extractJSON tries multiple strategies to find JSON in the output.
-func extractJSON(output string) string {
-	// Strategy 1: ```json fence
-	if m := jsonFenceRe.FindStringSubmatch(output); len(m) > 1 {
-		return strings.TrimSpace(m[1])
-	}
-	// Strategy 2: ``` fence
-	if m := fenceRe.FindStringSubmatch(output); len(m) > 1 {
-		return strings.TrimSpace(m[1])
-	}
-	// Strategy 3: first JSON array
-	if m := jsonArrayRe.FindString(output); m != "" {
-		return m
-	}
-	// Strategy 4: first JSON object
-	if m := jsonObjRe.FindString(output); m != "" {
-		return m
-	}
-	// Strategy 5: raw output
-	trimmed := strings.TrimSpace(output)
-	if (strings.HasPrefix(trimmed, "[") || strings.HasPrefix(trimmed, "{")) {
-		return trimmed
-	}
-	return ""
 }
 
 func truncate(s string, n int) string {

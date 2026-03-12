@@ -78,6 +78,17 @@ func PriorityCode(p Priority) string {
 	return "M"
 }
 
+func ParsePriority(s string) (Priority, bool) {
+	switch Priority(s) {
+	case Critical, High, Medium, Low:
+		return Priority(s), true
+	}
+	if p, ok := codeToPriority[s]; ok {
+		return p, true
+	}
+	return Medium, false
+}
+
 func PriorityFromCode(c string) Priority {
 	if p, ok := codeToPriority[c]; ok {
 		return p

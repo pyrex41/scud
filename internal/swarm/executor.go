@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,15 +22,53 @@ import (
 type RunOpts struct {
 	DryRun     bool
 	NoValidate bool
+	NoRepair   bool
 	Tag        string
+	AllTags    bool
+	RoundSize  int // 0 = use config
 }
 
 // Run executes the swarm: parallel waves with ralph fallback on failure.
 func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts RunOpts) error {
+	if opts.AllTags {
+		return runAllTags(ctx, cfg, store, opts)
+	}
+	return runTag(ctx, cfg, store, opts)
+}
+
+// runAllTags iterates all phases/tags in order and runs swarm on each.
+func runAllTags(ctx context.Context, cfg *config.Config, store *storage.Storage, opts RunOpts) error {
+	phases, err := store.LoadPhases()
+	if err != nil {
+		return fmt.Errorf("loading phases: %w", err)
+	}
+	// Collect and sort tags for deterministic ordering
+	var tags []string
+	for tag := range phases {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+
+	for _, tag := range tags {
+		ui.Header("Phase", tag)
+		tagOpts := opts
+		tagOpts.Tag = tag
+		tagOpts.AllTags = false
+		if err := runTag(ctx, cfg, store, tagOpts); err != nil {
+			return fmt.Errorf("phase '%s': %w", tag, err)
+		}
+	}
+	return nil
+}
+
+func runTag(ctx context.Context, cfg *config.Config, store *storage.Storage, opts RunOpts) error {
 	tag := opts.Tag
-	roundSize := cfg.Swarm.RoundSize
+	roundSize := opts.RoundSize
 	if roundSize <= 0 {
-		roundSize = 5
+		roundSize = cfg.Swarm.RoundSize
+		if roundSize <= 0 {
+			roundSize = 5
+		}
 	}
 	maxRalph := cfg.Swarm.MaxRalphAttempts
 	if maxRalph <= 0 {
@@ -135,12 +174,46 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 				}
 			}
 
+			// Attribute failures to specific tasks
+			attributions := AttributeFailure(ctx, vr, store.Root(), waveTasks)
+			if len(attributions) > 0 {
+				ui.Info(fmt.Sprintf("Attributed failures to %d task(s):", len(attributions)))
+				for _, a := range attributions {
+					ui.Info(fmt.Sprintf("  %s [%s]: %s", a.TaskID, a.Confidence, a.Reason))
+				}
+			}
+
+			if opts.NoRepair {
+				ui.Warn("Skipping recovery (--no-repair)")
+				continue
+			}
+
 			fmt.Fprintln(os.Stderr)
 			ui.Warn("Switching to sequential recovery (smart model)...")
 
-			// Reset wave tasks to pending for retry
+			// Determine which tasks to repair: attributed tasks if available, otherwise all wave tasks
+			repairTasks := waveTasks
+			if len(attributions) > 0 {
+				seen := make(map[string]bool)
+				repairTasks = nil
+				for _, a := range attributions {
+					if !seen[a.TaskID] {
+						seen[a.TaskID] = true
+						repairTasks = append(repairTasks, a.TaskID)
+					}
+				}
+				ui.Info(fmt.Sprintf("Repairing %d attributed task(s) instead of %d total", len(repairTasks), len(waveTasks)))
+			}
+
+			// Build attribution map for repair prompts
+			attrMap := make(map[string][]Attribution)
+			for _, a := range attributions {
+				attrMap[a.TaskID] = append(attrMap[a.TaskID], a)
+			}
+
+			// Reset repair tasks to pending for retry
 			if err := store.UpdatePhase(tag, func(p *model.Phase) error {
-				for _, id := range waveTasks {
+				for _, id := range repairTasks {
 					if t := p.FindTask(id); t != nil && t.Status != model.Done {
 						t.Status = model.Pending
 						t.SetUpdatedNow()
@@ -155,20 +228,32 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 			for attempt := 1; attempt <= maxRalph; attempt++ {
 				ui.Info(fmt.Sprintf("Recovery attempt %d/%d...", attempt, maxRalph))
 
-				for _, taskID := range waveTasks {
+				for _, taskID := range repairTasks {
 					// Reload to check current status
 					phases, _ := store.LoadPhases()
 					if p, ok := phases[tag]; ok {
 						if t := p.FindTask(taskID); t != nil && t.Status != model.Done {
-							// Execute with smart model
-							if err := executeTaskWithModel(ctx, store, cfg, tag, taskID, cfg.Rho.SmartModel, taskTimeout); err != nil {
-								ui.Fail(fmt.Sprintf("Task %s recovery: %v", taskID, err))
+							guidance := store.LoadGuidance()
+							taskAttrs := attrMap[taskID]
+							prompt := buildRepairPrompt(t, tag, guidance, p, taskAttrs, vr)
+
+							ui.Info(fmt.Sprintf("[%s] Repair: %s %s", taskID, t.Title, ui.Dim(fmt.Sprintf("(model=%s)", cfg.Rho.SmartModel))))
+
+							taskCtx, cancel := context.WithTimeout(ctx, time.Duration(taskTimeout)*time.Second)
+							_, execErr := rho.Run(taskCtx, rho.Options{
+								Prompt:     prompt,
+								Model:      cfg.Rho.SmartModel,
+								WorkingDir: store.Root(),
+							})
+							cancel()
+
+							if execErr != nil {
+								ui.Fail(fmt.Sprintf("Task %s recovery: %v", taskID, execErr))
 							}
 
 							// Validate after each task in ralph mode
-							vr := RunValidation(ctx, store.Root(), cfg)
-							if vr.AllPassed {
-								// Mark done
+							vr2 := RunValidation(ctx, store.Root(), cfg)
+							if vr2.AllPassed {
 								store.UpdatePhase(tag, func(p *model.Phase) error {
 									if t := p.FindTask(taskID); t != nil {
 										t.Status = model.Done
@@ -190,7 +275,7 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 				}
 
 				// Check overall validation
-				vr := RunValidation(ctx, store.Root(), cfg)
+				vr = RunValidation(ctx, store.Root(), cfg)
 				if vr.AllPassed {
 					ui.Success(fmt.Sprintf("Recovery succeeded on attempt %d", attempt))
 					recovered = true
@@ -327,6 +412,63 @@ func buildTaskPrompt(t *model.Task, tag, guidance string, phase *model.Phase) st
 	b.WriteString("Implement this task completely. When you are done, run:\n")
 	b.WriteString(fmt.Sprintf("  scud set-status %s done -t %s\n\n", t.ID, tag))
 	b.WriteString("If you encounter a blocking issue, run:\n")
+	b.WriteString(fmt.Sprintf("  scud set-status %s failed -t %s\n", t.ID, tag))
+
+	return b.String()
+}
+
+func buildRepairPrompt(t *model.Task, tag, guidance string, phase *model.Phase, attributions []Attribution, vr ValidationResult) string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf("# REPAIR Task: %s\n\n", t.Title))
+	b.WriteString(fmt.Sprintf("**Task ID:** %s\n", t.ID))
+	b.WriteString(fmt.Sprintf("**Tag:** %s\n\n", tag))
+
+	b.WriteString("## Error Context\n\n")
+	b.WriteString("The previous implementation caused validation failures. Fix the issues below.\n\n")
+
+	// Include validation error output
+	for _, cr := range vr.Results {
+		if !cr.Passed {
+			b.WriteString(fmt.Sprintf("### Failed: `%s` (exit %d)\n", cr.Command, cr.ExitCode))
+			if cr.Stderr != "" {
+				b.WriteString("```\n")
+				b.WriteString(firstLines(cr.Stderr, 20))
+				b.WriteString("\n```\n\n")
+			}
+			if cr.Stdout != "" {
+				b.WriteString("```\n")
+				b.WriteString(firstLines(cr.Stdout, 20))
+				b.WriteString("\n```\n\n")
+			}
+		}
+	}
+
+	// Include attribution details
+	if len(attributions) > 0 {
+		b.WriteString("### Attributed Error Locations\n")
+		for _, a := range attributions {
+			b.WriteString(fmt.Sprintf("- **%s** [confidence: %s]: %s\n", a.File, a.Confidence, a.Reason))
+		}
+		b.WriteString("\n")
+	}
+
+	if t.Description != "" {
+		b.WriteString(fmt.Sprintf("## Original Description\n%s\n\n", t.Description))
+	}
+	if t.Details != "" {
+		b.WriteString(fmt.Sprintf("## Implementation Details\n%s\n\n", t.Details))
+	}
+
+	if guidance != "" {
+		b.WriteString(fmt.Sprintf("## Project Guidance\n%s\n\n", guidance))
+	}
+
+	b.WriteString("## Instructions\n")
+	b.WriteString("Fix the validation failures caused by this task. Focus on the error locations above.\n")
+	b.WriteString("When you are done, run:\n")
+	b.WriteString(fmt.Sprintf("  scud set-status %s done -t %s\n\n", t.ID, tag))
+	b.WriteString("If you cannot fix it, run:\n")
 	b.WriteString(fmt.Sprintf("  scud set-status %s failed -t %s\n", t.ID, tag))
 
 	return b.String()

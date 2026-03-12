@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/reuben/scud/internal/config"
+	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
@@ -22,8 +23,8 @@ type parsedTask struct {
 	ModelTier    string   `json:"model_tier"`
 }
 
-// ParsePRD reads a PRD file and generates tasks via rho.
-func ParsePRD(ctx context.Context, cfg *config.Config, store *storage.Storage, file, tag string, numTasks int) error {
+// ParsePRD reads a PRD file and generates tasks via LLM (or rho fallback).
+func ParsePRD(ctx context.Context, cfg *config.Config, store *storage.Storage, file, tag string, numTasks int, caller ...llm.Caller) error {
 	content, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("reading PRD: %w", err)
@@ -32,12 +33,20 @@ func ParsePRD(ctx context.Context, cfg *config.Config, store *storage.Storage, f
 	guidance := store.LoadGuidance()
 	prompt := ParsePRDPrompt(string(content), numTasks, guidance)
 
-	parsed, err := rho.RunJSON[[]parsedTask](ctx, rho.Options{
-		Prompt: prompt,
-		Model:  cfg.Rho.FastModel,
-	})
-	if err != nil {
-		return fmt.Errorf("rho parse-prd: %w", err)
+	var parsed []parsedTask
+	if len(caller) > 0 && caller[0] != nil {
+		if err := caller[0].CompleteJSON(ctx, prompt, "", true, &parsed); err != nil {
+			return fmt.Errorf("llm parse-prd: %w", err)
+		}
+	} else {
+		var err error
+		parsed, err = rho.RunJSON[[]parsedTask](ctx, rho.Options{
+			Prompt: prompt,
+			Model:  cfg.Rho.FastModel,
+		})
+		if err != nil {
+			return fmt.Errorf("rho parse-prd: %w", err)
+		}
 	}
 
 	return store.UpdatePhase(tag, func(p *model.Phase) error {
