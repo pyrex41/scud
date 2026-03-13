@@ -207,14 +207,23 @@ func (s *Storage) LoadGuidance() string {
 	return b.String()
 }
 
-// ResolveTag returns the given tag, or the active tag, or an error.
+// ResolveTag returns the given tag, or the active tag, or the sole phase, or an error.
+// It also persists the resolved tag as the active tag for future commands.
 func (s *Storage) ResolveTag(tag string) (string, error) {
 	if tag != "" {
+		s.SetActiveTag(tag)
 		return tag, nil
 	}
-	active := s.ActiveTag()
-	if active != "" {
+	if active := s.ActiveTag(); active != "" {
 		return active, nil
+	}
+	// If only one phase exists, use it automatically
+	phases, err := s.LoadPhases()
+	if err == nil && len(phases) == 1 {
+		for name := range phases {
+			s.SetActiveTag(name)
+			return name, nil
+		}
 	}
 	return "", fmt.Errorf("no tag specified and no active tag set (use -t or 'scud tags <name>')")
 }

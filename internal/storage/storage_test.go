@@ -128,6 +128,74 @@ func TestActiveTag(t *testing.T) {
 	}
 }
 
+func TestResolveTagPersistsExplicit(t *testing.T) {
+	dir := t.TempDir()
+	store := New(dir)
+	store.Initialize()
+
+	// Passing -t should persist as active tag
+	tag, err := store.ResolveTag("v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag != "v2" {
+		t.Errorf("resolved = %q, want v2", tag)
+	}
+	if active := store.ActiveTag(); active != "v2" {
+		t.Errorf("active = %q, want v2 (should be persisted)", active)
+	}
+}
+
+func TestResolveTagSinglePhase(t *testing.T) {
+	dir := t.TempDir()
+	store := New(dir)
+	store.Initialize()
+
+	// Create a single phase
+	store.UpdatePhase("only-one", func(p *model.Phase) error {
+		p.Tasks = append(p.Tasks, &model.Task{
+			ID:     "1",
+			Title:  "task",
+			Status: model.Pending,
+		})
+		return nil
+	})
+
+	// No active tag, no -t flag — should auto-select the sole phase
+	tag, err := store.ResolveTag("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tag != "only-one" {
+		t.Errorf("resolved = %q, want only-one", tag)
+	}
+	if active := store.ActiveTag(); active != "only-one" {
+		t.Errorf("active = %q, want only-one (should be persisted)", active)
+	}
+}
+
+func TestResolveTagMultiplePhasesNoActive(t *testing.T) {
+	dir := t.TempDir()
+	store := New(dir)
+	store.Initialize()
+
+	// Create two phases
+	store.UpdatePhase("a", func(p *model.Phase) error {
+		p.Tasks = append(p.Tasks, &model.Task{ID: "1", Title: "t", Status: model.Pending})
+		return nil
+	})
+	store.UpdatePhase("b", func(p *model.Phase) error {
+		p.Tasks = append(p.Tasks, &model.Task{ID: "1", Title: "t", Status: model.Pending})
+		return nil
+	})
+
+	// No active tag, no -t flag, multiple phases — should error
+	_, err := store.ResolveTag("")
+	if err == nil {
+		t.Fatal("expected error with multiple phases and no active tag")
+	}
+}
+
 func TestLoadGuidance(t *testing.T) {
 	dir := t.TempDir()
 	store := New(dir)
