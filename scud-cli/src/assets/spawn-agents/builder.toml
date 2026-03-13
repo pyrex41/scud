@@ -1,8 +1,0 @@
-# Default builder agent - fast code implementation
-[agent]
-name = "builder"
-description = "Fast code implementation agent using Grok"
-
-[model]
-harness = "rho"
-model = "claude-opus"

@@ -15,7 +15,8 @@ import (
 type GenerateOpts struct {
 	NoExpand    bool
 	NoCheckDeps bool
-	Caller      llm.Caller // optional LLM caller; nil falls back to rho
+	Caller      llm.Caller // optional LLM caller for parse/expand; nil falls back to rho
+	PRDFile     string     // PRD path for Phase 3 AI reanalysis
 }
 
 // Generate orchestrates the full pipeline: ParsePRD -> Expand -> CheckDeps.
@@ -72,6 +73,28 @@ func Generate(ctx context.Context, cfg *config.Config, store *storage.Storage, f
 			ui.Warn(fmt.Sprintf("Dependency issues found:\n%s", FormatCheckResult(result)))
 		} else {
 			ui.Success("Dependency check passed")
+		}
+
+		// Phase 3b: Smart-model dependency reanalysis via rho
+		fmt.Fprintln(ui.Stderr())
+		ui.Info(fmt.Sprintf("Running smart-model dependency reanalysis (%s)...", cfg.Rho.SmartModel))
+		spin2 := ui.NewSpinner("Reanalyzing dependencies with AI...")
+		suggestions, reErr := ReanalyzeDepsViaRho(ctx, cfg, store, tag)
+		if reErr != nil {
+			spin2.StopWarn(fmt.Sprintf("Reanalysis failed (non-fatal): %v", reErr))
+		} else if len(suggestions) == 0 {
+			spin2.Stop(true, "No dependency changes suggested")
+		} else {
+			spin2.Stop(true, fmt.Sprintf("AI suggested %d dependency changes", len(suggestions)))
+			if err := ApplyDepSuggestions(store, tag, suggestions); err != nil {
+				ui.Warn(fmt.Sprintf("Failed to apply suggestions: %v", err))
+			} else {
+				for _, s := range suggestions {
+					detail := fmt.Sprintf("Task %s: +%d/-%d deps — %s",
+						s.TaskID, len(s.AddDeps), len(s.RemoveDeps), s.Reason)
+					ui.Success(detail)
+				}
+			}
 		}
 	}
 

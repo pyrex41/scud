@@ -60,7 +60,7 @@ func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag
 
 	guidance := store.LoadGuidance()
 
-	pb := ui.NewProgressBar(len(toExpand), "tasks expanded")
+	mp := ui.NewMultiProgress(len(toExpand), "tasks expanded")
 
 	type expandResult struct {
 		parentID string
@@ -74,13 +74,14 @@ func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag
 	for i, t := range toExpand {
 		i, t := i, t
 		g.Go(func() error {
+			mp.AddTask(t.ID, fmt.Sprintf("Task %s: %s", t.ID, t.Title))
 			recommended := t.RecommendedSubtasks()
 			prompt := ExpandTaskPrompt(t.Title, t.Description, t.Complexity, recommended, t.Details, guidance)
 
 			var subs []expandedSubtask
 			if len(caller) > 0 && caller[0] != nil {
 				if err := caller[0].CompleteJSON(gctx, prompt, "", true, &subs); err != nil {
-					pb.Increment(fmt.Sprintf("Task %s: %s", t.ID, t.Title), false)
+					mp.CompleteTask(t.ID, false, fmt.Sprintf("Task %s: %s", t.ID, t.Title))
 					return fmt.Errorf("expanding task %s: %w", t.ID, err)
 				}
 			} else {
@@ -90,20 +91,21 @@ func Expand(ctx context.Context, cfg *config.Config, store *storage.Storage, tag
 					Model:  cfg.Rho.FastModel,
 				})
 				if err != nil {
-					pb.Increment(fmt.Sprintf("Task %s: %s", t.ID, t.Title), false)
+					mp.CompleteTask(t.ID, false, fmt.Sprintf("Task %s: %s", t.ID, t.Title))
 					return fmt.Errorf("expanding task %s: %w", t.ID, err)
 				}
 			}
 			results[i] = expandResult{parentID: t.ID, subtasks: subs}
-			pb.Increment(fmt.Sprintf("Task %s → %d subtasks: %s", t.ID, len(subs), t.Title), true)
+			mp.CompleteTask(t.ID, true, fmt.Sprintf("Task %s → %d subtasks: %s", t.ID, len(subs), t.Title))
 			return nil
 		})
 	}
 
 	if err := g.Wait(); err != nil {
+		mp.Finish()
 		return err
 	}
-	pb.Finish()
+	mp.Finish()
 
 	// Apply all expansions
 	return store.UpdatePhase(tag, func(p *model.Phase) error {

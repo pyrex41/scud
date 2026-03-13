@@ -48,9 +48,11 @@ func NewGenerateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			return generate.Generate(context.Background(), cfg, store, args[0], tag, numTasks, generate.GenerateOpts{
 				NoExpand:    noExpand,
 				NoCheckDeps: noCheckDeps,
+				PRDFile:     args[0],
 			})
 		},
 	}

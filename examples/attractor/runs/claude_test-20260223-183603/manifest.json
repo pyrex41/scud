@@ -1,7 +1,0 @@
-{
-  "run_id": "claude_test-20260223-183603",
-  "pipeline_name": "claude_test",
-  "pipeline_file": "examples/attractor/claude_test.dot",
-  "started_at": "2026-02-23T18:36:03.513987+00:00",
-  "status": "running"
-}

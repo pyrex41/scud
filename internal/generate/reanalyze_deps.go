@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/reuben/scud/internal/config"
 	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
 )
 
@@ -39,6 +41,35 @@ func ReanalyzeDeps(ctx context.Context, caller llm.Caller, store *storage.Storag
 	var suggestions []DepSuggestion
 	if err := caller.CompleteJSON(ctx, prompt, "", false, &suggestions); err != nil {
 		return nil, fmt.Errorf("llm reanalyze-deps: %w", err)
+	}
+
+	return suggestions, nil
+}
+
+// ReanalyzeDepsViaRho uses rho-cli with the smart model to reanalyze dependencies.
+func ReanalyzeDepsViaRho(ctx context.Context, cfg *config.Config, store *storage.Storage, tag string) ([]DepSuggestion, error) {
+	phases, err := store.LoadPhases()
+	if err != nil {
+		return nil, fmt.Errorf("loading phases: %w", err)
+	}
+	phase, ok := phases[tag]
+	if !ok {
+		return nil, fmt.Errorf("tag '%s' not found", tag)
+	}
+
+	tasksJSON, err := json.Marshal(phase.Tasks)
+	if err != nil {
+		return nil, fmt.Errorf("serializing tasks: %w", err)
+	}
+
+	prompt := ReanalyzeDependenciesPrompt(string(tasksJSON))
+
+	suggestions, err := rho.RunJSON[[]DepSuggestion](ctx, rho.Options{
+		Prompt: prompt,
+		Model:  cfg.Rho.SmartModel,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("rho reanalyze-deps: %w", err)
 	}
 
 	return suggestions, nil

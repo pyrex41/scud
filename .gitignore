@@ -1,20 +1,6 @@
-# Rust build artifacts
-target/
-scud-cli/target/
-
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-
-# SCUD task management (user data)
-.taskmaster/
-docs/prd/
-docs/epics/
-docs/architecture/
-docs/retrospectives/
+# Go build artifacts
+/scud
+*.exe
 
 # Editor files
 .vscode/
@@ -28,10 +14,7 @@ docs/retrospectives/
 *.tmp
 *.log
 
-# Coverage reports
-coverage/
-
-# SCUD
+# SCUD task management (user data)
 .scud/
 
 # Generated artifacts

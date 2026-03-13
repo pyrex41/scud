@@ -213,3 +213,156 @@ func (pb *ProgressBar) Finish() {
 func TaskLine(id, title string) {
 	fmt.Fprintf(os.Stderr, "  %s %s  %s\n", Cyan(id), Dim("│"), title)
 }
+
+// taskSlot tracks one active or completed task in the MultiProgress display.
+type taskSlot struct {
+	id      string
+	name    string
+	done    bool
+	success bool
+	msg     string
+}
+
+// MultiProgress manages stacked per-task spinners above an overall progress bar.
+type MultiProgress struct {
+	total     int
+	completed int
+	failed    int
+	width     int
+	label     string
+	slots     []*taskSlot // ordered list of task slots
+	slotIndex map[string]int
+	mu        sync.Mutex
+	done      chan struct{}
+	rendered  bool // whether we've output any lines yet
+}
+
+// NewMultiProgress creates a multi-progress display with per-task spinners.
+func NewMultiProgress(total int, label string) *MultiProgress {
+	mp := &MultiProgress{
+		total:     total,
+		width:     40,
+		label:     label,
+		slotIndex: make(map[string]int),
+		done:      make(chan struct{}),
+	}
+	go mp.run()
+	return mp
+}
+
+func (mp *MultiProgress) run() {
+	i := 0
+	ticker := time.NewTicker(80 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-mp.done:
+			return
+		case <-ticker.C:
+			mp.mu.Lock()
+			mp.redraw(i)
+			mp.mu.Unlock()
+			i++
+		}
+	}
+}
+
+// lineCount returns how many lines we last rendered (slots + progress bar).
+func (mp *MultiProgress) lineCount() int {
+	return len(mp.slots) + 1
+}
+
+// redraw redraws all spinner lines + the progress bar. Must be called with mu held.
+func (mp *MultiProgress) redraw(frame int) {
+	// Move cursor up to overwrite previous output
+	if mp.rendered {
+		n := mp.lineCount()
+		fmt.Fprintf(os.Stderr, "\033[%dA", n)
+	}
+
+	// Render each task slot
+	for _, s := range mp.slots {
+		fmt.Fprint(os.Stderr, "\033[2K") // clear line
+		if s.done {
+			icon := Green("✓")
+			if !s.success {
+				icon = Red("✗")
+			}
+			fmt.Fprintf(os.Stderr, "  %s %s\n", icon, s.msg)
+		} else {
+			f := spinFrames[frame%len(spinFrames)]
+			fmt.Fprintf(os.Stderr, "  %s%s%s %s\n", cyan, f, reset, s.name)
+		}
+	}
+
+	// Render overall progress bar
+	filled := 0
+	if mp.total > 0 {
+		filled = mp.completed * mp.width / mp.total
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", mp.width-filled)
+	fmt.Fprintf(os.Stderr, "\033[2K  %s [%s%s%s] %d/%d %s\n",
+		Cyan("⠹"), cyan, bar, reset, mp.completed, mp.total, mp.label)
+
+	mp.rendered = true
+}
+
+// AddTask registers a new active task spinner.
+func (mp *MultiProgress) AddTask(id, name string) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	slot := &taskSlot{id: id, name: name}
+	mp.slotIndex[id] = len(mp.slots)
+	mp.slots = append(mp.slots, slot)
+}
+
+// CompleteTask marks a task as done and updates the display.
+func (mp *MultiProgress) CompleteTask(id string, success bool, msg string) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	idx, ok := mp.slotIndex[id]
+	if !ok {
+		return
+	}
+	mp.slots[idx].done = true
+	mp.slots[idx].success = success
+	mp.slots[idx].msg = msg
+	if success {
+		mp.completed++
+	} else {
+		mp.failed++
+		mp.completed++
+	}
+}
+
+// Finish stops the animation and prints the final summary.
+func (mp *MultiProgress) Finish() {
+	close(mp.done)
+	// Give the ticker goroutine time to exit
+	time.Sleep(100 * time.Millisecond)
+
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	// Final redraw to show all completed states
+	if mp.rendered {
+		n := mp.lineCount()
+		fmt.Fprintf(os.Stderr, "\033[%dA", n)
+	}
+	for _, s := range mp.slots {
+		fmt.Fprint(os.Stderr, "\033[2K")
+		icon := Green("✓")
+		if !s.success {
+			icon = Red("✗")
+		}
+		fmt.Fprintf(os.Stderr, "  %s %s\n", icon, s.msg)
+	}
+
+	// Replace progress bar with summary
+	fmt.Fprint(os.Stderr, "\033[2K")
+	msg := fmt.Sprintf("%d/%d complete", mp.completed, mp.total)
+	if mp.failed > 0 {
+		msg += fmt.Sprintf(", %s failed", Red(fmt.Sprintf("%d", mp.failed)))
+	}
+	fmt.Fprintf(os.Stderr, "  %s %s\n", Green("✓"), msg)
+}
