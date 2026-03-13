@@ -132,8 +132,14 @@ func (p *openAICompatProvider) Complete(ctx context.Context, req *Request) (*Res
 	}
 	msgs = append(msgs, ChatMessage{Role: "user", Content: req.Prompt})
 
+	// Strip provider prefix (e.g. "xai/grok-..." -> "grok-...") since APIs want bare model names
+	model := req.Model
+	if idx := strings.Index(model, "/"); idx >= 0 {
+		model = model[idx+1:]
+	}
+
 	chatReq := ChatRequest{
-		Model:     req.Model,
+		Model:     model,
 		Messages:  msgs,
 		MaxTokens: req.MaxTokens,
 	}
@@ -184,8 +190,14 @@ type anthropicProvider struct {
 func (p *anthropicProvider) Name() string { return "anthropic" }
 
 func (p *anthropicProvider) Complete(ctx context.Context, req *Request) (*Response, error) {
+	// Strip provider prefix (e.g. "anthropic/claude-..." -> "claude-...")
+	model := req.Model
+	if idx := strings.Index(model, "/"); idx >= 0 {
+		model = model[idx+1:]
+	}
+
 	antReq := AnthropicRequest{
-		Model:     req.Model,
+		Model:     model,
 		MaxTokens: req.MaxTokens,
 		System:    req.SystemPrompt,
 		Messages: []AnthropicMessage{
@@ -285,8 +297,13 @@ func (p *xaiResponsesProvider) Name() string { return "xai-responses" }
 
 // Complete implements Provider for the Responses API (single-turn).
 func (p *xaiResponsesProvider) Complete(ctx context.Context, req *Request) (*Response, error) {
+	// Strip provider prefix
+	model := req.Model
+	if idx := strings.Index(model, "/"); idx >= 0 {
+		model = model[idx+1:]
+	}
 	maReq := &MultiAgentRequest{
-		Model:  req.Model,
+		Model:  model,
 		Prompt: req.Prompt,
 		System: req.SystemPrompt,
 		Effort: "low",

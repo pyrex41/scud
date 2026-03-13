@@ -1,1 +1,0 @@
-Reply with exactly: ATTRACTOR_OK. Nothing else.
