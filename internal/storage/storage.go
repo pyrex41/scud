@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/scg"
@@ -89,10 +87,10 @@ func (s *Storage) LoadPhases() (map[string]*model.Phase, error) {
 	}
 	defer f.Close()
 
-	if err := lockFile(f, syscall.LOCK_SH); err != nil {
+	if err := lockShared(f); err != nil {
 		return nil, fmt.Errorf("acquiring read lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer unlock(f)
 
 	content, err := io.ReadAll(f)
 	if err != nil {
@@ -109,10 +107,10 @@ func (s *Storage) SavePhases(phases map[string]*model.Phase) error {
 	}
 	defer f.Close()
 
-	if err := lockFile(f, syscall.LOCK_EX); err != nil {
+	if err := lockExclusive(f); err != nil {
 		return fmt.Errorf("acquiring write lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer unlock(f)
 
 	content := scg.SerializeMultiPhase(phases)
 	if err := f.Truncate(0); err != nil {
@@ -133,10 +131,10 @@ func (s *Storage) UpdatePhase(tag string, fn func(*model.Phase) error) error {
 	}
 	defer f.Close()
 
-	if err := lockFile(f, syscall.LOCK_EX); err != nil {
+	if err := lockExclusive(f); err != nil {
 		return fmt.Errorf("acquiring write lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer unlock(f)
 
 	content, err := io.ReadAll(f)
 	if err != nil {
@@ -228,23 +226,3 @@ func (s *Storage) ResolveTag(tag string) (string, error) {
 	return "", fmt.Errorf("no tag specified and no active tag set (use -t or 'scud tags <name>')")
 }
 
-// lockFile acquires a flock with exponential backoff.
-func lockFile(f *os.File, lockType int) error {
-	delay := 10 * time.Millisecond
-	maxDelay := time.Second
-	maxRetries := 10
-
-	for i := 0; i < maxRetries; i++ {
-		err := syscall.Flock(int(f.Fd()), lockType|syscall.LOCK_NB)
-		if err == nil {
-			return nil
-		}
-		time.Sleep(delay)
-		delay *= 2
-		if delay > maxDelay {
-			delay = maxDelay
-		}
-	}
-	// Final blocking attempt
-	return syscall.Flock(int(f.Fd()), lockType)
-}
