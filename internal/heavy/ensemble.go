@@ -297,24 +297,69 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 
+	// Track per-agent status for progress display
+	type agentStatus struct {
+		mu     sync.Mutex
+		status string // current activity description
+	}
+	statusMap := make(map[string]*agentStatus)
+
 	for _, agent := range agents {
 		if agent.Name == "Captain" {
 			continue
 		}
 		a := agent
+		as := &agentStatus{status: "starting..."}
+		statusMap[a.Name] = as
+
 		g.Go(func() error {
 			start := time.Now()
-			agentCtx, cancel := context.WithTimeout(gctx, time.Duration(timeoutSecs)*time.Second)
-			defer cancel()
 
-			result, err := rho.Run(agentCtx, rho.Options{
+			// Adaptive timeout: base timeout as configured, but extend up to 3x
+			// if the agent is still actively producing output (idle timeout = 60s)
+			baseDur := time.Duration(timeoutSecs) * time.Second
+			idleDur := 60 * time.Second
+			maxDur := baseDur * 3
+			agentCtx, adaptive := rho.NewAdaptiveTimeout(gctx, baseDur, idleDur, maxDur)
+
+			// Stream callback for heartbeat and progress
+			eventCount := 0
+			callback := func(ev rho.StreamEvent) {
+				adaptive.Heartbeat()
+				eventCount++
+
+				// Update agent status for progress display
+				var statusMsg string
+				switch ev.Type {
+				case "tool_use":
+					if ev.ToolName != "" {
+						statusMsg = fmt.Sprintf("using %s...", ev.ToolName)
+					}
+				case "text_delta":
+					// Only update periodically to avoid spamming
+					if eventCount%50 == 0 {
+						elapsed := time.Since(start).Seconds()
+						statusMsg = fmt.Sprintf("writing (%.0fs)...", elapsed)
+					}
+				case "complete":
+					statusMsg = "finishing..."
+				}
+
+				if statusMsg != "" {
+					as.mu.Lock()
+					as.status = statusMsg
+					as.mu.Unlock()
+				}
+			}
+
+			result, err := rho.RunStreaming(agentCtx, rho.Options{
 				Prompt:       query,
 				Model:        model,
 				SystemPrompt: a.SystemPrompt,
 				AllowedTools: a.Tools,
 				WorkingDir:   opts.WorkingDir,
 				TimeoutSecs:  timeoutSecs,
-			})
+			}, callback)
 
 			duration := time.Since(start).Seconds()
 			out := AgentOutput{
@@ -325,9 +370,17 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 
 			if err != nil {
 				out.Failed = true
-				out.Error = err.Error()
+				if adaptive.Extended() {
+					out.Error = fmt.Sprintf("%v (deadline extended due to activity)", err)
+				} else {
+					out.Error = err.Error()
+				}
 				if opts.Verbose {
-					ui.Fail(fmt.Sprintf("%s: %v (%.1fs)", a.Name, err, duration))
+					msg := fmt.Sprintf("%s: %v (%.1fs)", a.Name, err, duration)
+					if adaptive.Extended() {
+						msg += " (was extended)"
+					}
+					ui.Fail(msg)
 				}
 			} else if result.ExitCode != 0 {
 				out.Failed = true
@@ -339,7 +392,11 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 			} else {
 				out.Output = result.Stdout
 				if opts.Verbose {
-					ui.Success(fmt.Sprintf("%s %s", a.Name, ui.Dim(fmt.Sprintf("(%.1fs)", duration))))
+					extra := ""
+					if adaptive.Extended() {
+						extra = " [extended]"
+					}
+					ui.Success(fmt.Sprintf("%s %s%s", a.Name, ui.Dim(fmt.Sprintf("(%.1fs)", duration)), extra))
 				}
 			}
 
@@ -348,6 +405,59 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 			mu.Unlock()
 			return nil // don't kill the group on individual failure
 		})
+	}
+
+	// Progress reporter: periodically show what agents are doing
+	if opts.Verbose {
+		progressDone := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(15 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-progressDone:
+					return
+				case <-ticker.C:
+					mu.Lock()
+					nDone := len(outputs)
+					mu.Unlock()
+					nTotal := 0
+					for _, a := range agents {
+						if a.Name != "Captain" {
+							nTotal++
+						}
+					}
+					if nDone >= nTotal {
+						return
+					}
+					// Show active agents and what they're doing
+					var active []string
+					for name, as := range statusMap {
+						as.mu.Lock()
+						s := as.status
+						as.mu.Unlock()
+						// Check if this agent is still running
+						found := false
+						mu.Lock()
+						for _, o := range outputs {
+							if o.Name == name {
+								found = true
+								break
+							}
+						}
+						mu.Unlock()
+						if !found {
+							active = append(active, fmt.Sprintf("%s: %s", name, s))
+						}
+					}
+					if len(active) > 0 {
+						ui.Info(fmt.Sprintf("Still running (%d/%d done): %s",
+							nDone, nTotal, strings.Join(active, ", ")))
+					}
+				}
+			}
+		}()
+		defer close(progressDone)
 	}
 
 	_ = g.Wait()
