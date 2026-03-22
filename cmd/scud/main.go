@@ -63,6 +63,7 @@ func main() {
 		cmd.NewRunCmd(),
 		cmd.NewTestCmd(),
 		cmd.NewMultiAgentCmd(),
+		cmd.NewMCPServerCmd(),
 	)
 
 	if err := root.Execute(); err != nil {

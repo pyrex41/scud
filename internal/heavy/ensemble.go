@@ -28,17 +28,53 @@ type AgentOutput struct {
 
 // RunOpts configures a Heavy ensemble run.
 type RunOpts struct {
-	Query        string
-	Model        string
-	Concurrency  int
-	DebateRounds int
-	Verbose      bool
-	JSON         bool
-	WorkingDir   string
-	TimeoutSecs  int
-	Native       bool   // Use xAI native multi-agent model instead of rho ensemble
-	NativeEffort string // "low"/"medium" (4 agents) or "high"/"xhigh" (16 agents)
-	NativeTools  []string // Server-side tools: "web_search", "x_search", "code_execution"
+	Query          string
+	ModelAll       string // --model: override all roles
+	ModelRouting   string // --model-routing
+	ModelAgents    string // --model-agents
+	ModelSynthesis string // --model-synthesis
+	ModelDebate    string // --model-debate
+	Concurrency    int
+	DebateRounds   int
+	Verbose        bool
+	JSON           bool
+	WorkingDir     string
+	TimeoutSecs    int
+	Mode           string   // "ensemble", "native", "hybrid"
+	Native         bool     // deprecated: use Mode="native"
+	NativeEffort   string   // "low"/"medium" (4 agents) or "high"/"xhigh" (16 agents)
+	NativeTools    []string // Server-side tools: "web_search", "x_search", "code_execution"
+}
+
+// resolvedModels holds the model to use for each pipeline role.
+type resolvedModels struct {
+	routing   string
+	agents    string
+	synthesis string
+	debate    string
+	native    string
+}
+
+func resolveModels(opts RunOpts, cfg *config.Config) resolvedModels {
+	resolve := func(role, cliOverride string) string {
+		if cliOverride != "" {
+			return cliOverride
+		}
+		if opts.ModelAll != "" {
+			return opts.ModelAll
+		}
+		if cfg != nil {
+			return cfg.HeavyModel(role)
+		}
+		return "grok-4.20-reasoning"
+	}
+	return resolvedModels{
+		routing:   resolve("routing", opts.ModelRouting),
+		agents:    resolve("agents", opts.ModelAgents),
+		synthesis: resolve("synthesis", opts.ModelSynthesis),
+		debate:    resolve("debate", opts.ModelDebate),
+		native:    resolve("native", ""), // native only via config/env, not CLI per-role
+	}
 }
 
 // Result holds the final output of a Heavy ensemble run.
@@ -56,14 +92,8 @@ type Result struct {
 
 // RunNative executes a query using the xAI native multi-agent model.
 func RunNative(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error) {
-	model := opts.Model
-	if model == "" {
-		if cfg != nil && cfg.LLM.MultiAgentModel != "" {
-			model = cfg.LLM.MultiAgentModel
-		} else {
-			model = "grok-4.20-multi-agent-beta-0309"
-		}
-	}
+	models := resolveModels(opts, cfg)
+	model := models.native
 	effort := opts.NativeEffort
 	if effort == "" {
 		if cfg != nil && cfg.LLM.MultiAgentEffort != "" {
@@ -120,14 +150,35 @@ func RunNative(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, 
 	}, nil
 }
 
-// Run executes the full Heavy reasoning ensemble pipeline.
+// Run executes the Heavy reasoning pipeline in the selected mode.
 func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error) {
-	if opts.Native {
-		return RunNative(ctx, cfg, opts)
+	mode := opts.Mode
+	if mode == "" {
+		if opts.Native {
+			mode = "native"
+		} else if cfg != nil && cfg.Heavy.Mode != "" {
+			mode = cfg.Heavy.Mode
+		} else {
+			mode = "ensemble"
+		}
+	}
+	if opts.Native && mode != "native" && opts.Verbose {
+		fmt.Fprintln(os.Stderr, ui.Dim("note: --native is deprecated, use --mode=native"))
 	}
 
-	// Resolve defaults
-	model := resolveModel(opts.Model, cfg)
+	switch mode {
+	case "native":
+		return RunNative(ctx, cfg, opts)
+	case "hybrid":
+		return runHybrid(ctx, cfg, opts)
+	default:
+		return runEnsemble(ctx, cfg, opts)
+	}
+}
+
+// runEnsemble executes the full Heavy reasoning ensemble pipeline.
+func runEnsemble(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error) {
+	models := resolveModels(opts, cfg)
 	concurrency := opts.Concurrency
 	if concurrency <= 0 {
 		concurrency = 4
@@ -149,11 +200,12 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 
 	// Step 1: Route — Captain selects specialists
 	if opts.Verbose {
-		ui.Header("Heavy Ensemble", fmt.Sprintf("(model: %s)", model))
+		subtitle := fmt.Sprintf("(agents: %s, synthesis: %s)", models.agents, models.synthesis)
+		ui.Header("Heavy Ensemble", subtitle)
 		ui.Phase(1, "Captain routing query to specialists...")
 	}
 	spin := ui.NewSpinner("Captain selecting agents...")
-	selected, err := routeAgents(ctx, opts.Query, model, timeout)
+	selected, err := routeAgents(ctx, opts.Query, models.routing, timeout)
 	if err != nil {
 		spin.Stop(false, fmt.Sprintf("Routing failed: %v", err))
 		return nil, fmt.Errorf("routing: %w", err)
@@ -172,7 +224,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 		fmt.Fprintln(os.Stderr)
 		ui.Phase(2, fmt.Sprintf("Running %d agents (concurrency=%d)...", len(agents)-1, concurrency))
 	}
-	outputs := executeAgents(ctx, agents, opts.Query, model, concurrency, timeout, opts)
+	outputs := executeAgents(ctx, agents, opts.Query, models.agents, concurrency, timeout, opts)
 
 	// Step 3: Synthesize
 	if opts.Verbose {
@@ -180,7 +232,7 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 		ui.Phase(3, "Captain synthesizing responses...")
 	}
 	spin = ui.NewSpinner(fmt.Sprintf("Synthesizing %d responses...", countSuccessful(outputs)))
-	synthesis, err := synthesize(ctx, opts.Query, outputs, model, timeout)
+	synthesis, err := synthesize(ctx, opts.Query, outputs, models.synthesis, timeout)
 	if err != nil {
 		spin.Stop(false, fmt.Sprintf("Synthesis failed: %v", err))
 		return nil, fmt.Errorf("synthesis: %w", err)
@@ -194,13 +246,13 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 			ui.Phase(3+round, fmt.Sprintf("Debate round %d...", round))
 		}
 		spin = ui.NewSpinner(fmt.Sprintf("Collecting critiques (round %d)...", round))
-		critiques := collectCritiques(ctx, agents, opts.Query, synthesis, model, concurrency, timeout, opts)
+		critiques := collectCritiques(ctx, agents, opts.Query, synthesis, models.debate, concurrency, timeout, opts)
 		nCritiques := countSuccessful(critiques)
 		spin.Stop(true, fmt.Sprintf("%d critiques collected", nCritiques))
 
 		if nCritiques > 0 {
 			spin = ui.NewSpinner("Captain re-synthesizing...")
-			newSynthesis, err := resynthesize(ctx, opts.Query, synthesis, critiques, model, timeout)
+			newSynthesis, err := resynthesize(ctx, opts.Query, synthesis, critiques, models.debate, timeout)
 			if err != nil {
 				spin.Stop(false, fmt.Sprintf("Re-synthesis failed: %v", err))
 			} else {
@@ -228,19 +280,155 @@ func Run(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error)
 	return result, nil
 }
 
-func resolveModel(override string, cfg *config.Config) string {
-	if override != "" {
-		return override
+// runHybrid executes both rho ensemble and xAI native multi-agent in parallel,
+// then synthesizes all outputs together.
+func runHybrid(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result, error) {
+	models := resolveModels(opts, cfg)
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = 4
+		if cfg != nil && cfg.Heavy.Concurrency > 0 {
+			concurrency = cfg.Heavy.Concurrency
+		}
 	}
+	timeout := opts.TimeoutSecs
+	if timeout <= 0 {
+		timeout = 300
+		if cfg != nil && cfg.Heavy.TimeoutSecs > 0 {
+			timeout = cfg.Heavy.TimeoutSecs
+		}
+	}
+	maxAgents := 0
 	if cfg != nil {
-		if cfg.Heavy.Model != "" {
-			return cfg.Heavy.Model
+		maxAgents = cfg.Heavy.MaxAgents
+	}
+
+	// Step 1: Route
+	if opts.Verbose {
+		subtitle := fmt.Sprintf("(agents: %s, synthesis: %s, native: %s)", models.agents, models.synthesis, models.native)
+		ui.Header("Heavy Hybrid", subtitle)
+		ui.Phase(1, "Captain routing query to specialists...")
+	}
+	spin := ui.NewSpinner("Captain selecting agents...")
+	selected, err := routeAgents(ctx, opts.Query, models.routing, timeout)
+	if err != nil {
+		spin.Stop(false, fmt.Sprintf("Routing failed: %v", err))
+		return nil, fmt.Errorf("routing: %w", err)
+	}
+
+	agents := mergeAgents(selected, maxAgents)
+	agentNames := make([]string, len(agents))
+	for i, a := range agents {
+		agentNames[i] = a.Name
+	}
+	agentNames = append(agentNames, "NativeMultiAgent")
+	spin.Stop(true, fmt.Sprintf("Selected: %s (%d agents + native)", strings.Join(agentNames[:len(agentNames)-1], ", "), len(agents)))
+
+	// Step 2: Parallel execution — rho agents + native multi-agent
+	if opts.Verbose {
+		fmt.Fprintln(os.Stderr)
+		ui.Phase(2, fmt.Sprintf("Running %d rho agents + native multi-agent (concurrency=%d)...", len(agents)-1, concurrency))
+	}
+
+	var mu sync.Mutex
+	var allOutputs []AgentOutput
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	// Branch A: rho agents
+	g.Go(func() error {
+		rhoOutputs := executeAgents(gctx, agents, opts.Query, models.agents, concurrency, timeout, opts)
+		mu.Lock()
+		allOutputs = append(allOutputs, rhoOutputs...)
+		mu.Unlock()
+		return nil
+	})
+
+	// Branch B: xAI native multi-agent
+	g.Go(func() error {
+		start := time.Now()
+		nativeResult, err := RunNative(gctx, cfg, opts)
+		duration := time.Since(start).Seconds()
+
+		out := AgentOutput{
+			Name:     "NativeMultiAgent",
+			Domain:   "Web Research & External Knowledge",
+			Duration: duration,
 		}
-		if cfg.Rho.SmartModel != "" {
-			return cfg.Rho.SmartModel
+
+		if err != nil {
+			out.Failed = true
+			out.Error = err.Error()
+			if opts.Verbose {
+				ui.Fail(fmt.Sprintf("NativeMultiAgent: %v (%.1fs)", err, duration))
+			}
+		} else {
+			out.Output = nativeResult.Synthesis
+			if opts.Verbose {
+				ui.Success(fmt.Sprintf("NativeMultiAgent %s", ui.Dim(fmt.Sprintf("(%.1fs, %d tokens)", duration, nativeResult.TotalTokens))))
+			}
+		}
+
+		mu.Lock()
+		allOutputs = append(allOutputs, out)
+		mu.Unlock()
+		return nil
+	})
+
+	_ = g.Wait()
+
+	// Step 3: Synthesize all outputs
+	if opts.Verbose {
+		fmt.Fprintln(os.Stderr)
+		ui.Phase(3, "Captain synthesizing all responses...")
+	}
+	spin = ui.NewSpinner(fmt.Sprintf("Synthesizing %d responses...", countSuccessful(allOutputs)))
+	synthesis, err := synthesize(ctx, opts.Query, allOutputs, models.synthesis, timeout)
+	if err != nil {
+		spin.Stop(false, fmt.Sprintf("Synthesis failed: %v", err))
+		return nil, fmt.Errorf("synthesis: %w", err)
+	}
+	spin.Stop(true, "Synthesis complete")
+
+	// Step 4: Debate rounds
+	for round := 1; round <= opts.DebateRounds; round++ {
+		if opts.Verbose {
+			fmt.Fprintln(os.Stderr)
+			ui.Phase(3+round, fmt.Sprintf("Debate round %d...", round))
+		}
+		spin = ui.NewSpinner(fmt.Sprintf("Collecting critiques (round %d)...", round))
+		critiques := collectCritiques(ctx, agents, opts.Query, synthesis, models.debate, concurrency, timeout, opts)
+		nCritiques := countSuccessful(critiques)
+		spin.Stop(true, fmt.Sprintf("%d critiques collected", nCritiques))
+
+		if nCritiques > 0 {
+			spin = ui.NewSpinner("Captain re-synthesizing...")
+			newSynthesis, err := resynthesize(ctx, opts.Query, synthesis, critiques, models.debate, timeout)
+			if err != nil {
+				spin.Stop(false, fmt.Sprintf("Re-synthesis failed: %v", err))
+			} else {
+				spin.Stop(true, "Re-synthesis complete")
+				synthesis = newSynthesis
+			}
 		}
 	}
-	return "grok-4.20-reasoning"
+
+	if opts.Verbose {
+		ui.Complete("Heavy hybrid complete!")
+	}
+
+	result := &Result{
+		Query:        opts.Query,
+		Agents:       agentNames,
+		Synthesis:    synthesis,
+		DebateRounds: opts.DebateRounds,
+		Mode:         "hybrid",
+	}
+	if opts.JSON {
+		result.Outputs = allOutputs
+	}
+
+	return result, nil
 }
 
 func routeAgents(ctx context.Context, query, model string, timeoutSecs int) ([]string, error) {

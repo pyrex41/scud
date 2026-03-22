@@ -15,56 +15,97 @@ import (
 
 // --- Unit tests (no API calls) ---
 
-func TestResolveModelPrecedence(t *testing.T) {
+func TestResolveModelsPrecedence(t *testing.T) {
 	tests := []struct {
-		name     string
-		override string
-		cfg      *config.Config
-		want     string
+		name string
+		opts RunOpts
+		cfg  *config.Config
+		role string
+		want string
 	}{
 		{
-			name:     "explicit override wins",
-			override: "my-model",
-			cfg:      config.Default(),
-			want:     "my-model",
+			name: "CLI per-role override wins",
+			opts: RunOpts{ModelAgents: "cli-agents", ModelAll: "cli-all"},
+			cfg:  config.Default(),
+			role: "agents",
+			want: "cli-agents",
 		},
 		{
-			name:     "heavy config model",
-			override: "",
+			name: "CLI model-all fallback",
+			opts: RunOpts{ModelAll: "cli-all"},
+			cfg:  config.Default(),
+			role: "agents",
+			want: "cli-all",
+		},
+		{
+			name: "per-role config",
+			opts: RunOpts{},
+			cfg: &config.Config{
+				Heavy: config.HeavyConfig{
+					Models: config.HeavyModelsConfig{Agents: "cfg-agents"},
+					Model:  "cfg-all",
+				},
+				Rho: config.RhoConfig{SmartModel: "smart-model"},
+			},
+			role: "agents",
+			want: "cfg-agents",
+		},
+		{
+			name: "heavy.model fallback",
+			opts: RunOpts{},
 			cfg: &config.Config{
 				Heavy: config.HeavyConfig{Model: "heavy-model"},
 				Rho:   config.RhoConfig{SmartModel: "smart-model"},
 			},
+			role: "synthesis",
 			want: "heavy-model",
 		},
 		{
-			name:     "rho smart model fallback",
-			override: "",
+			name: "rho smart model fallback",
+			opts: RunOpts{},
 			cfg: &config.Config{
 				Heavy: config.HeavyConfig{},
 				Rho:   config.RhoConfig{SmartModel: "smart-model"},
 			},
+			role: "routing",
 			want: "smart-model",
 		},
 		{
-			name:     "nil config uses hardcoded default",
-			override: "",
-			cfg:      nil,
-			want:     "grok-4.20-reasoning",
+			name: "nil config uses default",
+			opts: RunOpts{},
+			cfg:  nil,
+			role: "agents",
+			want: "grok-4.20-reasoning",
 		},
 		{
-			name:     "empty config uses hardcoded default",
-			override: "",
-			cfg:      &config.Config{},
-			want:     "grok-4.20-reasoning",
+			name: "native role uses LLM config",
+			opts: RunOpts{},
+			cfg: &config.Config{
+				LLM: config.LLMConfig{MultiAgentModel: "native-model"},
+			},
+			role: "native",
+			want: "native-model",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveModel(tt.override, tt.cfg)
+			models := resolveModels(tt.opts, tt.cfg)
+			var got string
+			switch tt.role {
+			case "routing":
+				got = models.routing
+			case "agents":
+				got = models.agents
+			case "synthesis":
+				got = models.synthesis
+			case "debate":
+				got = models.debate
+			case "native":
+				got = models.native
+			}
 			if got != tt.want {
-				t.Errorf("resolveModel(%q, ...) = %q, want %q", tt.override, got, tt.want)
+				t.Errorf("resolveModels().%s = %q, want %q", tt.role, got, tt.want)
 			}
 		})
 	}
@@ -497,7 +538,7 @@ func TestIntegrationFullEnsembleMinimal(t *testing.T) {
 	start := time.Now()
 	result, err := Run(context.Background(), cfg, RunOpts{
 		Query:        "What is the capital of France? One word answer.",
-		Model:        "grok-code-fast-1",
+		ModelAll:     "grok-code-fast-1",
 		Concurrency:  3,
 		DebateRounds: 0,
 		Verbose:      false,
@@ -541,7 +582,7 @@ func TestIntegrationFullEnsembleWithDebate(t *testing.T) {
 	start := time.Now()
 	result, err := Run(context.Background(), cfg, RunOpts{
 		Query:        "Is Go or Rust better for CLI tools? Give a brief opinionated take.",
-		Model:        "grok-code-fast-1",
+		ModelAll:     "grok-code-fast-1",
 		Concurrency:  3,
 		DebateRounds: 1,
 		Verbose:      false,
@@ -576,7 +617,7 @@ func TestIntegrationTimeout(t *testing.T) {
 
 	_, err := Run(ctx, config.Default(), RunOpts{
 		Query:        "Explain quantum mechanics in detail",
-		Model:        "grok-code-fast-1",
+		ModelAll:     "grok-code-fast-1",
 		Concurrency:  1,
 		DebateRounds: 0,
 		Verbose:      false,
@@ -738,7 +779,7 @@ func TestBenchmarkLiveFullPipeline(t *testing.T) {
 		start := time.Now()
 		result, err := Run(context.Background(), cfg, RunOpts{
 			Query:        s.query,
-			Model:        "grok-code-fast-1",
+			ModelAll:     "grok-code-fast-1",
 			Concurrency:  s.concurrency,
 			DebateRounds: s.debate,
 			Verbose:      false,

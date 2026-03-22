@@ -27,11 +27,22 @@ type LLMConfig struct {
 	MaxTokens          int    `toml:"max_tokens"`
 }
 
+// HeavyModelsConfig holds per-role model overrides for the heavy ensemble.
+type HeavyModelsConfig struct {
+	Routing   string `toml:"routing"`   // Captain routing step
+	Agents    string `toml:"agents"`    // parallel rho agent execution
+	Synthesis string `toml:"synthesis"` // Captain synthesis step
+	Debate    string `toml:"debate"`    // critique/resynthesis rounds
+	Native    string `toml:"native"`    // xAI multi-agent model
+}
+
 type HeavyConfig struct {
-	Model       string `toml:"model"`       // "" = use rho.smart_model
-	Concurrency int    `toml:"concurrency"` // default 4
-	TimeoutSecs int    `toml:"timeout_secs"` // default 300
-	MaxAgents   int    `toml:"max_agents"`   // 0 = no cap
+	Model       string            `toml:"model"`       // override-all fallback
+	Models      HeavyModelsConfig `toml:"models"`      // per-role overrides
+	Mode        string            `toml:"mode"`         // "ensemble", "native", "hybrid"
+	Concurrency int               `toml:"concurrency"` // default 4
+	TimeoutSecs int               `toml:"timeout_secs"` // default 300
+	MaxAgents   int               `toml:"max_agents"`   // 0 = no cap
 }
 
 type RhoConfig struct {
@@ -130,6 +141,24 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("SCUD_HEAVY_MODEL"); v != "" {
 		c.Heavy.Model = v
 	}
+	if v := os.Getenv("SCUD_HEAVY_MODE"); v != "" {
+		c.Heavy.Mode = v
+	}
+	if v := os.Getenv("SCUD_HEAVY_MODEL_ROUTING"); v != "" {
+		c.Heavy.Models.Routing = v
+	}
+	if v := os.Getenv("SCUD_HEAVY_MODEL_AGENTS"); v != "" {
+		c.Heavy.Models.Agents = v
+	}
+	if v := os.Getenv("SCUD_HEAVY_MODEL_SYNTHESIS"); v != "" {
+		c.Heavy.Models.Synthesis = v
+	}
+	if v := os.Getenv("SCUD_HEAVY_MODEL_DEBATE"); v != "" {
+		c.Heavy.Models.Debate = v
+	}
+	if v := os.Getenv("SCUD_HEAVY_MODEL_NATIVE"); v != "" {
+		c.Heavy.Models.Native = v
+	}
 	if v := os.Getenv("SCUD_HEAVY_CONCURRENCY"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.Heavy.Concurrency = n
@@ -188,6 +217,20 @@ model = "grok-4.20-beta-0309-reasoning"
 fast_model = "grok-code-fast-1"
 smart_model = "grok-4.20-beta-0309-reasoning"
 
+[heavy]
+# model = ""  # override-all fallback
+# mode = ""   # "ensemble" (default), "native", "hybrid"
+concurrency = 4
+timeout_secs = 300
+
+# Per-role model overrides (cheaper models for bulk work, smart for synthesis)
+# [heavy.models]
+# routing = "grok-4.1-fast"
+# agents = "grok-4.1-fast"
+# synthesis = "grok-4.20-beta-0309-reasoning"
+# debate = "grok-4.1-fast"
+# native = "grok-4.20-multi-agent-beta-0309"
+
 [swarm]
 round_size = 5
 max_ralph_attempts = 3
@@ -203,6 +246,42 @@ commands = []
 stop_on_failure = true
 timeout_secs = 300
 `
+}
+
+// HeavyModel resolves the model for a given heavy ensemble role.
+// Priority: Heavy.Models.<role> > Heavy.Model > Rho.SmartModel > default.
+// For "native": Heavy.Models.Native > LLM.MultiAgentModel > default.
+func (c *Config) HeavyModel(role string) string {
+	var perRole string
+	switch role {
+	case "routing":
+		perRole = c.Heavy.Models.Routing
+	case "agents":
+		perRole = c.Heavy.Models.Agents
+	case "synthesis":
+		perRole = c.Heavy.Models.Synthesis
+	case "debate":
+		perRole = c.Heavy.Models.Debate
+	case "native":
+		perRole = c.Heavy.Models.Native
+		if perRole != "" {
+			return perRole
+		}
+		if c.LLM.MultiAgentModel != "" {
+			return c.LLM.MultiAgentModel
+		}
+		return "grok-4.20-multi-agent-beta-0309"
+	}
+	if perRole != "" {
+		return perRole
+	}
+	if c.Heavy.Model != "" {
+		return c.Heavy.Model
+	}
+	if c.Rho.SmartModel != "" {
+		return c.Rho.SmartModel
+	}
+	return "grok-4.20-reasoning"
 }
 
 // ModelForTier resolves a model tier to an actual model name.
