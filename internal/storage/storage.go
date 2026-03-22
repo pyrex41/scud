@@ -56,7 +56,7 @@ func (s *Storage) GuidanceDir() string {
 	return filepath.Join(s.root, ".scud", "guidance")
 }
 
-// Initialize creates the .scud directory structure.
+// Initialize creates the .scud directory structure and scaffolds skills.
 func (s *Storage) Initialize() error {
 	dirs := []string{
 		filepath.Join(s.root, ".scud"),
@@ -76,8 +76,166 @@ func (s *Storage) Initialize() error {
 			return err
 		}
 	}
+	// Scaffold skills for Claude Code and OpenCode
+	if err := s.scaffoldSkills(); err != nil {
+		return fmt.Errorf("scaffolding skills: %w", err)
+	}
 	return nil
 }
+
+func (s *Storage) scaffoldSkills() error {
+	skills := map[string]string{
+		"scud":       skillScudGuide,
+		"scud-tasks": skillScudTasks,
+	}
+	// Write to both .claude/skills/ and .opencode/skills/
+	for _, prefix := range []string{".claude", ".opencode"} {
+		for name, content := range skills {
+			dir := filepath.Join(s.root, prefix, "skills", name)
+			path := filepath.Join(dir, "SKILL.md")
+			// Don't overwrite existing skills
+			if _, err := os.Stat(path); err == nil {
+				continue
+			}
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var skillScudGuide = `---
+name: scud-guide
+description: SCUD CLI reference and workflow guide. Use when working with scud task management, running scud commands, or when the user mentions tasks, waves, DAG, or project progress.
+---
+
+# SCUD CLI Guide
+
+SCUD is a DAG-based task manager for AI-driven development. Tasks have dependencies, priorities, and complexity scores. Work flows through parallel waves.
+
+## Session Workflow
+
+` + "```" + `bash
+scud warmup              # Orient: status, git history, next task
+scud next                # Find next available task (deps satisfied)
+scud set-status ID in-progress
+# ... do the work ...
+scud commit -m "message" # Auto-prefixes [TASK-ID]
+scud set-status ID done
+scud stats               # Check progress
+` + "```" + `
+
+## Commands
+
+| Category | Command | Description |
+|----------|---------|-------------|
+| **Session** | ` + "`scud warmup`" + ` | Orient with status + next task |
+| **View** | ` + "`scud list [--status pending]`" + ` | List tasks |
+| | ` + "`scud show ID`" + ` | Task details |
+| | ` + "`scud stats`" + ` | Completion statistics |
+| **Work** | ` + "`scud next`" + ` | Next ready task |
+| | ` + "`scud waves`" + ` | Parallel execution waves |
+| | ` + "`scud set-status ID STATUS`" + ` | Update status |
+| | ` + "`scud create --title \"...\"`" + ` | Create a task |
+| **Git** | ` + "`scud commit -m \"msg\"`" + ` | [TASK-ID] prefixed commit |
+| **AI** | ` + "`scud parse FILE`" + ` | Generate tasks from doc |
+| | ` + "`scud expand ID`" + ` | Break into subtasks |
+| | ` + "`scud heavy \"query\"`" + ` | Multi-agent reasoning ensemble |
+| **Tags** | ` + "`scud tags`" + ` | List/switch phases |
+| **Server** | ` + "`scud mcp-server`" + ` | Start MCP server for tool integration |
+
+## Heavy Ensemble
+
+Multi-agent reasoning with per-role model control:
+
+` + "```" + `bash
+scud heavy "query" -v                                    # Default
+scud heavy "query" --model-agents grok-4.1-fast          # Cheap agents
+scud heavy "query" --mode hybrid                         # Local + web research
+` + "```" + `
+
+Modes: ensemble (default), native (xAI multi-agent), hybrid (both).
+
+## MCP Server
+
+Expose scud as tools for Cowork/Claude Code:
+
+` + "```" + `json
+{"mcpServers": {"scud": {"command": "scud", "args": ["mcp-server"]}}}
+` + "```" + `
+
+Tiers via SCUD_TOOLS: core (default, 6 tools), full (9 tools), or custom comma-separated list.
+
+## Task Statuses
+
+pending | in-progress | done | blocked | failed | review | expanded | deferred | cancelled
+`
+
+var skillScudTasks = `---
+name: scud-tasks
+description: SCUD task management - view, update, and track tasks in the SCUD DAG system. Use when the user asks about tasks, wants to see progress, needs the next task, or wants to update task status.
+---
+
+# SCUD Task Management
+
+SCUD organizes work as a DAG of tasks with dependencies, priorities, and complexity scores.
+
+## Quick Reference
+
+` + "```" + `bash
+scud warmup                        # Session start: status + next task
+scud next                          # Next available task (all deps done)
+scud show <id>                     # Full task details
+scud list                          # All tasks in active tag
+scud list --status pending         # Filter by status
+scud set-status <id> in-progress   # Start working
+scud set-status <id> done          # Mark complete
+scud stats                         # Completion statistics
+scud waves                         # View parallel execution plan
+scud create --title "..."          # Create a new task
+` + "```" + `
+
+## Workflow
+
+1. **Orient**: ` + "`scud warmup`" + ` - see project state and what's next
+2. **Claim**: ` + "`scud set-status <id> in-progress`" + `
+3. **Implement**: do the work
+4. **Commit**: ` + "`scud commit -m \"message\"`" + ` - auto-prefixes [TASK-ID]
+5. **Complete**: ` + "`scud set-status <id> done`" + ` - unblocks dependent tasks
+6. **Repeat**: ` + "`scud next`" + `
+
+## Task Statuses
+
+| Status | Meaning |
+|--------|---------|
+| pending | Ready to start (or waiting on deps) |
+| in-progress | Currently being worked on |
+| done | Completed and verified |
+| blocked | Cannot proceed (external blocker) |
+| failed | Attempted but failed |
+| review | Ready for review |
+| expanded | Decomposed into subtasks |
+
+## Dependencies & Waves
+
+Tasks depend on other tasks. A task is "ready" when status is pending and all deps are done.
+` + "`scud waves`" + ` groups ready tasks into parallel waves. ` + "`scud next`" + ` returns the highest-priority ready task.
+
+## Tags (Phases)
+
+` + "```" + `bash
+scud tags              # List all tags
+scud tags <name>       # Set active tag
+` + "```" + `
+
+## Task IDs
+
+Hierarchical: 1, 1.1, 1.1.1. Subtasks inherit parent dependencies.
+`
 
 // LoadPhases reads and parses all phases from the tasks file.
 func (s *Storage) LoadPhases() (map[string]*model.Phase, error) {

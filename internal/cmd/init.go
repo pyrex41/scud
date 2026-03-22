@@ -28,9 +28,11 @@ func NewInitCmd() *cobra.Command {
 			}
 
 			fmt.Println("Initialized .scud/ project structure")
-			fmt.Println("  .scud/config.toml   - configuration")
-			fmt.Println("  .scud/tasks/        - task files")
-			fmt.Println("  .scud/guidance/     - AI context files")
+			fmt.Println("  .scud/config.toml        - configuration")
+			fmt.Println("  .scud/tasks/             - task files")
+			fmt.Println("  .scud/guidance/          - AI context files")
+			fmt.Println("  .claude/skills/scud/     - Claude Code skill")
+			fmt.Println("  .opencode/skills/scud/   - OpenCode skill")
 			return nil
 		},
 	}
