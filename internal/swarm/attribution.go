@@ -26,15 +26,17 @@ var (
 )
 
 // AttributeFailure analyzes validation failure output to identify which tasks caused it.
-// It parses stderr for file:line patterns, runs git blame to find [TASK-ID] commit prefixes,
-// and matches against the given waveTasks.
+// It scans outputs directly for task ID patterns like [TASK-5], parses file:line locations,
+// runs git blame as supplement, and matches against the given waveTasks.
 func AttributeFailure(ctx context.Context, vr ValidationResult, workDir string, waveTasks []string) []Attribution {
 	waveSet := make(map[string]bool, len(waveTasks))
 	for _, id := range waveTasks {
 		waveSet[id] = true
 	}
 
-	// Collect file:line patterns from all failed command stderr/stdout
+	taskHits := make(map[string][]string) // taskID -> list of reasons
+
+	// Collect file:line patterns AND task IDs directly from failed outputs
 	type fileLine struct {
 		file string
 		line int
@@ -47,6 +49,16 @@ func AttributeFailure(ctx context.Context, vr ValidationResult, workDir string, 
 			continue
 		}
 		for _, output := range []string{cr.Stderr, cr.Stdout} {
+			// Scan directly for task IDs in error output (more reliable than git blame alone)
+			idMatches := taskIDRe.FindAllStringSubmatch(output, -1)
+			for _, m := range idMatches {
+				taskID := m[1]
+				if waveSet[taskID] {
+					reason := "mentioned in validation output"
+					taskHits[taskID] = append(taskHits[taskID], reason)
+				}
+			}
+
 			matches := fileLineRe.FindAllStringSubmatch(output, -1)
 			for _, m := range matches {
 				lineNum, err := strconv.Atoi(m[2])
@@ -62,12 +74,11 @@ func AttributeFailure(ctx context.Context, vr ValidationResult, workDir string, 
 		}
 	}
 
-	if len(locations) == 0 {
+	if len(locations) == 0 && len(taskHits) == 0 {
 		return nil
 	}
 
-	// For each file:line, run git blame to find task IDs
-	taskHits := make(map[string][]string) // taskID -> list of reasons
+	// For each file:line, run git blame to find task IDs (supplements direct output scan)
 	for _, loc := range locations {
 		blameCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		lineRange := fmt.Sprintf("%d,%d", loc.line, loc.line)
@@ -105,12 +116,13 @@ func AttributeFailure(ctx context.Context, vr ValidationResult, workDir string, 
 			confidence = "medium"
 		}
 
+		reasonStr := fmt.Sprintf("matched %d error indicator(s): %s", len(reasons), strings.Join(reasons, ", "))
 		attributions = append(attributions, Attribution{
 			TaskID:     taskID,
 			File:       reasons[0],
-			Line:       0, // already encoded in File as file:line
+			Line:       0, // already encoded in File as file:line or description
 			Confidence: confidence,
-			Reason:     fmt.Sprintf("git blame matched %d error location(s): %s", len(reasons), strings.Join(reasons, ", ")),
+			Reason:     reasonStr,
 		})
 	}
 
