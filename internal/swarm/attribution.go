@@ -22,7 +22,7 @@ type Attribution struct {
 
 var (
 	fileLineRe = regexp.MustCompile(`([^\s:]+):(\d+)`)
-	taskIDRe   = regexp.MustCompile(`\[([^\]]+)\]`)
+	taskIDRe   = regexp.MustCompile(`\[([A-Za-z0-9_-]+)\]`)
 )
 
 // AttributeFailure analyzes validation failure output to identify which tasks caused it.
