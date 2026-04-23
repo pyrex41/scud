@@ -206,9 +206,12 @@ func runEnsemble(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result
 	}
 	spin := ui.NewSpinner("Captain selecting agents...")
 	selected, err := routeAgents(ctx, opts.Query, models.routing, timeout)
+	// Bulletproof fallback: if the routing LLM is unavailable or returns bad
+	// JSON, fall through with no specialists selected — mergeAgents will still
+	// activate the 4 core agents. Better a degraded ensemble than no answer.
 	if err != nil {
-		spin.Stop(false, fmt.Sprintf("Routing failed: %v", err))
-		return nil, fmt.Errorf("routing: %w", err)
+		spin.Stop(true, fmt.Sprintf("Routing unavailable (%v); running core 4 only", err))
+		selected = nil
 	}
 
 	// Merge with core agents and dedup
@@ -217,7 +220,9 @@ func runEnsemble(ctx context.Context, cfg *config.Config, opts RunOpts) (*Result
 	for i, a := range agents {
 		agentNames[i] = a.Name
 	}
-	spin.Stop(true, fmt.Sprintf("Selected: %s (%d agents)", strings.Join(agentNames, ", "), len(agents)))
+	if err == nil {
+		spin.Stop(true, fmt.Sprintf("Selected: %s (%d agents)", strings.Join(agentNames, ", "), len(agents)))
+	}
 
 	// Step 2: Parallel execution (skip Captain)
 	if opts.Verbose {
@@ -540,9 +545,13 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 				}
 			}
 
+			workerModel := model
+			if a.Model != "" {
+				workerModel = a.Model
+			}
 			result, err := rho.RunStreaming(agentCtx, rho.Options{
 				Prompt:       query,
-				Model:        model,
+				Model:        workerModel,
 				SystemPrompt: a.SystemPrompt,
 				AllowedTools: a.Tools,
 				WorkingDir:   opts.WorkingDir,
@@ -653,6 +662,12 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 }
 
 func synthesize(ctx context.Context, query string, outputs []AgentOutput, model string, timeoutSecs int) (string, error) {
+	// Don't burn an LLM call on an empty ensemble — fail fast with a useful
+	// error so the caller can report "every worker failed, see errors above".
+	if countSuccessful(outputs) == 0 {
+		return "", fmt.Errorf("every worker failed — nothing to synthesize (ran %d workers)", len(outputs))
+	}
+
 	synthCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
@@ -693,9 +708,13 @@ func collectCritiques(ctx context.Context, agents []Agent, query, synthesis, mod
 			agentCtx, cancel := context.WithTimeout(gctx, time.Duration(timeoutSecs)*time.Second)
 			defer cancel()
 
+			workerModel := model
+			if a.Model != "" {
+				workerModel = a.Model
+			}
 			result, err := rho.Run(agentCtx, rho.Options{
 				Prompt:       prompt,
-				Model:        model,
+				Model:        workerModel,
 				SystemPrompt: a.SystemPrompt,
 				TimeoutSecs:  timeoutSecs,
 			})

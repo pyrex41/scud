@@ -3,12 +3,19 @@ package heavy
 import "strings"
 
 // Agent defines a single agent role in the Heavy reasoning ensemble.
+//
+// Model is an optional per-agent override. When empty (as for the built-in 16
+// specialist agents) the pipeline-level model from RunOpts is used. Squad and
+// Council runs set Model per worker so different agents can run on different
+// backends (e.g. local llama-cpp:// clones in squad, heterogeneous providers
+// in council).
 type Agent struct {
 	Name         string
 	Domain       string
 	SystemPrompt string
 	Tools        []string
 	IsCore       bool
+	Model        string
 }
 
 // Registry returns all 16 agent definitions.

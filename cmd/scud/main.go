@@ -45,6 +45,8 @@ func main() {
 		cmd.NewSwarmCmd(),
 		cmd.NewDoctorCmd(),
 		cmd.NewHeavyCmd(),
+		cmd.NewSquadCmd(),
+		cmd.NewCouncilCmd(),
 		cmd.NewCreateCmd(),
 		cmd.NewAssignCmd(),
 		cmd.NewWhoisCmd(),
