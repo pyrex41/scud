@@ -508,10 +508,19 @@ func executeAgents(ctx context.Context, agents []Agent, query, model string, con
 		g.Go(func() error {
 			start := time.Now()
 
-			// Adaptive timeout: base timeout as configured, but extend up to 3x
-			// if the agent is still actively producing output (idle timeout = 60s)
+			// Adaptive timeout: base timeout as configured, extend up to 3x if the
+			// agent is still actively producing output. Idle = min(base, 180s) so
+			// slow local models (e.g. gemma-4 on a shared llama-server with N
+			// parallel slots) don't get killed mid-tool-call while waiting for
+			// their compute turn. Capped so runaway hangs still get reaped.
 			baseDur := time.Duration(timeoutSecs) * time.Second
-			idleDur := 60 * time.Second
+			idleDur := baseDur
+			if idleDur > 180*time.Second {
+				idleDur = 180 * time.Second
+			}
+			if idleDur < 60*time.Second {
+				idleDur = 60 * time.Second
+			}
 			maxDur := baseDur * 3
 			agentCtx, adaptive := rho.NewAdaptiveTimeout(gctx, baseDur, idleDur, maxDur)
 

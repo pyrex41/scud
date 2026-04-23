@@ -138,6 +138,7 @@ func buildCouncilWorkers(models []string) []Agent {
 			Name:         fmt.Sprintf("Council%d", i+1),
 			Domain:       m, // surface the model in output so the user knows who said what
 			SystemPrompt: councilWorkerPrompt,
+			Tools:        squadWorkerTools,
 			Model:        m,
 		}
 	}

@@ -139,6 +139,12 @@ const squadWorkerPrompt = "You are one member of a team of reasoning agents. " +
 	"Answer the user's query thoroughly and independently — do not coordinate with other members. " +
 	"Lay out your reasoning, evidence, assumptions, and final answer clearly so a coordinator can combine perspectives."
 
+// squadWorkerTools is the default toolset for squad/council workers. Read-only
+// plus Bash so workers can explore a codebase or check state, but can't write
+// or edit — captain-driven synthesis expects the workers to *analyze*, not
+// mutate. If a use case needs write access, fork the agent definition.
+var squadWorkerTools = []string{"Read", "Grep", "Glob", "Bash"}
+
 func buildSquadWorkers(n int, model string) []Agent {
 	out := make([]Agent, n)
 	for i := 0; i < n; i++ {
@@ -146,6 +152,7 @@ func buildSquadWorkers(n int, model string) []Agent {
 			Name:         fmt.Sprintf("Worker%d", i+1),
 			Domain:       "General reasoning",
 			SystemPrompt: squadWorkerPrompt,
+			Tools:        squadWorkerTools,
 			Model:        model,
 		}
 	}
