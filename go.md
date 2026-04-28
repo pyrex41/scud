@@ -103,8 +103,8 @@ Agent type and model tier are **orthogonal axes**. Agent type describes WHAT the
 | Tier | Use case | Default model |
 |---|---|---|
 | `fast` | Simple tasks, high throughput | `grok-code-fast-1` |
-| `standard` | Balanced (default) | `grok-4.20-beta-0309-reasoning` |
-| `smart` | Complex reasoning, multi-step | `grok-4.20-multi-agent-beta-0309` |
+| `standard` | Balanced (default) | `grok-4.20-0309-reasoning` |
+| `smart` | Complex reasoning, multi-step | `grok-4.20-multi-agent-0309` |
 | `custom` | User override | `task.ModelOverride` |
 
 **Resolution:** Any agent × any tier is valid. The model is resolved at spawn time:
@@ -241,8 +241,8 @@ round_size = 5
 # Model tier → actual model mapping (for agent execution)
 [swarm.tiers]
 fast     = "grok-code-fast-1"
-standard = "grok-4.20-beta-0309-reasoning"
-smart    = "grok-4.20-multi-agent-beta-0309"
+standard = "grok-4.20-0309-reasoning"
+smart    = "grok-4.20-multi-agent-0309"
 
 [swarm.backpressure]
 commands = ["cargo build", "cargo test"]

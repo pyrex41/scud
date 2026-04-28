@@ -112,9 +112,9 @@ Use cheap models for bulk work and reserve expensive models for synthesis:
 [heavy.models]
 routing = "grok-4.1-fast"
 agents = "grok-4.1-fast"
-synthesis = "grok-4.20-beta-0309-reasoning"
+synthesis = "grok-4.20-0309-reasoning"
 debate = "grok-4.1-fast"
-native = "grok-4.20-multi-agent-beta-0309"
+native = "grok-4.20-multi-agent-0309"
 ```
 
 Or via CLI flags (`--model-agents`, `--model-synthesis`) or env vars (`SCUD_HEAVY_MODEL_AGENTS`, etc).
