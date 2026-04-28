@@ -38,7 +38,7 @@ func NewMultiAgentCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "multiagent [query...]",
 		Short: "Query the xAI native multi-agent model",
-		Long: `Calls the xAI Responses API with the grok-4.20-multi-agent-beta-0309 model.
+		Long: `Calls the xAI Responses API with the grok-4.20-multi-agent-0309 model.
 This model internally orchestrates 4-16 sub-agents to produce a high-quality answer.
 
 Effort levels control agent count:
@@ -122,7 +122,7 @@ Server-side tools (optional):
 		},
 	}
 
-	cmd.Flags().StringVar(&model, "model", "", "Model override (default: grok-4.20-multi-agent-beta-0309)")
+	cmd.Flags().StringVar(&model, "model", "", "Model override (default: grok-4.20-multi-agent-0309)")
 	cmd.Flags().StringVar(&effort, "effort", "", "Agent effort: low/medium (4 agents), high/xhigh (16 agents)")
 	cmd.Flags().StringSliceVar(&tools, "tools", nil, "Server-side tools: web_search, x_search, code_execution")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Structured JSON output")

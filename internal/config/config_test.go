@@ -209,7 +209,7 @@ func TestHeavyModel(t *testing.T) {
 			name: "native ultimate default",
 			cfg:  Config{},
 			role: "native",
-			want: "grok-4.20-multi-agent-beta-0309",
+			want: "grok-4.20-multi-agent-0309",
 		},
 	}
 

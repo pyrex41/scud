@@ -398,7 +398,7 @@ func TestIntegrationRoutingOnly(t *testing.T) {
 	skipWithoutAPI(t)
 
 	start := time.Now()
-	model := "grok-4.20-beta-0309-reasoning"
+	model := "grok-4.20-0309-reasoning"
 
 	selected, err := routeAgents(context.Background(), "Explain the P vs NP problem", model, 60)
 	elapsed := time.Since(start)

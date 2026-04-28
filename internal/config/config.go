@@ -74,18 +74,18 @@ type BackpressureCfg struct {
 func Default() *Config {
 	return &Config{
 		Rho: RhoConfig{
-			Model:      "grok-4.20-beta-0309-reasoning",
+			Model:      "grok-4.20-0309-reasoning",
 			FastModel:  "grok-code-fast-1",
-			SmartModel: "grok-4.20-beta-0309-reasoning",
+			SmartModel: "grok-4.20-0309-reasoning",
 		},
 		LLM: LLMConfig{
 			Provider:         "xai",
-			Model:            "grok-4.20-multi-agent-beta-0309",
+			Model:            "grok-4.20-multi-agent-0309",
 			SmartProvider:    "xai-responses",
-			SmartModel:       "grok-4.20-multi-agent-beta-0309",
+			SmartModel:       "grok-4.20-multi-agent-0309",
 			FastProvider:     "xai",
 			FastModel:        "grok-code-fast-1",
-			MultiAgentModel:  "grok-4.20-multi-agent-beta-0309",
+			MultiAgentModel:  "grok-4.20-multi-agent-0309",
 			MultiAgentEffort: "low",
 			MaxTokens:        4096,
 		},
@@ -99,8 +99,8 @@ func Default() *Config {
 			TaskTimeoutSecs:  600,
 			Tiers: TierConfig{
 				Fast:     "grok-code-fast-1",
-				Standard: "grok-4.20-beta-0309-reasoning",
-				Smart:    "grok-4.20-beta-0309-reasoning",
+				Standard: "grok-4.20-0309-reasoning",
+				Smart:    "grok-4.20-0309-reasoning",
 			},
 			Backpressure: BackpressureCfg{
 				StopOnFailure: true,
@@ -213,9 +213,9 @@ func (c *Config) Save(scudDir string) error {
 // DefaultTOML returns the default config as TOML string.
 func DefaultTOML() string {
 	return `[rho]
-model = "grok-4.20-beta-0309-reasoning"
+model = "grok-4.20-0309-reasoning"
 fast_model = "grok-code-fast-1"
-smart_model = "grok-4.20-beta-0309-reasoning"
+smart_model = "grok-4.20-0309-reasoning"
 
 [heavy]
 # model = ""  # override-all fallback
@@ -227,9 +227,9 @@ timeout_secs = 300
 # [heavy.models]
 # routing = "grok-4.1-fast"
 # agents = "grok-4.1-fast"
-# synthesis = "grok-4.20-beta-0309-reasoning"
+# synthesis = "grok-4.20-0309-reasoning"
 # debate = "grok-4.1-fast"
-# native = "grok-4.20-multi-agent-beta-0309"
+# native = "grok-4.20-multi-agent-0309"
 
 [swarm]
 round_size = 5
@@ -238,8 +238,8 @@ task_timeout_secs = 600
 
 [swarm.tiers]
 fast = "grok-code-fast-1"
-standard = "grok-4.20-beta-0309-reasoning"
-smart = "grok-4.20-beta-0309-reasoning"
+standard = "grok-4.20-0309-reasoning"
+smart = "grok-4.20-0309-reasoning"
 
 [swarm.backpressure]
 commands = []
@@ -270,7 +270,7 @@ func (c *Config) HeavyModel(role string) string {
 		if c.LLM.MultiAgentModel != "" {
 			return c.LLM.MultiAgentModel
 		}
-		return "grok-4.20-multi-agent-beta-0309"
+		return "grok-4.20-multi-agent-0309"
 	}
 	if perRole != "" {
 		return perRole
