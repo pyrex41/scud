@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/generate"
-	"github.com/reuben/scud/internal/llm"
+	"github.com/reuben/scud/pkg/generate"
+	"github.com/reuben/scud/pkg/llm"
 	"github.com/spf13/cobra"
 )
 

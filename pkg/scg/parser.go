@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/pkg/model"
 )
 
 type section int
@@ -144,11 +144,11 @@ func parseNode(line string) *model.Task {
 		return nil
 	}
 	t := &model.Task{
-		ID:         strings.TrimSpace(parts[0]),
-		Title:      UnescapeField(strings.TrimSpace(parts[1])),
-		Status:     model.StatusFromCode(strings.TrimSpace(parts[2])),
-		Priority:   model.Medium,
-		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		ID:        strings.TrimSpace(parts[0]),
+		Title:     UnescapeField(strings.TrimSpace(parts[1])),
+		Status:    model.StatusFromCode(strings.TrimSpace(parts[2])),
+		Priority:  model.Medium,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if c := strings.TrimSpace(parts[3]); c != "" {
 		fmt.Sscanf(c, "%d", &t.Complexity)

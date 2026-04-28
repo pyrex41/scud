@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/ui"
+	"github.com/reuben/scud/pkg/llm"
 	"golang.org/x/sync/errgroup"
 )
 

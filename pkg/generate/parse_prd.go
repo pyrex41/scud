@@ -7,20 +7,20 @@ import (
 	"time"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/llm"
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/pkg/llm"
+	"github.com/reuben/scud/pkg/model"
 )
 
 type parsedTask struct {
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	Priority     string   `json:"priority"`
-	Complexity   int      `json:"complexity"`
-	Dependencies []any    `json:"dependencies"` // can be string or int from LLM
-	AgentType    string   `json:"agent_type"`
-	ModelTier    string   `json:"model_tier"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	Priority     string `json:"priority"`
+	Complexity   int    `json:"complexity"`
+	Dependencies []any  `json:"dependencies"` // can be string or int from LLM
+	AgentType    string `json:"agent_type"`
+	ModelTier    string `json:"model_tier"`
 }
 
 // ParsePRD reads a PRD file and generates tasks via LLM (or rho fallback).

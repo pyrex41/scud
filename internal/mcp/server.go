@@ -11,9 +11,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/heavy"
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/pkg/heavy"
+	"github.com/reuben/scud/pkg/model"
 )
 
 const maxResponseLen = 4096

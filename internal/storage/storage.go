@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/reuben/scud/internal/model"
-	"github.com/reuben/scud/internal/scg"
+	"github.com/reuben/scud/pkg/model"
+	"github.com/reuben/scud/pkg/scg"
 )
 
 type Storage struct {
@@ -383,4 +383,3 @@ func (s *Storage) ResolveTag(tag string) (string, error) {
 	}
 	return "", fmt.Errorf("no tag specified and no active tag set (use -t or 'scud tags <name>')")
 }
-

@@ -78,6 +78,19 @@ Tasks have hierarchical IDs (`1`, `1.1`, `1.1.1`), statuses (`pending`, `in-prog
 
 Dependencies form a DAG — a task is "ready" when all its dependencies are `done`. SCUD's wave planner groups ready tasks into parallel execution batches.
 
+## scud as a library
+
+Public Go packages live under `pkg/` for tools that embed scud directly instead of shelling out to the CLI:
+
+```go
+import (
+    "github.com/reuben/scud/pkg/model"
+    "github.com/reuben/scud/pkg/scg"
+)
+```
+
+The public surface currently includes `pkg/model`, `pkg/scg`, `pkg/wave`, `pkg/attractor`, `pkg/heavy`, `pkg/swarm`, `pkg/llm`, and `pkg/generate`. APIs are still stabilizing while scud is pre-1.0, so breaking library changes may happen in later `v0.x` releases.
+
 ## Heavy ensemble
 
 `scud heavy` runs a multi-agent reasoning ensemble where a Captain agent routes your query to specialist agents, they analyze in parallel, and the Captain synthesizes a unified answer.

@@ -8,18 +8,18 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/llm"
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
 	"github.com/reuben/scud/internal/ui"
+	"github.com/reuben/scud/pkg/llm"
+	"github.com/reuben/scud/pkg/model"
 )
 
 type expandedSubtask struct {
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	Priority     string   `json:"priority"`
-	Dependencies []any    `json:"dependencies"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	Priority     string `json:"priority"`
+	Dependencies []any  `json:"dependencies"`
 }
 
 // Expand expands complex tasks into subtasks.

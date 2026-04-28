@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/reuben/scud/internal/model"
-	"github.com/reuben/scud/internal/wave"
+	"github.com/reuben/scud/pkg/model"
+	"github.com/reuben/scud/pkg/wave"
 	"github.com/spf13/cobra"
 )
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/reuben/scud/internal/wave"
+	"github.com/reuben/scud/pkg/wave"
 	"github.com/spf13/cobra"
 )
 

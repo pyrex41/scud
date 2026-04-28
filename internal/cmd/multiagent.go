@@ -8,20 +8,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/ui"
+	"github.com/reuben/scud/pkg/llm"
 	"github.com/spf13/cobra"
 )
 
 // MultiAgentResult is the JSON output for the multiagent command.
 type MultiAgentResult struct {
-	Query        string `json:"query"`
-	Model        string `json:"model"`
-	Effort       string `json:"effort"`
-	Text         string `json:"text"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-	TotalTokens  int    `json:"total_tokens"`
+	Query        string  `json:"query"`
+	Model        string  `json:"model"`
+	Effort       string  `json:"effort"`
+	Text         string  `json:"text"`
+	InputTokens  int     `json:"input_tokens"`
+	OutputTokens int     `json:"output_tokens"`
+	TotalTokens  int     `json:"total_tokens"`
 	DurationSecs float64 `json:"duration_secs"`
 }
 

@@ -30,9 +30,9 @@ func TestIsReady(t *testing.T) {
 	done := map[string]bool{"1": true, "2": true}
 
 	tests := []struct {
-		name   string
-		task   Task
-		want   bool
+		name string
+		task Task
+		want bool
 	}{
 		{"no deps, pending", Task{Status: Pending}, true},
 		{"deps met", Task{Status: Pending, Dependencies: []string{"1", "2"}}, true},

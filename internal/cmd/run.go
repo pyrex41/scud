@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/ui"
+	"github.com/reuben/scud/pkg/model"
 	"github.com/spf13/cobra"
 )
 

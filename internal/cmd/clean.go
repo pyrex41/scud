@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/reuben/scud/internal/scg"
+	"github.com/reuben/scud/pkg/scg"
 	"github.com/spf13/cobra"
 )
 

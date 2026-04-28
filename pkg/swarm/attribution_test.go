@@ -6,11 +6,11 @@ import (
 
 func TestFileLineRegex(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantN   int
-		wantF   string
-		wantL   string
+		name  string
+		input string
+		wantN int
+		wantF string
+		wantL string
 	}{
 		{
 			name:  "go test error",

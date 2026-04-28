@@ -3,7 +3,7 @@ package wave
 import (
 	"testing"
 
-	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/pkg/model"
 )
 
 func TestPlanLinearChain(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/swarm"
+	"github.com/reuben/scud/pkg/swarm"
 	"github.com/spf13/cobra"
 )
 

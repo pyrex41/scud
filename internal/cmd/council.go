@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/reuben/scud/internal/heavy"
+	"github.com/reuben/scud/pkg/heavy"
 	"github.com/spf13/cobra"
 )
 

@@ -5,18 +5,28 @@ import (
 	"time"
 )
 
+// TaskStatus describes where a task is in the SCUD workflow.
 type TaskStatus string
 
 const (
-	Pending    TaskStatus = "pending"
+	// Pending marks a task as not yet started.
+	Pending TaskStatus = "pending"
+	// InProgress marks a task as currently being worked on.
 	InProgress TaskStatus = "in-progress"
-	Done       TaskStatus = "done"
-	Failed     TaskStatus = "failed"
-	Blocked    TaskStatus = "blocked"
-	Review     TaskStatus = "review"
-	Expanded   TaskStatus = "expanded"
-	Deferred   TaskStatus = "deferred"
-	Cancelled  TaskStatus = "cancelled"
+	// Done marks a task as completed.
+	Done TaskStatus = "done"
+	// Failed marks a task as attempted but unsuccessful.
+	Failed TaskStatus = "failed"
+	// Blocked marks a task as waiting on an external blocker.
+	Blocked TaskStatus = "blocked"
+	// Review marks a task as ready for review.
+	Review TaskStatus = "review"
+	// Expanded marks a parent task as decomposed into subtasks.
+	Expanded TaskStatus = "expanded"
+	// Deferred marks a task as intentionally postponed.
+	Deferred TaskStatus = "deferred"
+	// Cancelled marks a task as no longer needed.
+	Cancelled TaskStatus = "cancelled"
 )
 
 var statusToCode = map[TaskStatus]string{
@@ -29,6 +39,7 @@ var codeToStatus = map[string]TaskStatus{
 	"B": Blocked, "R": Review, "X": Expanded, "F": Deferred, "C": Cancelled,
 }
 
+// StatusCode returns the compact SCG code for a task status.
 func StatusCode(s TaskStatus) string {
 	if c, ok := statusToCode[s]; ok {
 		return c
@@ -36,6 +47,7 @@ func StatusCode(s TaskStatus) string {
 	return "P"
 }
 
+// StatusFromCode returns the task status represented by a compact SCG code.
 func StatusFromCode(c string) TaskStatus {
 	if s, ok := codeToStatus[c]; ok {
 		return s
@@ -43,6 +55,7 @@ func StatusFromCode(c string) TaskStatus {
 	return Pending
 }
 
+// ParseStatus parses either a full status string or compact SCG status code.
 func ParseStatus(s string) (TaskStatus, bool) {
 	switch TaskStatus(s) {
 	case Pending, InProgress, Done, Failed, Blocked, Review, Expanded, Deferred, Cancelled:
@@ -54,13 +67,18 @@ func ParseStatus(s string) (TaskStatus, bool) {
 	return Pending, false
 }
 
+// Priority describes how urgently a task should be scheduled.
 type Priority string
 
 const (
+	// Critical is the highest scheduling priority.
 	Critical Priority = "critical"
-	High     Priority = "high"
-	Medium   Priority = "medium"
-	Low      Priority = "low"
+	// High is an elevated scheduling priority.
+	High Priority = "high"
+	// Medium is the default scheduling priority.
+	Medium Priority = "medium"
+	// Low is the lowest scheduling priority.
+	Low Priority = "low"
 )
 
 var priorityToCode = map[Priority]string{
@@ -71,6 +89,7 @@ var codeToPriority = map[string]Priority{
 	"C": Critical, "H": High, "M": Medium, "L": Low,
 }
 
+// PriorityCode returns the compact SCG code for a priority.
 func PriorityCode(p Priority) string {
 	if c, ok := priorityToCode[p]; ok {
 		return c
@@ -78,6 +97,7 @@ func PriorityCode(p Priority) string {
 	return "M"
 }
 
+// ParsePriority parses either a full priority string or compact SCG priority code.
 func ParsePriority(s string) (Priority, bool) {
 	switch Priority(s) {
 	case Critical, High, Medium, Low:
@@ -89,6 +109,7 @@ func ParsePriority(s string) (Priority, bool) {
 	return Medium, false
 }
 
+// PriorityFromCode returns the priority represented by a compact SCG code.
 func PriorityFromCode(c string) Priority {
 	if p, ok := codeToPriority[c]; ok {
 		return p
@@ -96,27 +117,41 @@ func PriorityFromCode(c string) Priority {
 	return Medium
 }
 
+// AgentType identifies the kind of agent best suited for a task.
 type AgentType string
 
 const (
-	AgentBuilder    AgentType = "builder"
+	// AgentBuilder is the default implementation agent.
+	AgentBuilder AgentType = "builder"
+	// AgentFastBuilder is used for low-complexity implementation work.
 	AgentFastBuilder AgentType = "fast-builder"
-	AgentReviewer   AgentType = "reviewer"
-	AgentTester     AgentType = "tester"
-	AgentPlanner    AgentType = "planner"
+	// AgentReviewer is used for review-oriented tasks.
+	AgentReviewer AgentType = "reviewer"
+	// AgentTester is used for testing and verification tasks.
+	AgentTester AgentType = "tester"
+	// AgentPlanner is used for planning tasks.
+	AgentPlanner AgentType = "planner"
+	// AgentResearcher is used for research tasks.
 	AgentResearcher AgentType = "researcher"
-	AgentAnalyzer   AgentType = "analyzer"
+	// AgentAnalyzer is used for analysis tasks.
+	AgentAnalyzer AgentType = "analyzer"
 )
 
+// ModelTier selects the relative model capability used for a task.
 type ModelTier string
 
 const (
-	TierFast     ModelTier = "fast"
+	// TierFast selects the fastest configured model.
+	TierFast ModelTier = "fast"
+	// TierStandard selects the default balanced model.
 	TierStandard ModelTier = "standard"
-	TierSmart    ModelTier = "smart"
-	TierCustom   ModelTier = "custom"
+	// TierSmart selects the highest-capability configured model.
+	TierSmart ModelTier = "smart"
+	// TierCustom indicates that a model override should be used.
+	TierCustom ModelTier = "custom"
 )
 
+// Task represents a node in a SCUD task graph.
 type Task struct {
 	ID            string     `json:"id"`
 	Title         string     `json:"title"`
@@ -247,6 +282,7 @@ func (t *Task) SetUpdatedNow() {
 	t.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 }
 
+// Phase groups tasks under a tag and ID allocation strategy.
 type Phase struct {
 	Name     string
 	Tasks    []*Task
@@ -359,6 +395,7 @@ func allSubtasksDone(t *Task, p *Phase) bool {
 	return true
 }
 
+// PhaseStats summarizes task counts and complexity for a phase.
 type PhaseStats struct {
 	Total       int
 	Pending     int

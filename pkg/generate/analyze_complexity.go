@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/reuben/scud/internal/llm"
-	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/pkg/llm"
+	"github.com/reuben/scud/pkg/model"
 )
 
 // ComplexityAnalysis holds the result of LLM-powered complexity analysis.

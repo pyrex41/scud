@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/pkg/model"
 )
 
 func TestEscapeUnescapeRoundTrip(t *testing.T) {

@@ -11,11 +11,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
-	"github.com/reuben/scud/internal/storage"
 	"github.com/reuben/scud/internal/ui"
-	"github.com/reuben/scud/internal/wave"
+	"github.com/reuben/scud/pkg/model"
+	"github.com/reuben/scud/pkg/wave"
 )
 
 // RunOpts configures swarm execution.
@@ -28,8 +27,16 @@ type RunOpts struct {
 	RoundSize  int // 0 = use config
 }
 
+// TaskStore provides the task state and project context needed by the swarm.
+type TaskStore interface {
+	LoadPhases() (map[string]*model.Phase, error)
+	UpdatePhase(tag string, fn func(*model.Phase) error) error
+	Root() string
+	LoadGuidance() string
+}
+
 // Run executes the swarm: parallel waves with ralph fallback on failure.
-func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts RunOpts) error {
+func Run(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOpts) error {
 	if opts.AllTags {
 		return runAllTags(ctx, cfg, store, opts)
 	}
@@ -37,7 +44,7 @@ func Run(ctx context.Context, cfg *config.Config, store *storage.Storage, opts R
 }
 
 // runAllTags iterates all phases/tags in order and runs swarm on each.
-func runAllTags(ctx context.Context, cfg *config.Config, store *storage.Storage, opts RunOpts) error {
+func runAllTags(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOpts) error {
 	phases, err := store.LoadPhases()
 	if err != nil {
 		return fmt.Errorf("loading phases: %w", err)
@@ -61,7 +68,7 @@ func runAllTags(ctx context.Context, cfg *config.Config, store *storage.Storage,
 	return nil
 }
 
-func runTag(ctx context.Context, cfg *config.Config, store *storage.Storage, opts RunOpts) error {
+func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOpts) error {
 	tag := opts.Tag
 	roundSize := opts.RoundSize
 	if roundSize <= 0 {
@@ -290,7 +297,7 @@ func runTag(ctx context.Context, cfg *config.Config, store *storage.Storage, opt
 	}
 }
 
-func executeTask(ctx context.Context, store *storage.Storage, cfg *config.Config, tag, taskID string, timeoutSecs int) error {
+func executeTask(ctx context.Context, store TaskStore, cfg *config.Config, tag, taskID string, timeoutSecs int) error {
 	// Load task to get model
 	phases, err := store.LoadPhases()
 	if err != nil {
@@ -308,7 +315,7 @@ func executeTask(ctx context.Context, store *storage.Storage, cfg *config.Config
 	return executeTaskWithModel(ctx, store, cfg, tag, taskID, tierModel, timeoutSecs)
 }
 
-func executeTaskWithModel(ctx context.Context, store *storage.Storage, cfg *config.Config, tag, taskID, taskModel string, timeoutSecs int) error {
+func executeTaskWithModel(ctx context.Context, store TaskStore, cfg *config.Config, tag, taskID, taskModel string, timeoutSecs int) error {
 	// Mark in-progress
 	if err := store.UpdatePhase(tag, func(p *model.Phase) error {
 		if t := p.FindTask(taskID); t != nil {

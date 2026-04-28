@@ -6,19 +6,20 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/reuben/scud/internal/llm"
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/pkg/llm"
+	"github.com/reuben/scud/pkg/model"
 )
 
 // CheckDepsResult holds the results of dependency validation.
 type CheckDepsResult struct {
-	Cycles     [][]string
+	Cycles      [][]string
 	MissingDeps []MissingDep
-	SelfRefs   []string
-	OK         bool
+	SelfRefs    []string
+	OK          bool
 }
 
+// MissingDep records a dependency reference that could not be resolved.
 type MissingDep struct {
 	TaskID string
 	DepID  string

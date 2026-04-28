@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/pkg/model"
 )
 
 func TestInitializeAndLoad(t *testing.T) {

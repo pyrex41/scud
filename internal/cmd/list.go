@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/pkg/model"
 	"github.com/spf13/cobra"
 )
 

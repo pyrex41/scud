@@ -43,7 +43,7 @@ Analyze the following PRD and create approximately %d development tasks. Each ta
 
 Return a JSON array of task objects:
 
-` + "```json" + `
+`+"```json"+`
 [
   {
     "title": "Action-oriented task title",
@@ -54,7 +54,7 @@ Return a JSON array of task objects:
     "agent_type": "builder"
   }
 ]
-` + "```" + `
+`+"```"+`
 
 ## Rules
 - Dependencies are 1-indexed (first task = "1", NEVER "0")

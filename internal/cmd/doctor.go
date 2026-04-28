@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/generate"
+	"github.com/reuben/scud/pkg/generate"
 	"github.com/spf13/cobra"
 )
 

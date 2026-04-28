@@ -1,6 +1,6 @@
 package wave
 
-import "github.com/reuben/scud/internal/model"
+import "github.com/reuben/scud/pkg/model"
 
 // Wave represents a group of tasks that can execute in parallel.
 type Wave struct {

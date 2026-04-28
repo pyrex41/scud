@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/llm"
 	"github.com/reuben/scud/internal/storage"
 	"github.com/reuben/scud/internal/ui"
+	"github.com/reuben/scud/pkg/llm"
 )
 
 // GenerateOpts configures the generate pipeline.

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/reuben/scud/internal/attractor"
+	"github.com/reuben/scud/pkg/attractor"
 	"github.com/spf13/cobra"
 )
 

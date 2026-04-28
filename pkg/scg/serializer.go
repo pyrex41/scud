@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/reuben/scud/internal/model"
+	"github.com/reuben/scud/pkg/model"
 )
 
 // SerializePhase serializes a single phase to SCG format.

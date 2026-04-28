@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/llm"
-	"github.com/reuben/scud/internal/model"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/pkg/llm"
+	"github.com/reuben/scud/pkg/model"
 )
 
 // DepSuggestion represents an LLM-suggested dependency change.

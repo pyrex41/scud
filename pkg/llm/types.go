@@ -53,10 +53,10 @@ type AnthropicContent struct {
 
 // ResponsesRequest is a request to the xAI Responses API.
 type ResponsesRequest struct {
-	Model     string               `json:"model"`
-	Input     []ResponsesMessage   `json:"input"`
-	Tools     []ResponsesTool      `json:"tools,omitempty"`
-	Reasoning *ResponsesReasoning  `json:"reasoning,omitempty"`
+	Model     string              `json:"model"`
+	Input     []ResponsesMessage  `json:"input"`
+	Tools     []ResponsesTool     `json:"tools,omitempty"`
+	Reasoning *ResponsesReasoning `json:"reasoning,omitempty"`
 }
 
 // ResponsesMessage is a message in a Responses API request.
@@ -77,12 +77,12 @@ type ResponsesReasoning struct {
 
 // ResponsesResponse is a response from the xAI Responses API.
 type ResponsesResponse struct {
-	ID        string                `json:"id"`
-	Model     string                `json:"model"`
-	Status    string                `json:"status"`
-	Output    []ResponsesOutput     `json:"output"`
-	Usage     ResponsesUsage        `json:"usage"`
-	Error     *ResponsesError       `json:"error,omitempty"`
+	ID     string            `json:"id"`
+	Model  string            `json:"model"`
+	Status string            `json:"status"`
+	Output []ResponsesOutput `json:"output"`
+	Usage  ResponsesUsage    `json:"usage"`
+	Error  *ResponsesError   `json:"error,omitempty"`
 }
 
 // ResponsesOutput is an output block in a Responses API response.
