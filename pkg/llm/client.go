@@ -86,7 +86,7 @@ func (c *Client) CompleteJSON(ctx context.Context, prompt, system string, fast b
 // Returns an error if no multi-agent provider is available.
 func (c *Client) CompleteMultiAgent(ctx context.Context, req *MultiAgentRequest) (*MultiAgentResponse, error) {
 	if c.multiAgent == nil {
-		return nil, fmt.Errorf("no multi-agent provider available (XAI_API_KEY not set?)")
+		return nil, fmt.Errorf("no multi-agent provider available: set XAI_API_KEY or run `rho auth xai`")
 	}
 	return c.multiAgent.CompleteMultiAgent(ctx, req)
 }

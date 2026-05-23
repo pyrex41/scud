@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
@@ -164,21 +163,24 @@ func TestNewProviderUnknown(t *testing.T) {
 
 func TestNewProviderMissingKeys(t *testing.T) {
 	envVars := map[string]string{
-		"xai":        "XAI_API_KEY",
 		"openai":     "OPENAI_API_KEY",
 		"openrouter": "OPENROUTER_API_KEY",
 		"anthropic":  "ANTHROPIC_API_KEY",
 	}
 	for name, envVar := range envVars {
-		old := os.Getenv(envVar)
-		os.Unsetenv(envVar)
-		_, err := NewProvider(name)
-		if old != "" {
-			os.Setenv(envVar, old)
-		}
-		if err == nil {
+		t.Setenv(envVar, "")
+		if _, err := NewProvider(name); err == nil {
 			t.Errorf("NewProvider(%q) should fail without API key", name)
 		}
+	}
+
+	// xAI accepts three credential sources, so isolate all of them: env var
+	// unset + HOME pointed at an empty tempdir means no grok-CLI auth.json
+	// and no rho credentials.json on any platform.
+	t.Setenv("XAI_API_KEY", "")
+	t.Setenv("HOME", t.TempDir())
+	if _, err := NewProvider("xai"); err == nil {
+		t.Errorf("NewProvider(\"xai\") should fail with no credentials available")
 	}
 }
 

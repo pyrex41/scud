@@ -59,14 +59,13 @@ type Provider interface {
 func NewProvider(name string) (Provider, error) {
 	switch strings.ToLower(name) {
 	case "xai":
-		key := os.Getenv("XAI_API_KEY")
-		if key == "" {
-			return nil, fmt.Errorf("XAI_API_KEY not set")
+		if !HasXAICredentials() {
+			return nil, fmt.Errorf("no xAI credentials: set XAI_API_KEY or run `rho auth xai`")
 		}
 		return &openAICompatProvider{
-			name:   "xai",
-			apiKey: key,
-			url:    "https://api.x.ai/v1/chat/completions",
+			name:  "xai",
+			keyFn: ResolveXAIToken,
+			url:   "https://api.x.ai/v1/chat/completions",
 		}, nil
 	case "openai":
 		key := os.Getenv("OPENAI_API_KEY")
@@ -95,11 +94,10 @@ func NewProvider(name string) (Provider, error) {
 		}
 		return &anthropicProvider{apiKey: key}, nil
 	case "xai-responses":
-		key := os.Getenv("XAI_API_KEY")
-		if key == "" {
-			return nil, fmt.Errorf("XAI_API_KEY not set")
+		if !HasXAICredentials() {
+			return nil, fmt.Errorf("no xAI credentials: set XAI_API_KEY or run `rho auth xai`")
 		}
-		return &xaiResponsesProvider{apiKey: key}, nil
+		return &xaiResponsesProvider{keyFn: ResolveXAIToken}, nil
 	case "rho":
 		return &rhoProvider{}, nil
 	default:
@@ -109,21 +107,30 @@ func NewProvider(name string) (Provider, error) {
 
 // NewMultiAgentProvider creates a MultiAgentProvider. Currently only xAI is supported.
 func NewMultiAgentProvider() (MultiAgentProvider, error) {
-	key := os.Getenv("XAI_API_KEY")
-	if key == "" {
-		return nil, fmt.Errorf("XAI_API_KEY not set")
+	if !HasXAICredentials() {
+		return nil, fmt.Errorf("no xAI credentials: set XAI_API_KEY or run `rho auth xai`")
 	}
-	return &xaiResponsesProvider{apiKey: key}, nil
+	return &xaiResponsesProvider{keyFn: ResolveXAIToken}, nil
 }
 
 // openAICompatProvider works with any OpenAI-compatible API (xAI, OpenAI, OpenRouter).
+// Either apiKey or keyFn must be set. keyFn takes precedence and is called per-request
+// so providers backed by OAuth (xAI subscription auth) can refresh transparently.
 type openAICompatProvider struct {
 	name   string
 	apiKey string
+	keyFn  func(ctx context.Context) (string, error)
 	url    string
 }
 
 func (p *openAICompatProvider) Name() string { return p.name }
+
+func (p *openAICompatProvider) resolveKey(ctx context.Context) (string, error) {
+	if p.keyFn != nil {
+		return p.keyFn(ctx)
+	}
+	return p.apiKey, nil
+}
 
 func (p *openAICompatProvider) Complete(ctx context.Context, req *Request) (*Response, error) {
 	var msgs []ChatMessage
@@ -149,12 +156,17 @@ func (p *openAICompatProvider) Complete(ctx context.Context, req *Request) (*Res
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
+	key, err := p.resolveKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving %s api key: %w", p.name, err)
+	}
+
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+key)
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
@@ -289,11 +301,20 @@ func (p *rhoProvider) Complete(ctx context.Context, req *Request) (*Response, er
 }
 
 // xaiResponsesProvider calls the xAI Responses API for multi-agent queries.
+// Either apiKey or keyFn must be set; keyFn takes precedence.
 type xaiResponsesProvider struct {
 	apiKey string
+	keyFn  func(ctx context.Context) (string, error)
 }
 
 func (p *xaiResponsesProvider) Name() string { return "xai-responses" }
+
+func (p *xaiResponsesProvider) resolveKey(ctx context.Context) (string, error) {
+	if p.keyFn != nil {
+		return p.keyFn(ctx)
+	}
+	return p.apiKey, nil
+}
 
 // Complete implements Provider for the Responses API (single-turn).
 func (p *xaiResponsesProvider) Complete(ctx context.Context, req *Request) (*Response, error) {
@@ -341,12 +362,17 @@ func (p *xaiResponsesProvider) CompleteMultiAgent(ctx context.Context, req *Mult
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
+	key, err := p.resolveKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving xai-responses api key: %w", err)
+	}
+
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.x.ai/v1/responses", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+key)
 
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
