@@ -8,10 +8,18 @@ type ChatMessage struct {
 
 // ChatRequest is an OpenAI/xAI compatible completion request.
 type ChatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	Temperature float64       `json:"temperature,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []ChatMessage   `json:"messages"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
+	Temperature    float64         `json:"temperature,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+}
+
+// ResponseFormat constrains a chat-completions response to JSON.
+// Type "json_object" guarantees syntactically valid JSON (supported by
+// both xAI and OpenAI's chat/completions endpoint).
+type ResponseFormat struct {
+	Type string `json:"type"`
 }
 
 // ChatResponse is an OpenAI/xAI compatible completion response.

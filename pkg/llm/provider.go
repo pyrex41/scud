@@ -146,9 +146,10 @@ func (p *openAICompatProvider) Complete(ctx context.Context, req *Request) (*Res
 	}
 
 	chatReq := ChatRequest{
-		Model:     model,
-		Messages:  msgs,
-		MaxTokens: req.MaxTokens,
+		Model:          model,
+		Messages:       msgs,
+		MaxTokens:      req.MaxTokens,
+		ResponseFormat: &ResponseFormat{Type: "json_object"},
 	}
 
 	body, err := json.Marshal(chatReq)
