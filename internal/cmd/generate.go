@@ -49,10 +49,16 @@ func NewGenerateCmd() *cobra.Command {
 				return err
 			}
 
+			client, err := llm.NewClient(cfg)
+			if err != nil {
+				return fmt.Errorf("creating LLM client: %w", err)
+			}
+
 			return generate.Generate(context.Background(), cfg, store, args[0], tag, numTasks, generate.GenerateOpts{
 				NoExpand:    noExpand,
 				NoCheckDeps: noCheckDeps,
 				PRDFile:     args[0],
+				Caller:      client,
 			})
 		},
 	}
@@ -86,7 +92,11 @@ func NewParseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return generate.ParsePRD(context.Background(), cfg, store, args[0], tag, numTasks)
+			client, err := llm.NewClient(cfg)
+			if err != nil {
+				return fmt.Errorf("creating LLM client: %w", err)
+			}
+			return generate.ParsePRD(context.Background(), cfg, store, args[0], tag, numTasks, client)
 		},
 	}
 
@@ -114,7 +124,11 @@ func NewExpandCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return generate.Expand(context.Background(), cfg, store, tag, taskID)
+			client, err := llm.NewClient(cfg)
+			if err != nil {
+				return fmt.Errorf("creating LLM client: %w", err)
+			}
+			return generate.Expand(context.Background(), cfg, store, tag, taskID, client)
 		},
 	}
 
