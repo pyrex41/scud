@@ -11,8 +11,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/ui"
+	agentexec "github.com/reuben/scud/pkg/executor"
 	"github.com/reuben/scud/pkg/model"
 	"github.com/reuben/scud/pkg/wave"
 )
@@ -25,6 +25,9 @@ type RunOpts struct {
 	Tag        string
 	AllTags    bool
 	RoundSize  int // 0 = use config
+	// Executor overrides the agent harness. The legacy rho-cli adapter is used
+	// when nil, preserving the pre-rho.run/v1 behavior.
+	Executor agentexec.Runner
 }
 
 // TaskStore provides the task state and project context needed by the swarm.
@@ -69,6 +72,10 @@ func runAllTags(ctx context.Context, cfg *config.Config, store TaskStore, opts R
 }
 
 func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOpts) error {
+	runner := opts.Executor
+	if runner == nil {
+		runner = agentexec.LegacyRho{}
+	}
 	tag := opts.Tag
 	roundSize := opts.RoundSize
 	if roundSize <= 0 {
@@ -153,7 +160,7 @@ func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOp
 			for _, taskID := range chunk {
 				taskID := taskID
 				g.Go(func() error {
-					return executeTask(gctx, store, cfg, tag, taskID, taskTimeout)
+					return executeTask(gctx, runner, store, cfg, tag, taskID, taskTimeout)
 				})
 			}
 
@@ -247,11 +254,15 @@ func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOp
 							ui.Info(fmt.Sprintf("[%s] Repair: %s %s", taskID, t.Title, ui.Dim(fmt.Sprintf("(model=%s)", cfg.Rho.SmartModel))))
 
 							taskCtx, cancel := context.WithTimeout(ctx, time.Duration(taskTimeout)*time.Second)
-							_, execErr := rho.Run(taskCtx, rho.Options{
+							_, execErr := runner.Run(taskCtx, agentexec.Request{
+								RunID:      executionID(tag, taskID, "repair"),
 								Prompt:     prompt,
-								Model:      cfg.Rho.SmartModel,
+								Model:      modelRef(cfg.Rho.SmartModel),
 								WorkingDir: store.Root(),
-							})
+								Context: map[string]any{
+									"scud.tag": tag, "scud.task_id": taskID, "scud.mode": "repair",
+								},
+							}, nil)
 							cancel()
 
 							if execErr != nil {
@@ -297,7 +308,7 @@ func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOp
 	}
 }
 
-func executeTask(ctx context.Context, store TaskStore, cfg *config.Config, tag, taskID string, timeoutSecs int) error {
+func executeTask(ctx context.Context, runner agentexec.Runner, store TaskStore, cfg *config.Config, tag, taskID string, timeoutSecs int) error {
 	// Load task to get model
 	phases, err := store.LoadPhases()
 	if err != nil {
@@ -312,10 +323,10 @@ func executeTask(ctx context.Context, store TaskStore, cfg *config.Config, tag, 
 		return fmt.Errorf("task not found: %s", taskID)
 	}
 	tierModel := resolveModel(t, cfg)
-	return executeTaskWithModel(ctx, store, cfg, tag, taskID, tierModel, timeoutSecs)
+	return executeTaskWithModel(ctx, runner, store, cfg, tag, taskID, tierModel, timeoutSecs)
 }
 
-func executeTaskWithModel(ctx context.Context, store TaskStore, cfg *config.Config, tag, taskID, taskModel string, timeoutSecs int) error {
+func executeTaskWithModel(ctx context.Context, runner agentexec.Runner, store TaskStore, cfg *config.Config, tag, taskID, taskModel string, timeoutSecs int) error {
 	// Mark in-progress
 	if err := store.UpdatePhase(tag, func(p *model.Phase) error {
 		if t := p.FindTask(taskID); t != nil {
@@ -344,11 +355,15 @@ func executeTaskWithModel(ctx context.Context, store TaskStore, cfg *config.Conf
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
 	defer cancel()
 
-	result, err := rho.Run(taskCtx, rho.Options{
+	result, err := runner.Run(taskCtx, agentexec.Request{
+		RunID:      executionID(tag, taskID, "task"),
 		Prompt:     prompt,
-		Model:      taskModel,
+		Model:      modelRef(taskModel),
 		WorkingDir: store.Root(),
-	})
+		Context: map[string]any{
+			"scud.tag": tag, "scud.task_id": taskID, "scud.mode": "task",
+		},
+	}, nil)
 
 	// Reload task status (agent may have called scud set-status)
 	phases, _ = store.LoadPhases()
@@ -381,6 +396,23 @@ func executeTaskWithModel(ctx context.Context, store TaskStore, cfg *config.Conf
 		}
 		return nil
 	})
+}
+
+func executionID(tag, taskID, mode string) string {
+	return fmt.Sprintf("scud:%s:%s:%s:%d", tag, taskID, mode, time.Now().UnixNano())
+}
+
+func modelRef(id string) agentexec.ModelRef {
+	provider := ""
+	switch {
+	case strings.HasPrefix(id, "claude-"):
+		provider = "anthropic"
+	case strings.HasPrefix(id, "gpt-") || strings.HasPrefix(id, "o1") || strings.HasPrefix(id, "o3"):
+		provider = "openai"
+	case strings.HasPrefix(id, "grok-"):
+		provider = "xai"
+	}
+	return agentexec.ModelRef{Provider: provider, ID: id}
 }
 
 func buildTaskPrompt(t *model.Task, tag, guidance string, phase *model.Phase) string {

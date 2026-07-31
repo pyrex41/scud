@@ -91,6 +91,11 @@ import (
 
 The public surface currently includes `pkg/model`, `pkg/scg`, `pkg/wave`, `pkg/attractor`, `pkg/heavy`, `pkg/swarm`, `pkg/llm`, and `pkg/generate`. APIs are still stabilizing while scud is pre-1.0, so breaking library changes may happen in later `v0.x` releases.
 
+Swarm scheduling also accepts a harness-neutral `pkg/executor.Runner`. Existing
+callers continue to use the legacy Rho CLI adapter by default; embedders can opt
+into the versioned `rho.run/v1` JSONL adapter. See
+[`pkg/executor`](pkg/executor/README.md) for the protocol integration boundary.
+
 ## Heavy ensemble
 
 `scud heavy` runs a multi-agent reasoning ensemble where a Captain agent routes your query to specialist agents, they analyze in parallel, and the Captain synthesizes a unified answer.
