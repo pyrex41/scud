@@ -240,7 +240,11 @@ func TestResolveXAITokenFallsThroughExpiredGrok(t *testing.T) {
 }
 
 func TestResolveXAITokenNoCredentials(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Linux runners commonly set XDG_CONFIG_HOME independently of HOME.
+	// Pin it too so this test cannot discover the runner user's rho credentials.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("XAI_API_KEY", "")
 
 	_, err := ResolveXAIToken(context.Background())
@@ -250,7 +254,9 @@ func TestResolveXAITokenNoCredentials(t *testing.T) {
 }
 
 func TestHasXAICredentials(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("XAI_API_KEY", "")
 	if HasXAICredentials() {
 		t.Error("HasXAICredentials() should be false when nothing is set")
