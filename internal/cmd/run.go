@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/ui"
+	agentexec "github.com/reuben/scud/pkg/executor"
 	"github.com/reuben/scud/pkg/model"
 	"github.com/spf13/cobra"
 )
 
 func NewRunCmd() *cobra.Command {
-	var tag, modelName string
+	var tag, modelName, provider, executorKind string
 
 	cmd := &cobra.Command{
 		Use:   "run <id>",
@@ -52,6 +52,13 @@ func NewRunCmd() *cobra.Command {
 			if modelName == "" {
 				modelName = cfg.ModelForTier(string(t.ModelTier))
 			}
+			if provider == "" {
+				provider = cfg.ProviderForTier(string(t.ModelTier))
+			}
+			runner, err := configuredExecutor(cfg, executorKind, provider, modelName, store.Root())
+			if err != nil {
+				return err
+			}
 
 			// Mark in-progress
 			if err := store.UpdatePhase(tag, func(p *model.Phase) error {
@@ -78,11 +85,15 @@ func NewRunCmd() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
-			result, err := rho.Run(ctx, rho.Options{
+			result, err := runner.Run(ctx, agentexec.Request{
+				RunID:      fmt.Sprintf("scud:%s:%s:run:%d", tag, t.ID, time.Now().UnixNano()),
 				Prompt:     prompt,
-				Model:      modelName,
+				Model:      agentexec.ModelRef{Provider: provider, ID: modelName},
 				WorkingDir: store.Root(),
-			})
+				Context: map[string]any{
+					"scud.tag": tag, "scud.task_id": t.ID, "scud.mode": "run",
+				},
+			}, nil)
 
 			// Check if agent already set status
 			phases, _ = store.LoadPhases()
@@ -97,7 +108,7 @@ func NewRunCmd() *cobra.Command {
 
 			// Set final status
 			finalStatus := model.Done
-			if err != nil || (result != nil && result.ExitCode != 0) {
+			if err != nil || result.Failed() {
 				finalStatus = model.Failed
 				if err != nil {
 					ui.Fail(fmt.Sprintf("[%s] %v", args[0], err))
@@ -120,6 +131,8 @@ func NewRunCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&tag, "tag", "t", "", "Phase tag")
 	cmd.Flags().StringVar(&modelName, "model", "", "Model to use (overrides tier)")
+	cmd.Flags().StringVar(&provider, "provider", "", "Provider override for rho-v1 (anthropic, openai, xai)")
+	cmd.Flags().StringVar(&executorKind, "executor", "", "Agent executor override: legacy or rho-v1")
 	return cmd
 }
 

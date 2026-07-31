@@ -34,5 +34,32 @@ rho-cli run --request-file - --events jsonl
 ```
 
 Use `RhoV1.Command` and `RhoV1.Args` to target another conforming executable.
-The next migration slice should expose executor selection and grant construction
-through SCUD configuration/CLI, after the Rho CLI command shape is finalized.
+SCUD selects the adapter through `.scud/config.toml`:
+
+```toml
+[rho]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+fast_provider = "xai"
+fast_model = "grok-build-0.1"
+smart_provider = "openai"
+smart_model = "gpt-5.2"
+
+[executor]
+kind = "rho-v1" # default remains "legacy"
+command = "rho-cli"
+grant_id = "scud-local"
+grant_ttl_seconds = 3600
+allowed_tools = ["read", "edit", "bash"]
+network_mode = "provider_only"
+```
+
+`scud run` and `scud swarm` accept `--executor legacy|rho-v1` and
+`--provider anthropic|openai|xai` overrides. `scud run --model` pairs with the
+explicit provider. Environment equivalents are `SCUD_EXECUTOR`,
+`SCUD_RHO_COMMAND`, `SCUD_RHO_PROVIDER`, `SCUD_RHO_FAST_PROVIDER`, and
+`SCUD_RHO_SMART_PROVIDER`.
+
+The local grant is deliberately rooted to the active project workspace and has
+a finite lifetime. A future control-plane integration should replace it with a
+signed externally authorized grant rather than expanding this local config.

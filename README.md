@@ -96,6 +96,13 @@ callers continue to use the legacy Rho CLI adapter by default; embedders can opt
 into the versioned `rho.run/v1` JSONL adapter. See
 [`pkg/executor`](pkg/executor/README.md) for the protocol integration boundary.
 
+To try the protocol adapter without changing project configuration:
+
+```sh
+scud run 1 --executor rho-v1 --provider anthropic --model claude-sonnet-4-5
+scud swarm --executor rho-v1 --provider xai
+```
+
 ## Heavy ensemble
 
 `scud heavy` runs a multi-agent reasoning ensemble where a Captain agent routes your query to specialist agents, they analyze in parallel, and the Captain synthesizes a unified answer.

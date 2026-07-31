@@ -9,22 +9,23 @@ import (
 )
 
 type Config struct {
-	Rho   RhoConfig   `toml:"rho"`
-	Swarm SwarmConfig `toml:"swarm"`
-	Heavy HeavyConfig `toml:"heavy"`
-	LLM   LLMConfig   `toml:"llm"`
+	Rho      RhoConfig      `toml:"rho"`
+	Executor ExecutorConfig `toml:"executor"`
+	Swarm    SwarmConfig    `toml:"swarm"`
+	Heavy    HeavyConfig    `toml:"heavy"`
+	LLM      LLMConfig      `toml:"llm"`
 }
 
 type LLMConfig struct {
-	Provider           string `toml:"provider"`
-	Model              string `toml:"model"`
-	SmartProvider      string `toml:"smart_provider"`
-	SmartModel         string `toml:"smart_model"`
-	FastProvider       string `toml:"fast_provider"`
-	FastModel          string `toml:"fast_model"`
-	MultiAgentModel    string `toml:"multi_agent_model"`
-	MultiAgentEffort   string `toml:"multi_agent_effort"` // "low", "medium", "high", "xhigh"
-	MaxTokens          int    `toml:"max_tokens"`
+	Provider         string `toml:"provider"`
+	Model            string `toml:"model"`
+	SmartProvider    string `toml:"smart_provider"`
+	SmartModel       string `toml:"smart_model"`
+	FastProvider     string `toml:"fast_provider"`
+	FastModel        string `toml:"fast_model"`
+	MultiAgentModel  string `toml:"multi_agent_model"`
+	MultiAgentEffort string `toml:"multi_agent_effort"` // "low", "medium", "high", "xhigh"
+	MaxTokens        int    `toml:"max_tokens"`
 }
 
 // HeavyModelsConfig holds per-role model overrides for the heavy ensemble.
@@ -37,26 +38,41 @@ type HeavyModelsConfig struct {
 }
 
 type HeavyConfig struct {
-	Model       string            `toml:"model"`       // override-all fallback
-	Models      HeavyModelsConfig `toml:"models"`      // per-role overrides
+	Model       string            `toml:"model"`        // override-all fallback
+	Models      HeavyModelsConfig `toml:"models"`       // per-role overrides
 	Mode        string            `toml:"mode"`         // "ensemble", "native", "hybrid"
-	Concurrency int               `toml:"concurrency"` // default 4
+	Concurrency int               `toml:"concurrency"`  // default 4
 	TimeoutSecs int               `toml:"timeout_secs"` // default 300
 	MaxAgents   int               `toml:"max_agents"`   // 0 = no cap
 }
 
 type RhoConfig struct {
-	Model      string `toml:"model"`
-	FastModel  string `toml:"fast_model"`
-	SmartModel string `toml:"smart_model"`
+	Provider      string `toml:"provider"`
+	Model         string `toml:"model"`
+	FastProvider  string `toml:"fast_provider"`
+	FastModel     string `toml:"fast_model"`
+	SmartProvider string `toml:"smart_provider"`
+	SmartModel    string `toml:"smart_model"`
+}
+
+// ExecutorConfig selects the agent harness used by run and swarm. "legacy"
+// preserves the historical rho-cli invocation; "rho-v1" enables rho.run/v1.
+type ExecutorConfig struct {
+	Kind            string   `toml:"kind"`
+	Command         string   `toml:"command"`
+	Args            []string `toml:"args"`
+	GrantID         string   `toml:"grant_id"`
+	GrantTTLSeconds int      `toml:"grant_ttl_seconds"`
+	AllowedTools    []string `toml:"allowed_tools"`
+	NetworkMode     string   `toml:"network_mode"`
 }
 
 type SwarmConfig struct {
-	RoundSize        int              `toml:"round_size"`
-	MaxRalphAttempts int              `toml:"max_ralph_attempts"`
-	TaskTimeoutSecs  int              `toml:"task_timeout_secs"`
-	Tiers            TierConfig       `toml:"tiers"`
-	Backpressure     BackpressureCfg  `toml:"backpressure"`
+	RoundSize        int             `toml:"round_size"`
+	MaxRalphAttempts int             `toml:"max_ralph_attempts"`
+	TaskTimeoutSecs  int             `toml:"task_timeout_secs"`
+	Tiers            TierConfig      `toml:"tiers"`
+	Backpressure     BackpressureCfg `toml:"backpressure"`
 }
 
 type TierConfig struct {
@@ -74,9 +90,19 @@ type BackpressureCfg struct {
 func Default() *Config {
 	return &Config{
 		Rho: RhoConfig{
-			Model:      "grok-4.3",
-			FastModel:  "grok-build-0.1",
-			SmartModel: "grok-4.3",
+			Provider:      "xai",
+			Model:         "grok-4.3",
+			FastProvider:  "xai",
+			FastModel:     "grok-build-0.1",
+			SmartProvider: "xai",
+			SmartModel:    "grok-4.3",
+		},
+		Executor: ExecutorConfig{
+			Kind:            "legacy",
+			Command:         "rho-cli",
+			GrantID:         "scud-local",
+			GrantTTLSeconds: 3600,
+			NetworkMode:     "provider_only",
 		},
 		LLM: LLMConfig{
 			Provider:         "xai",
@@ -129,6 +155,21 @@ func Load(scudDir string) (*Config, error) {
 }
 
 func (c *Config) applyEnv() {
+	if v := os.Getenv("SCUD_EXECUTOR"); v != "" {
+		c.Executor.Kind = v
+	}
+	if v := os.Getenv("SCUD_RHO_COMMAND"); v != "" {
+		c.Executor.Command = v
+	}
+	if v := os.Getenv("SCUD_RHO_PROVIDER"); v != "" {
+		c.Rho.Provider = v
+	}
+	if v := os.Getenv("SCUD_RHO_FAST_PROVIDER"); v != "" {
+		c.Rho.FastProvider = v
+	}
+	if v := os.Getenv("SCUD_RHO_SMART_PROVIDER"); v != "" {
+		c.Rho.SmartProvider = v
+	}
 	if v := os.Getenv("SCUD_MODEL"); v != "" {
 		c.Rho.Model = v
 	}
@@ -213,9 +254,22 @@ func (c *Config) Save(scudDir string) error {
 // DefaultTOML returns the default config as TOML string.
 func DefaultTOML() string {
 	return `[rho]
+provider = "xai"
 model = "grok-4.3"
+fast_provider = "xai"
 fast_model = "grok-build-0.1"
+smart_provider = "xai"
 smart_model = "grok-4.3"
+
+[executor]
+# "legacy" preserves the original rho-cli flags; "rho-v1" uses rho.run/v1 JSONL.
+kind = "legacy"
+command = "rho-cli"
+grant_id = "scud-local"
+grant_ttl_seconds = 3600
+network_mode = "provider_only"
+# allowed_tools = ["read", "edit", "bash"]
+# args = ["run", "--request-file", "-", "--events", "jsonl"]
 
 [heavy]
 # model = ""  # override-all fallback
@@ -296,4 +350,21 @@ func (c *Config) ModelForTier(tier string) string {
 	default:
 		return c.Swarm.Tiers.Standard
 	}
+}
+
+// ProviderForTier resolves the provider paired with ModelForTier. Empty legacy
+// configurations fall back to Rho.Provider and then model-prefix inference in
+// the executor adapter.
+func (c *Config) ProviderForTier(tier string) string {
+	switch tier {
+	case "fast":
+		if c.Rho.FastProvider != "" {
+			return c.Rho.FastProvider
+		}
+	case "smart":
+		if c.Rho.SmartProvider != "" {
+			return c.Rho.SmartProvider
+		}
+	}
+	return c.Rho.Provider
 }

@@ -71,6 +71,11 @@ type Result struct {
 	Stderr   string
 }
 
+// Failed reports a terminal harness failure independently of process exit code.
+func (r *Result) Failed() bool {
+	return r != nil && (r.ExitCode != 0 || r.Outcome == "failed" || r.Outcome == "cancelled" || r.Failure != nil)
+}
+
 type Failure struct {
 	Code         string  `json:"code"`
 	Message      string  `json:"message"`

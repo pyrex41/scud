@@ -28,6 +28,9 @@ type RunOpts struct {
 	// Executor overrides the agent harness. The legacy rho-cli adapter is used
 	// when nil, preserving the pre-rho.run/v1 behavior.
 	Executor agentexec.Runner
+	// Provider overrides the configured provider for every task in this run.
+	// It is ignored by the legacy executor.
+	Provider string
 }
 
 // TaskStore provides the task state and project context needed by the swarm.
@@ -160,7 +163,7 @@ func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOp
 			for _, taskID := range chunk {
 				taskID := taskID
 				g.Go(func() error {
-					return executeTask(gctx, runner, store, cfg, tag, taskID, taskTimeout)
+					return executeTask(gctx, runner, store, cfg, tag, taskID, opts.Provider, taskTimeout)
 				})
 			}
 
@@ -254,10 +257,10 @@ func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOp
 							ui.Info(fmt.Sprintf("[%s] Repair: %s %s", taskID, t.Title, ui.Dim(fmt.Sprintf("(model=%s)", cfg.Rho.SmartModel))))
 
 							taskCtx, cancel := context.WithTimeout(ctx, time.Duration(taskTimeout)*time.Second)
-							_, execErr := runner.Run(taskCtx, agentexec.Request{
+							execResult, execErr := runner.Run(taskCtx, agentexec.Request{
 								RunID:      executionID(tag, taskID, "repair"),
 								Prompt:     prompt,
-								Model:      modelRef(cfg.Rho.SmartModel),
+								Model:      modelRef(cfg.Rho.SmartModel, firstNonempty(opts.Provider, cfg.Rho.SmartProvider, cfg.Rho.Provider)),
 								WorkingDir: store.Root(),
 								Context: map[string]any{
 									"scud.tag": tag, "scud.task_id": taskID, "scud.mode": "repair",
@@ -267,6 +270,8 @@ func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOp
 
 							if execErr != nil {
 								ui.Fail(fmt.Sprintf("Task %s recovery: %v", taskID, execErr))
+							} else if execResult.Failed() {
+								ui.Fail(fmt.Sprintf("Task %s recovery: executor outcome %s", taskID, execResult.Outcome))
 							}
 
 							// Validate after each task in ralph mode
@@ -308,7 +313,7 @@ func runTag(ctx context.Context, cfg *config.Config, store TaskStore, opts RunOp
 	}
 }
 
-func executeTask(ctx context.Context, runner agentexec.Runner, store TaskStore, cfg *config.Config, tag, taskID string, timeoutSecs int) error {
+func executeTask(ctx context.Context, runner agentexec.Runner, store TaskStore, cfg *config.Config, tag, taskID, providerOverride string, timeoutSecs int) error {
 	// Load task to get model
 	phases, err := store.LoadPhases()
 	if err != nil {
@@ -323,10 +328,11 @@ func executeTask(ctx context.Context, runner agentexec.Runner, store TaskStore, 
 		return fmt.Errorf("task not found: %s", taskID)
 	}
 	tierModel := resolveModel(t, cfg)
-	return executeTaskWithModel(ctx, runner, store, cfg, tag, taskID, tierModel, timeoutSecs)
+	provider := firstNonempty(providerOverride, resolveProvider(t, cfg))
+	return executeTaskWithModel(ctx, runner, store, cfg, tag, taskID, provider, tierModel, timeoutSecs)
 }
 
-func executeTaskWithModel(ctx context.Context, runner agentexec.Runner, store TaskStore, cfg *config.Config, tag, taskID, taskModel string, timeoutSecs int) error {
+func executeTaskWithModel(ctx context.Context, runner agentexec.Runner, store TaskStore, cfg *config.Config, tag, taskID, taskProvider, taskModel string, timeoutSecs int) error {
 	// Mark in-progress
 	if err := store.UpdatePhase(tag, func(p *model.Phase) error {
 		if t := p.FindTask(taskID); t != nil {
@@ -358,7 +364,7 @@ func executeTaskWithModel(ctx context.Context, runner agentexec.Runner, store Ta
 	result, err := runner.Run(taskCtx, agentexec.Request{
 		RunID:      executionID(tag, taskID, "task"),
 		Prompt:     prompt,
-		Model:      modelRef(taskModel),
+		Model:      modelRef(taskModel, taskProvider),
 		WorkingDir: store.Root(),
 		Context: map[string]any{
 			"scud.tag": tag, "scud.task_id": taskID, "scud.mode": "task",
@@ -376,9 +382,9 @@ func executeTaskWithModel(ctx context.Context, runner agentexec.Runner, store Ta
 		}
 	}
 
-	// Determine status from rho result
+	// Determine status from the executor result.
 	finalStatus := model.Done
-	if err != nil || (result != nil && result.ExitCode != 0) {
+	if err != nil || result.Failed() {
 		finalStatus = model.Failed
 		if err != nil {
 			ui.Fail(fmt.Sprintf("[%s] %v", taskID, err))
@@ -402,8 +408,10 @@ func executionID(tag, taskID, mode string) string {
 	return fmt.Sprintf("scud:%s:%s:%s:%d", tag, taskID, mode, time.Now().UnixNano())
 }
 
-func modelRef(id string) agentexec.ModelRef {
-	provider := ""
+func modelRef(id, provider string) agentexec.ModelRef {
+	if provider != "" {
+		return agentexec.ModelRef{Provider: provider, ID: id}
+	}
 	switch {
 	case strings.HasPrefix(id, "claude-"):
 		provider = "anthropic"
@@ -413,6 +421,22 @@ func modelRef(id string) agentexec.ModelRef {
 		provider = "xai"
 	}
 	return agentexec.ModelRef{Provider: provider, ID: id}
+}
+
+func resolveProvider(t *model.Task, cfg *config.Config) string {
+	if t.ModelTier == model.TierCustom {
+		return cfg.Rho.Provider
+	}
+	return cfg.ProviderForTier(string(t.ModelTier))
+}
+
+func firstNonempty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func buildTaskPrompt(t *model.Task, tag, guidance string, phase *model.Phase) string {
