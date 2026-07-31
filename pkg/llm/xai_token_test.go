@@ -11,6 +11,16 @@ import (
 	"time"
 )
 
+func isolateXAITestHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	return home
+}
+
 func TestParseGrokCLIXAI(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -91,7 +101,7 @@ func TestParseGrokCLIXAI(t *testing.T) {
 
 func TestRhoCredentialsRoundTrip(t *testing.T) {
 	// Override HOME so UserConfigDir resolves into the tempdir.
-	t.Setenv("HOME", t.TempDir())
+	isolateXAITestHome(t)
 
 	creds := xaiCredentials{
 		AccessToken:  "tok-abc",
@@ -122,7 +132,7 @@ func TestRhoCredentialsRoundTrip(t *testing.T) {
 }
 
 func TestSaveRhoXAIPreservesOtherProviders(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolateXAITestHome(t)
 
 	path, err := rhoCredentialsPath()
 	if err != nil {
@@ -160,7 +170,7 @@ func TestSaveRhoXAIPreservesOtherProviders(t *testing.T) {
 }
 
 func TestResolveXAITokenEnvWins(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	isolateXAITestHome(t)
 	t.Setenv("XAI_API_KEY", "env-key-value")
 
 	// Even with a rho creds file present, the env var must win.
@@ -178,8 +188,7 @@ func TestResolveXAITokenEnvWins(t *testing.T) {
 }
 
 func TestResolveXAITokenGrokCLIBeforeRho(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := isolateXAITestHome(t)
 	t.Setenv("XAI_API_KEY", "")
 
 	// Write a grok-CLI auth.json with a non-expired token.
@@ -208,8 +217,7 @@ func TestResolveXAITokenGrokCLIBeforeRho(t *testing.T) {
 }
 
 func TestResolveXAITokenFallsThroughExpiredGrok(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := isolateXAITestHome(t)
 	t.Setenv("XAI_API_KEY", "")
 
 	grokDir := filepath.Join(home, ".grok")
@@ -240,11 +248,7 @@ func TestResolveXAITokenFallsThroughExpiredGrok(t *testing.T) {
 }
 
 func TestResolveXAITokenNoCredentials(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	// Linux runners commonly set XDG_CONFIG_HOME independently of HOME.
-	// Pin it too so this test cannot discover the runner user's rho credentials.
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	isolateXAITestHome(t)
 	t.Setenv("XAI_API_KEY", "")
 
 	_, err := ResolveXAIToken(context.Background())
@@ -254,9 +258,7 @@ func TestResolveXAITokenNoCredentials(t *testing.T) {
 }
 
 func TestHasXAICredentials(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	isolateXAITestHome(t)
 	t.Setenv("XAI_API_KEY", "")
 	if HasXAICredentials() {
 		t.Error("HasXAICredentials() should be false when nothing is set")
