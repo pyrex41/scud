@@ -1,0 +1,2 @@
+{"protocol":"rho.run/v1","run_id":"fixture-2","seq":1,"time":"2026-07-31T20:00:00Z","type":"run.cancelled","data":{"reason":"user"}}
+{"protocol":"rho.run/v1","run_id":"fixture-2","seq":2,"time":"2026-07-31T20:00:01Z","type":"message.delta","data":{"text":"late"}}
