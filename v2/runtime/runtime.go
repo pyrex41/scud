@@ -125,6 +125,18 @@ func (r *Runtime) replayLocked(ctx context.Context) error {
 }
 
 func (r *Runtime) initializeLocked(ctx context.Context) error {
+	// Validate the complete plan before writing its first event; otherwise a
+	// malformed plan could leave a durable, partially initialized stream.
+	nodes := make([]graph.Node, 0, len(r.cfg.Obligations))
+	for _, o := range r.cfg.Obligations {
+		if o.GoalID != r.cfg.Goal.ID {
+			return fmt.Errorf("%w: obligation %q references goal %q", ErrInvalidConfig, o.ID, o.GoalID)
+		}
+		nodes = append(nodes, graph.Node{ID: graph.ID(o.ID), Dependencies: ids(o.DependsOn), Status: graphStatus(o.Status)})
+	}
+	if _, err := graph.Build(nodes); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
 	if _, err := r.appendCoreLocked(ctx, core.Event{ID: core.ID("goal:" + string(r.cfg.Goal.ID)), Kind: core.EventGoalCreated, Goal: r.cfg.Goal}); err != nil {
 		return err
 	}

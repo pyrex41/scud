@@ -127,7 +127,11 @@ func replay(doc document) (core.State, error) {
 	state := core.NewStateWithBudget(doc.Budget)
 	for _, event := range events {
 		var err error
-		state, err = state.Append(event)
+		if event.Sequence == 0 {
+			state, err = state.Append(event)
+		} else {
+			state, err = core.Reduce(state, event)
+		}
 		if err != nil {
 			return core.State{}, err
 		}

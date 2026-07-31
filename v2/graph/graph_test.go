@@ -67,6 +67,23 @@ func TestRewriteIsAtomicAndGuardsCycles(t *testing.T) {
 	}
 }
 
+func TestRewriteUpdatesNodeMetadata(t *testing.T) {
+	g, err := Build([]Node{{ID: "a", Description: "old"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := g.Node("a")
+	n.Description, n.Status = "new", Running
+	next, err := g.UpdateNode(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := next.Node("a")
+	if got.Description != "new" || got.Status != Running {
+		t.Fatalf("updated node = %+v", got)
+	}
+}
+
 func TestCompletedSetAndTerminalStatuses(t *testing.T) {
 	g, err := Build([]Node{{ID: "a", Status: Succeeded}, {ID: "b", Dependencies: []ID{"a"}}, {ID: "c", Status: Blocked}})
 	if err != nil {

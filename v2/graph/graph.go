@@ -460,6 +460,7 @@ func (g Graph) TopologicalOrder(completed map[ID]bool) ([]ID, error) {
 // applied first, followed by dependency replacements and edge additions/removals.
 type Rewrite struct {
 	AddNodes            []Node
+	UpdateNodes         map[ID]Node
 	RemoveIDs           []ID
 	ReplaceDependencies map[ID][]ID
 	AddDependencies     map[ID][]ID
@@ -484,6 +485,16 @@ func (g Graph) Rewrite(r Rewrite) (Graph, error) {
 		}
 		n.Status = n.Status.normalized()
 		next.nodes[n.ID] = cloneNode(n)
+	}
+	for id, n := range r.UpdateNodes {
+		if id == "" || n.ID != id {
+			return Graph{}, fmt.Errorf("updated node key/id mismatch: %q", id)
+		}
+		if _, ok := next.nodes[id]; !ok {
+			return Graph{}, fmt.Errorf("cannot update unknown node %q", id)
+		}
+		n.Status = n.Status.normalized()
+		next.nodes[id] = cloneNode(n)
 	}
 	for id, deps := range r.ReplaceDependencies {
 		n, ok := next.nodes[id]
@@ -539,6 +550,11 @@ func (g Graph) ApplyRewrite(r Rewrite) (Graph, error) { return g.Rewrite(r) }
 
 // AddNode returns a graph with one node added.
 func (g Graph) AddNode(n Node) (Graph, error) { return g.Rewrite(Rewrite{AddNodes: []Node{n}}) }
+
+// UpdateNode replaces one existing node while preserving graph validity.
+func (g Graph) UpdateNode(n Node) (Graph, error) {
+	return g.Rewrite(Rewrite{UpdateNodes: map[ID]Node{n.ID: n}})
+}
 
 // RemoveNode removes a node. Dependents must be rewritten explicitly.
 func (g Graph) RemoveNode(id ID) (Graph, error) { return g.Rewrite(Rewrite{RemoveIDs: []ID{id}}) }
