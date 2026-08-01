@@ -2,9 +2,8 @@ name: Test
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, "agent/**"]
   pull_request:
-    branches: [master, main]
 
 jobs:
   test:
@@ -26,7 +25,7 @@ jobs:
         run: go test ./...
 
       - name: Build
-        run: go build ./cmd/scud/
+        run: go build ./cmd/scud/ ./cmd/scudv2/
 
       - name: Vet
         run: go vet ./...

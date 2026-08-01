@@ -96,6 +96,15 @@ callers continue to use the legacy Rho CLI adapter by default; embedders can opt
 into the versioned `rho.run/v1` JSONL adapter. See
 [`pkg/executor`](pkg/executor/README.md) for the protocol integration boundary.
 
+The opt-in v2 core is a smaller embeddable harness: deterministic reducer and
+reconciler, DAG bridge, bounded runtime, and replaceable policy, execution, and
+event-store adapters. `v2/adapters/tdhttp` persists its canonical event stream
+in td under the ticket's live attempt/execution fence and obtains
+Shen-authorized BIP340 execution witnesses. `v2/adapters/rho` executes the same
+provider-neutral request through Rho, which supports Anthropic, OpenAI, and
+xAI. SCUD owns goal/DAG orchestration, td owns identity, leases, policy and
+durability, and Rho owns bounded provider/tool execution.
+
 To try the protocol adapter without changing project configuration:
 
 ```sh
