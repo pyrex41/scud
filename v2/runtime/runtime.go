@@ -197,6 +197,11 @@ func (r *Runtime) Step(ctx context.Context) (core.Decision, error) {
 		return core.Decision{}, err
 	}
 	if decision.Kind != core.DecisionExecute {
+		if decision.Kind != core.DecisionWait {
+			if _, err := r.appendCoreLocked(ctx, core.Event{ID: decision.ID, Kind: core.EventDecisionIssued, Decision: decision}); err != nil {
+				return core.Decision{}, err
+			}
+		}
 		return decision, nil
 	}
 	o := r.state.Obligations[decision.ObligationID]
@@ -220,6 +225,12 @@ func (r *Runtime) Step(ctx context.Context) (core.Decision, error) {
 	cost := r.cfg.Costs[o.ID]
 	if !r.budgetAllows(cost) {
 		exhaust := core.Decision{ID: decision.ID + ":exhausted", GoalID: decision.GoalID, ObligationID: decision.ObligationID, Kind: core.DecisionExhaust, Reason: "budget exhausted"}
+		// Exhaustion is canonical state, not a transient scheduler answer. Record
+		// it so Run terminates and replay cannot silently retry over the limit.
+		exhaust.ObligationID = ""
+		if _, err := r.appendCoreLocked(ctx, core.Event{ID: exhaust.ID, Kind: core.EventDecisionIssued, Decision: exhaust}); err != nil {
+			return core.Decision{}, err
+		}
 		return exhaust, nil
 	}
 	decision.Cost = cost
@@ -229,7 +240,21 @@ func (r *Runtime) Step(ctx context.Context) (core.Decision, error) {
 	if _, err := r.appendCoreLocked(ctx, core.Event{ID: decision.ID + ":budget", Kind: core.EventBudgetConsumed, Budget: core.BudgetDelta{Steps: 1, Cost: cost}}); err != nil {
 		return core.Decision{}, err
 	}
-	result, runErr := r.cfg.Runner.Run(ctx, adapters.RunRequest{RunID: r.cfg.RunID, Prompt: o.Description, SystemPrompt: r.cfg.SystemPrompt, Model: r.cfg.Model, WorkingDir: r.cfg.WorkingDir, Limits: r.cfg.Limits, Context: cloneContext(r.cfg.Context)}, func(e adapters.Event) { _ = r.appendProgressLocked(ctx, e) })
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var progressErr error
+	result, runErr := r.cfg.Runner.Run(runCtx, adapters.RunRequest{RunID: r.cfg.RunID, Prompt: o.Description, SystemPrompt: r.cfg.SystemPrompt, Model: r.cfg.Model, WorkingDir: r.cfg.WorkingDir, Limits: r.cfg.Limits, Context: cloneContext(r.cfg.Context)}, func(e adapters.Event) {
+		if progressErr != nil {
+			return
+		}
+		if err := r.appendProgressLocked(ctx, e); err != nil {
+			progressErr = err
+			cancel()
+		}
+	})
+	if progressErr != nil {
+		return core.Decision{}, fmt.Errorf("persist runner progress: %w", progressErr)
+	}
 	observation := observationFromResult(o, result, runErr)
 	if observation.Outcome == core.OutcomeSuccess && r.cfg.EvidenceRequired[o.ID] && len(observation.Evidence) == 0 {
 		observation.Outcome = core.OutcomeFailure

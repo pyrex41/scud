@@ -1,9 +1,21 @@
 package executor
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
+
+func TestCanonicalJSONSortsObjectKeysRecursively(t *testing.T) {
+	got, err := canonicalJSON([]byte(`{"z":1,"nested":{"b":2,"a":1},"a":0}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"a":0,"nested":{"a":1,"b":2},"z":1}`)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("canonical JSON = %s, want %s", got, want)
+	}
+}
 
 func TestConsumeRhoV1CompletedStream(t *testing.T) {
 	stream := strings.Join([]string{

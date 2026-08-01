@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -17,6 +18,9 @@ type RhoV1 struct {
 	Command string
 	Args    []string
 	Grant   Grant
+	// Authorize receives the exact canonical unsigned request bytes and returns
+	// a portable witness plus the trusted BIP340 issuer public key.
+	Authorize func(context.Context, []byte) (witness, issuerPubkey string, err error)
 }
 
 type Grant struct {
@@ -82,6 +86,22 @@ func (r RhoV1) Run(ctx context.Context, req Request, handler EventHandler) (*Res
 	if err != nil {
 		return nil, fmt.Errorf("marshal rho.run/v1 request: %w", err)
 	}
+	issuerPubkey := ""
+	if r.Authorize != nil {
+		unsigned, canonicalErr := canonicalJSON(payload)
+		if canonicalErr != nil {
+			return nil, fmt.Errorf("canonicalize rho.run/v1 request: %w", canonicalErr)
+		}
+		witness, pubkey, authErr := r.Authorize(ctx, unsigned)
+		if authErr != nil {
+			return nil, fmt.Errorf("authorize rho.run/v1 request: %w", authErr)
+		}
+		wire.Grant.Witness, issuerPubkey = witness, pubkey
+		payload, err = json.Marshal(wire)
+		if err != nil {
+			return nil, fmt.Errorf("marshal authorized rho.run/v1 request: %w", err)
+		}
+	}
 
 	command := r.Command
 	if command == "" {
@@ -92,6 +112,9 @@ func (r RhoV1) Run(ctx context.Context, req Request, handler EventHandler) (*Res
 		args = []string{"run", "--request-file", "-", "--events", "jsonl"}
 	}
 	cmd := exec.CommandContext(ctx, command, args...)
+	if issuerPubkey != "" {
+		cmd.Env = append(os.Environ(), "RHO_PROTOCOL_GRANT_MODE=require", "RHO_PROTOCOL_GRANT_PUBKEY="+issuerPubkey)
+	}
 	cmd.Dir = req.WorkingDir
 	cmd.Stdin = strings.NewReader(string(payload))
 	stdout, err := cmd.StdoutPipe()
@@ -121,6 +144,17 @@ func (r RhoV1) Run(ctx context.Context, req Request, handler EventHandler) (*Res
 		return result, fmt.Errorf("rho.run/v1 producer exited %d: %w", result.ExitCode, waitErr)
 	}
 	return result, nil
+}
+
+// canonicalJSON matches rho's serde_json Value encoding: object keys are
+// lexicographically ordered and no insignificant whitespace is emitted. Grant
+// signatures therefore cover identical bytes in Go, Lua, and Rust.
+func canonicalJSON(payload []byte) ([]byte, error) {
+	var value any
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
 }
 
 // ConsumeRhoV1 validates and reduces one rho.run/v1 JSONL stream.

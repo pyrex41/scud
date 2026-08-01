@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/reuben/scud/v2/adapters"
@@ -25,6 +26,15 @@ func (f *fakeRunner) Run(_ context.Context, req adapters.RunRequest, sink adapte
 type fakePolicy struct {
 	allowed bool
 	calls   int
+}
+
+type failProgressStore struct{ adapters.EventStore }
+
+func (s failProgressStore) Append(ctx context.Context, event adapters.Event) error {
+	if event.Type == "progress/progress" {
+		return errors.New("store unavailable")
+	}
+	return s.EventStore.Append(ctx, event)
 }
 
 func (p *fakePolicy) Authorize(_ context.Context, _ adapters.PolicyInput) (adapters.Decision, error) {
@@ -116,5 +126,33 @@ func TestConfigurationRejectsMissingStoreAndRunner(t *testing.T) {
 	_, err = New(Config{RunID: "r", Goal: core.Goal{ID: "g"}, Runner: &fakeRunner{}, Store: nil, Obligations: []core.Obligation{{ID: "o", GoalID: "g"}}})
 	if !errors.Is(err, ErrStoreRequired) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRunPersistsBudgetExhaustionAndTerminates(t *testing.T) {
+	store := memory.NewEventStore()
+	cfg := configFor(&fakeRunner{outcome: "success"}, nil, store)
+	cfg.Budget.MaxCost = 1
+	cfg.Costs = map[core.ID]uint64{"a": 2}
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.State().Goals["goal-1"].Status; got != core.GoalExhausted {
+		t.Fatalf("goal status = %q, want exhausted", got)
+	}
+}
+
+func TestProgressPersistenceFailureFailsTheStep(t *testing.T) {
+	base := memory.NewEventStore()
+	r, err := New(configFor(&fakeRunner{outcome: "success"}, nil, failProgressStore{base}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Step(context.Background()); err == nil || !strings.Contains(err.Error(), "persist runner progress") {
+		t.Fatalf("got %v, want progress persistence error", err)
 	}
 }

@@ -16,9 +16,10 @@ import (
 // Runner invokes a rho.run/v1 producer. Command and Args are passed through
 // to executor.RhoV1; an empty command uses rho-cli's normal lookup.
 type Runner struct {
-	Command string
-	Args    []string
-	Grant   executor.Grant
+	Command   string
+	Args      []string
+	Grant     executor.Grant
+	Authorize func(context.Context, []byte) (string, string, error)
 }
 
 func (r Runner) Run(ctx context.Context, req adapters.RunRequest, sink adapters.EventSink) (adapters.RunResult, error) {
@@ -26,7 +27,7 @@ func (r Runner) Run(ctx context.Context, req adapters.RunRequest, sink adapters.
 	if err != nil {
 		return adapters.RunResult{RunID: req.RunID}, err
 	}
-	inner := executor.RhoV1{Command: r.Command, Args: r.Args, Grant: r.Grant}
+	inner := executor.RhoV1{Command: r.Command, Args: r.Args, Grant: r.Grant, Authorize: r.Authorize}
 	result, runErr := inner.Run(ctx, executor.Request{
 		RunID:        req.RunID,
 		Prompt:       req.Prompt,
