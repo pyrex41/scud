@@ -66,7 +66,7 @@ func resolveModels(opts RunOpts, cfg *config.Config) resolvedModels {
 		if cfg != nil {
 			return cfg.HeavyModel(role)
 		}
-		return "grok-4.20-reasoning"
+		return "grok-4.7"
 	}
 	return resolvedModels{
 		routing:   resolve("routing", opts.ModelRouting),

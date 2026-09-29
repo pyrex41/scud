@@ -75,7 +75,7 @@ func TestResolveModelsPrecedence(t *testing.T) {
 			opts: RunOpts{},
 			cfg:  nil,
 			role: "agents",
-			want: "grok-4.20-reasoning",
+			want: "grok-4.7",
 		},
 		{
 			name: "native role uses LLM config",
