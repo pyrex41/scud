@@ -43,7 +43,7 @@ func RunSquad(ctx context.Context, cfg *config.Config, opts SquadOpts) (*Result,
 			opts.CaptainModel = cfg.HeavyModel("synthesis")
 		}
 		if opts.CaptainModel == "" {
-			opts.CaptainModel = "grok-4.20-reasoning"
+			opts.CaptainModel = "grok-4.7"
 		}
 	}
 

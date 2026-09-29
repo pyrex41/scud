@@ -74,15 +74,15 @@ type BackpressureCfg struct {
 func Default() *Config {
 	return &Config{
 		Rho: RhoConfig{
-			Model:      "grok-4.3",
+			Model:      "grok-4.7",
 			FastModel:  "grok-build-0.1",
-			SmartModel: "grok-4.3",
+			SmartModel: "grok-4.7",
 		},
 		LLM: LLMConfig{
 			Provider:         "xai",
 			Model:            "grok-4.20-multi-agent-0309",
 			SmartProvider:    "xai",
-			SmartModel:       "grok-4.3",
+			SmartModel:       "grok-4.7",
 			FastProvider:     "xai",
 			FastModel:        "grok-build-0.1",
 			MultiAgentModel:  "grok-4.20-multi-agent-0309",
@@ -99,8 +99,8 @@ func Default() *Config {
 			TaskTimeoutSecs:  600,
 			Tiers: TierConfig{
 				Fast:     "grok-build-0.1",
-				Standard: "grok-4.3",
-				Smart:    "grok-4.3",
+				Standard: "grok-4.7",
+				Smart:    "grok-4.7",
 			},
 			Backpressure: BackpressureCfg{
 				StopOnFailure: true,
@@ -213,9 +213,9 @@ func (c *Config) Save(scudDir string) error {
 // DefaultTOML returns the default config as TOML string.
 func DefaultTOML() string {
 	return `[rho]
-model = "grok-4.3"
+model = "grok-4.7"
 fast_model = "grok-build-0.1"
-smart_model = "grok-4.3"
+smart_model = "grok-4.7"
 
 [heavy]
 # model = ""  # override-all fallback
@@ -227,7 +227,7 @@ timeout_secs = 300
 # [heavy.models]
 # routing = "grok-build-0.1"
 # agents = "grok-build-0.1"
-# synthesis = "grok-4.3"
+# synthesis = "grok-4.7"
 # debate = "grok-build-0.1"
 # native = "grok-4.20-multi-agent-0309"
 
@@ -238,8 +238,8 @@ task_timeout_secs = 600
 
 [swarm.tiers]
 fast = "grok-build-0.1"
-standard = "grok-4.3"
-smart = "grok-4.3"
+standard = "grok-4.7"
+smart = "grok-4.7"
 
 [swarm.backpressure]
 commands = []
@@ -281,7 +281,7 @@ func (c *Config) HeavyModel(role string) string {
 	if c.Rho.SmartModel != "" {
 		return c.Rho.SmartModel
 	}
-	return "grok-4.20-reasoning"
+	return "grok-4.7"
 }
 
 // ModelForTier resolves a model tier to an actual model name.

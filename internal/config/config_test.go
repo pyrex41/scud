@@ -8,8 +8,14 @@ import (
 
 func TestDefaultValues(t *testing.T) {
 	cfg := Default()
-	if cfg.Rho.Model == "" {
-		t.Error("default Rho.Model is empty")
+	if cfg.Rho.Model != "grok-4.7" {
+		t.Errorf("default Rho.Model = %q, want grok-4.7", cfg.Rho.Model)
+	}
+	if cfg.Rho.SmartModel != "grok-4.7" {
+		t.Errorf("default Rho.SmartModel = %q, want grok-4.7", cfg.Rho.SmartModel)
+	}
+	if cfg.Swarm.Tiers.Standard != "grok-4.7" {
+		t.Errorf("default Swarm.Tiers.Standard = %q, want grok-4.7", cfg.Swarm.Tiers.Standard)
 	}
 	if cfg.LLM.Provider != "xai" {
 		t.Errorf("LLM.Provider = %q, want %q", cfg.LLM.Provider, "xai")
@@ -191,7 +197,7 @@ func TestHeavyModel(t *testing.T) {
 			name: "ultimate default",
 			cfg:  Config{},
 			role: "debate",
-			want: "grok-4.20-reasoning",
+			want: "grok-4.7",
 		},
 		{
 			name: "native per-role",
