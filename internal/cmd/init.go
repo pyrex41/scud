@@ -1,39 +1,46 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
-	"github.com/reuben/scud/internal/config"
-	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/internal/taskapi"
 	"github.com/spf13/cobra"
 )
 
+// NewInitCmd creates task storage, never overwrites model settings or tasks.
 func NewInitCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "init",
-		Short: "Initialize a new SCUD project",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cwd, _ := os.Getwd()
-			store := storage.New(cwd)
-
-			if err := store.Initialize(); err != nil {
+	command := &cobra.Command{
+		Use: "init", Short: "Initialize task storage without overwriting existing tasks or model defaults", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
 				return err
 			}
-
-			// Write default config
-			cfg := config.Default()
-			if err := cfg.Save(store.ScudDir()); err != nil {
+			if err := os.MkdirAll(filepath.Join(cwd, ".scud", "tasks"), 0755); err != nil {
 				return err
 			}
-
-			fmt.Println("Initialized .scud/ project structure")
-			fmt.Println("  .scud/config.toml        - configuration")
-			fmt.Println("  .scud/tasks/             - task files")
-			fmt.Println("  .scud/guidance/          - AI context files")
-			fmt.Println("  .claude/skills/scud/     - Claude Code skill")
-			fmt.Println("  .opencode/skills/scud/   - OpenCode skill")
-			return nil
+			service, err := taskapi.Open(cwd)
+			if err != nil {
+				return err
+			}
+			snapshot, err := service.Snapshot(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("existing task storage was not changed: %w", err)
+			}
+			if _, err := os.Stat(filepath.Join(cwd, ".scud", "tasks", "tasks.json")); os.IsNotExist(err) {
+				snapshot, err = service.Import(cmd.Context(), taskapi.Document{SchemaVersion: 1, Phases: []taskapi.Phase{}}, taskapi.ImportOptions{})
+				if err != nil {
+					return err
+				}
+			} else if err != nil {
+				return err
+			}
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"schema_version": 1, "project": cwd, "revision": snapshot.Revision, "initialized": true})
 		},
 	}
+	command.Flags().Bool("json", false, "JSON is the default output")
+	return command
 }

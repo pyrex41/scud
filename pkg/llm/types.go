@@ -4,15 +4,17 @@ package llm
 type ChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	Refusal string `json:"refusal,omitempty"`
 }
 
 // ChatRequest is an OpenAI/xAI compatible completion request.
 type ChatRequest struct {
-	Model          string          `json:"model"`
-	Messages       []ChatMessage   `json:"messages"`
-	MaxTokens      int             `json:"max_tokens,omitempty"`
-	Temperature    float64         `json:"temperature,omitempty"`
-	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+	Model               string          `json:"model"`
+	Messages            []ChatMessage   `json:"messages"`
+	MaxTokens           int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+	Temperature         float64         `json:"temperature,omitempty"`
+	ResponseFormat      *ResponseFormat `json:"response_format,omitempty"`
 }
 
 // ResponseFormat constrains a chat-completions response to JSON.
@@ -29,7 +31,8 @@ type ChatResponse struct {
 
 // ChatChoice is a single choice in a ChatResponse.
 type ChatChoice struct {
-	Message ChatMessage `json:"message"`
+	Message      ChatMessage `json:"message"`
+	FinishReason string      `json:"finish_reason"`
 }
 
 // AnthropicRequest is a request to the Anthropic messages API.
@@ -48,7 +51,8 @@ type AnthropicMessage struct {
 
 // AnthropicResponse is a response from the Anthropic messages API.
 type AnthropicResponse struct {
-	Content []AnthropicContent `json:"content"`
+	Content    []AnthropicContent `json:"content"`
+	StopReason string             `json:"stop_reason"`
 }
 
 // AnthropicContent is a content block in an Anthropic response.

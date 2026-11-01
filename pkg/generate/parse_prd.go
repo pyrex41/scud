@@ -4,14 +4,96 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/reuben/scud/internal/config"
 	"github.com/reuben/scud/internal/rho"
 	"github.com/reuben/scud/internal/storage"
+	"github.com/reuben/scud/internal/taskapi"
 	"github.com/reuben/scud/pkg/llm"
 	"github.com/reuben/scud/pkg/model"
 )
+
+// Proposal is a persistence-free, importable PRD breakdown.
+type Proposal struct {
+	SchemaVersion int             `json:"schema_version"`
+	Phases        []ProposalPhase `json:"phases"`
+}
+type ProposalPhase struct {
+	Tag      string        `json:"tag"`
+	Name     string        `json:"name"`
+	IDFormat string        `json:"id_format"`
+	Tasks    []*model.Task `json:"tasks"`
+}
+type ProposalOptions struct {
+	Tag      string
+	NumTasks int
+}
+type TargetCaller = llm.JSONCaller
+
+type proposalPayload struct {
+	Tasks []struct {
+		Title        string   `json:"title"`
+		Description  string   `json:"description"`
+		Priority     string   `json:"priority"`
+		Complexity   int      `json:"complexity"`
+		Dependencies []string `json:"dependencies"`
+	} `json:"tasks"`
+}
+
+// Propose converts PRD text to a validated task graph without touching storage.
+func Propose(ctx context.Context, caller TargetCaller, content string, opts ProposalOptions) (*Proposal, error) {
+	if opts.NumTasks < 0 {
+		return nil, fmt.Errorf("task count cannot be negative")
+	}
+	if len(content) > 4<<20 {
+		return nil, fmt.Errorf("PRD exceeds 4 MiB input limit")
+	}
+	if strings.TrimSpace(content) == "" {
+		return nil, fmt.Errorf("PRD content is empty")
+	}
+	if caller == nil {
+		return nil, fmt.Errorf("model caller is required")
+	}
+	tag := opts.Tag
+	if tag == "" {
+		tag = "main"
+	}
+	if _, err := taskapi.ValidateDocument(taskapi.Document{SchemaVersion: 1, Phases: []taskapi.Phase{{Tag: tag, Name: tag, IDFormat: "sequential", Tasks: []*model.Task{}}}}); err != nil {
+		return nil, fmt.Errorf("invalid phase tag %q: %w", tag, err)
+	}
+	prompt := `Create an actionable implementation plan from this PRD. Size each task around a clear goal and observable verification. Do not assign agents or model tiers. Do not force a task count unless requested; if requested, aim for that number. Return only JSON: {"tasks":[{"title":"...","description":"...","priority":"medium","complexity":3,"dependencies":[]}]} Dependencies refer to 1-based task indices as strings.`
+	if opts.NumTasks > 0 {
+		prompt += fmt.Sprintf(" Requested task count: %d.", opts.NumTasks)
+	}
+	prompt += "\n\nPRD:\n" + content
+	raw, err := llm.RequestJSON[proposalPayload](ctx, caller, prompt, "Return valid JSON only.")
+	if err != nil {
+		return nil, err
+	}
+	if len(raw.Tasks) == 0 {
+		return nil, fmt.Errorf("proposal contains no tasks")
+	}
+	tasks := make([]*model.Task, len(raw.Tasks))
+	for i, r := range raw.Tasks {
+		if r.Title == "" || r.Description == "" {
+			return nil, fmt.Errorf("task %d requires title and description", i+1)
+		}
+		pri, ok := model.ParsePriority(r.Priority)
+		if !ok {
+			return nil, fmt.Errorf("task %d has invalid priority %q", i+1, r.Priority)
+		}
+		if r.Complexity < 1 || r.Complexity > 21 {
+			return nil, fmt.Errorf("task %d complexity must be 1..21", i+1)
+		}
+		tasks[i] = &model.Task{ID: fmt.Sprint(i + 1), Title: r.Title, Description: r.Description, Priority: pri, Complexity: r.Complexity, Status: model.Pending, Dependencies: r.Dependencies}
+	}
+	if _, err := taskapi.ValidateDocument(taskapi.Document{SchemaVersion: 1, Phases: []taskapi.Phase{{Tag: tag, Name: tag, IDFormat: "sequential", Tasks: tasks}}}); err != nil {
+		return nil, fmt.Errorf("invalid proposed task document: %w", err)
+	}
+	return &Proposal{SchemaVersion: 1, Phases: []ProposalPhase{{Tag: tag, Name: tag, IDFormat: "sequential", Tasks: tasks}}}, nil
+}
 
 type parsedTask struct {
 	Title        string `json:"title"`
