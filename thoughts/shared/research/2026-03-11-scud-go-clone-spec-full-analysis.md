@@ -13,6 +13,12 @@ last_updated_by: claude
 
 # Research: SCUD Go Clone Spec - Full System Analysis
 
+> **Historical research — pre-v3.** Preserved as a record of the system studied
+> in March 2026, not current setup/command instructions. SCUD 3.x removed the
+> execution surface, changed task storage and model selection, and uses stateless
+> MCP. Use the [current README](../../../README.md) and
+> [CLI reference](../../../docs/CLI_REFERENCE.md) for operational guidance.
+
 **Date**: 2026-03-11T17:51:20Z
 **Researcher**: claude
 **Git Commit**: b0d45a63a569372265d8560c11e73e416b71c039

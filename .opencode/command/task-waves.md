@@ -1,17 +1,6 @@
 ---
-description: Show parallel execution waves for SCUD tasks
+description: Legacy waves alias for SCUD v3 readiness inspection
 allowed-tools: Bash(scud:*)
-argument-hint: "[--tag <tag>] [--max-parallel <n>] [--all-tags]"
 ---
 
-Compute and display parallel execution waves based on task dependencies.
-
-```bash
-scud waves $ARGUMENTS
-```
-
-Explain the output:
-1. Wave 1 tasks have no dependencies and can start immediately
-2. Each subsequent wave depends on prior waves completing
-3. Tasks within a wave can run in parallel
-4. The speedup ratio shows efficiency vs sequential execution
+Explain that the legacy `waves` CLI command was removed. Run `scud status` and report current `ready` refs and `blocked` reasons. Readiness is not an execution-wave schedule or reservation; do not launch workers or promise priority ordering. Do not forward `$ARGUMENTS` to mutations.

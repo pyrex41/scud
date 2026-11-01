@@ -40,12 +40,27 @@ type ensembleResult struct {
 // filesystem tools or launches a coding harness; it only calls a model API.
 func NewExperimentalCmd() *cobra.Command {
 	parent := &cobra.Command{Use: "experimental", Short: "Unstable inference experiments; not part of the core API"}
+	parent.Long = `Optional, unstable direct-model inference experiments, separate from the core
+task workflow. These do not launch coding agents, expose filesystem tools, execute
+tasks or prove verification. Experimental commands are not exposed through MCP.`
+	parent.Example = `  scud experimental ensemble 'Compare two design approaches' --models main,fast`
 	var models []string
 	var synth string
 	var parallel int
 	var timeout time.Duration
 	command := &cobra.Command{
 		Use: "ensemble [PROMPT]", Short: "Ask main/fast independently and synthesize (no worker execution)", Args: cobra.MaximumNArgs(1),
+		Long: `Ask 1–16 configured main/fast model defaults independently, then synthesize
+their answers with --synth main|fast. Repeating a default allows homogeneous
+fan-out. No agent tools, filesystem access, coding harness or task execution is
+provided: these are direct model API requests, not autonomous workers.
+Supply one quoted prompt or stdin (maximum 4 MiB). Requires an initialized
+project, configured defaults and provider API credentials. JSON is the default.
+--parallel bounds concurrent member requests; --timeout bounds overall inference.
+Failed members prevent synthesis and return a nonzero exit with diagnostics.`,
+		Example: `  scud experimental ensemble 'Review this design' --models main,fast
+  scud experimental ensemble 'Compare approaches' --models main,main --synth main --parallel 2
+  cat prompt.txt | scud experimental ensemble --timeout 2m`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if parallel < 1 || parallel > 16 || len(models) < 1 || len(models) > 16 || timeout <= 0 {
 				return fmt.Errorf("use 1–16 models, --parallel 1–16, and a positive --timeout")
@@ -102,8 +117,8 @@ func NewExperimentalCmd() *cobra.Command {
 			return runErr
 		},
 	}
-	command.Flags().StringSliceVar(&models, "models", []string{"main", "fast"}, "Model defaults/targets; repeat a target for homogeneous fan-out")
-	command.Flags().StringVar(&synth, "synth", "main", "Model target for synthesis")
+	command.Flags().StringSliceVar(&models, "models", []string{"main", "fast"}, "main/fast defaults (1–16); repeat a default for homogeneous fan-out")
+	command.Flags().StringVar(&synth, "synth", "main", "Model default for synthesis: main or fast")
 	command.Flags().IntVar(&parallel, "parallel", 2, "Maximum parallel model requests (1–16)")
 	command.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "Overall inference timeout")
 	command.Flags().Bool("json", false, "JSON is the default output")

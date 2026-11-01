@@ -1,6 +1,8 @@
 # scud — Reduced Task Workflow Specification and Work Scope
 
 Status: scope revised after the initial review and subsequent user direction.
+Current product line: **SCUD 3.x**. This filename is retained for links to the
+original design work; it does not indicate the released product version.
 This document supersedes the earlier execution-heavy v2 proposal. It describes
 the new core and explicitly separates implemented contracts from follow-up
 work. No calendar schedule or duration estimates are part of this plan.
@@ -34,7 +36,7 @@ added later, with independently validated provenance/coverage contracts.
 | `list [--tag TAG]` | Export an importable document |
 | `show ID [--tag TAG]` | Read one task; ambiguity is an error |
 | `update ID` | Patch explicitly supplied fields, optionally guarded by revision |
-| `next` | Return ready references without claiming or executing work |
+| `next [--tag TAG]` | Return the first ready `{tag,id}` reference, or JSON `null`; never claim or execute work |
 | `status [--watch]` | Fresh snapshot; watch is initial + changed-revision JSONL |
 | `validate [--input FILE|-]` | Validate project or independent candidate document without task mutation |
 | `models list/defaults/set` | Discover models and choose main/fast without hand-editing config |

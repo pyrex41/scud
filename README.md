@@ -92,7 +92,9 @@ scud update main:2 --depends-on=   # explicitly clear dependencies
 Unqualified IDs work only when unambiguous; use `--tag NAME` or `NAME:ID`
 otherwise. Dependencies use a local ID or `phase:id`. Missing references,
 cycles, duplicate IDs and inconsistent parent relationships are errors.
-`next` returns ready task references; it does not claim or run them.
+`next` returns only the first ready reference (`{"tag":"main","id":"1"}`), or
+`null` when none is ready; it does not claim or run work. Use `status` for all
+ready references. `show` returns a JSON wrapper containing `ref` and `task`.
 
 Imports refuse phase collisions by default. `--policy merge` appends new
 tasks to matching phase metadata, rejecting duplicate IDs; `--policy replace`
@@ -109,6 +111,8 @@ printf '%s\n' '{"description":"New details","dependencies":[]}' |
 fields are unchanged. Revision conflicts and invalid changes leave the task
 document untouched. Updates are locked across processes and atomically
 published. Workflow status is user-reported, not a verification certificate.
+`--if-revision` is an optimistic guard, not a lease or claim. Use JSON patch
+input or field flags, never both; `--depends-on` replaces the whole list.
 
 ### Import/export document
 
@@ -250,5 +254,7 @@ HTTP shutdown waits briefly for cleanup. The old MCP implementation is removed.
   Linux/macOS additionally supervise its private process group. Windows console
   input is rejected where it cannot be interrupted safely; scripted pipes work.
 
-See [the work specification](docs/V2_SPEC.md), [rationale](docs/REDESIGN.md),
-and [developer guide](go.md).
+See the generated [CLI reference](docs/CLI_REFERENCE.md) for exact command help,
+[the work specification](docs/V2_SPEC.md), [rationale](docs/REDESIGN.md),
+and [developer guide](go.md). The [documentation index](docs/README.md) also
+links the current agent skills and distinguishes historical research.

@@ -1,16 +1,7 @@
 ---
-description: Update the status of a SCUD task
+description: Legacy tags alias for inspecting SCUD v3 phases
 allowed-tools: Bash(scud:*)
-argument-hint: "<task-id> <status> [--tag <tag>]"
+argument-hint: "[phase]"
 ---
 
-Update a task's status. Valid statuses: pending, in-progress, done, blocked, review, deferred, cancelled.
-
-```bash
-scud set-status $ARGUMENTS
-```
-
-After updating:
-1. Confirm the status change
-2. If marked `done`, suggest running `scud next` to find the next task
-3. If marked `blocked`, ask what's blocking and whether to add a note
+Explain that the legacy `tags` CLI and persistent active-tag switching were removed. Inspect `phases` using `scud status` or `scud list`. If `$ARGUMENTS` explicitly selects a phase, use `scud list --tag PHASE`; the export includes whole prerequisite phases transitively. Use `--tag` on supported show/update operations to disambiguate IDs. Do not mutate status, switch config, or forward arbitrary arguments to an update.

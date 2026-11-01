@@ -96,6 +96,17 @@ func NewPRDCmd(callers ...generate.TargetCaller) *cobra.Command {
 		enc.SetIndent("", "  ")
 		return enc.Encode(p)
 	}}
+	c.Long = `Propose a schema_version: 1 task document from a PRD file, - or stdin.
+This calls the configured main model (or --model fast) and outputs JSON only;
+it never persists tasks or edits source files. Initialize a project and select
+the model default with models set first; provider credentials are required.
+Input is limited to 4 MiB. --num requests a task count, not a guaranteed count.
+Inspect the proposal, validate it, then explicitly import it to store tasks.`
+	c.Example = `  scud parse product.md > proposal.json
+  scud parse product.md --model fast --tag app --num 8 > proposal.json
+  cat product.md | scud parse - > proposal.json
+  scud validate --input proposal.json
+  scud import proposal.json`
 	c.Flags().StringVar(&modelName, "model", "main", "Model default: main or fast")
 	c.Flags().StringVar(&tag, "tag", "main", "Phase tag")
 	c.Flags().IntVar(&num, "num", 0, "Requested task count (optional)")

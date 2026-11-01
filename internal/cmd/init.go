@@ -14,6 +14,13 @@ import (
 func NewInitCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use: "init", Short: "Initialize task storage without overwriting existing tasks or model defaults", Args: cobra.NoArgs,
+		Long: `Initialize .scud/tasks/tasks.json in the current directory and return JSON
+with schema_version, project, revision and initialized. Existing tasks are
+validated, not overwritten; model defaults and unrelated settings are preserved.
+No credentials or optional sb installation are needed. Nonempty legacy tasks.scg
+storage is refused rather than silently converted. Use -C to choose a directory.`,
+		Example: `  scud init
+  scud -C /path/to/project init`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {

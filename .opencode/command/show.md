@@ -1,16 +1,5 @@
 ---
-description: Show detailed information about a SCUD task
+description: Show one SCUD v3 task and its reference
 ---
 
-Show detailed information about a specific task.
-
-Run: `scud show $ARGUMENTS`
-
-Arguments: `<task-id> [--tag <tag>]`
-
-Present the task details including:
-- Title, status, complexity, priority
-- Full description
-- Test strategy (if defined)
-- Dependencies and their current status
-- Assignment and lock information
+Require an explicit task ID from `$ARGUMENTS`; ask for it if absent. Run `scud show TASK_ID --tag PHASE` with the selected phase when known. Output wraps `ref` and `task`. Explain details, local/cross-phase dependencies, and test strategy without changing status. Do not auto-select or claim a task.

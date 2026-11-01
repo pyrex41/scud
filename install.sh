@@ -1,111 +1,79 @@
 #!/bin/sh
-# SCUD Installer
-# curl -sSf https://raw.githubusercontent.com/pyrex41/scud/master/install.sh | sh
-set -e
+# Install the latest published SCUD binary. No coding harness is required.
+# Run from a checkout: sh install.sh
+set -eu
 
 REPO="pyrex41/scud"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
-detect_platform() {
-    OS=$(uname -s)
-    ARCH=$(uname -m)
-
-    case "$OS" in
-        Linux)  OS_NAME="linux" ;;
-        Darwin) OS_NAME="darwin" ;;
-        MINGW*|MSYS*|CYGWIN*) OS_NAME="windows" ;;
-        *) echo "Unsupported OS: $OS"; exit 1 ;;
-    esac
-
-    case "$ARCH" in
-        x86_64|amd64)  ARCH_NAME="amd64" ;;
-        aarch64|arm64) ARCH_NAME="arm64" ;;
-        *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
-    esac
-}
-
-echo "Installing SCUD CLI..."
-echo ""
-
-detect_platform
-mkdir -p "$INSTALL_DIR"
-
-TAG=$(curl -sSf "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
-if [ -z "$TAG" ]; then
-    echo "Error: could not determine latest release"
-    exit 1
-fi
-
-if [ "$OS_NAME" = "windows" ]; then
-    ASSET="scud-${OS_NAME}-${ARCH_NAME}.exe"
-    DEST="${INSTALL_DIR}/scud.exe"
-else
-    ASSET="scud-${OS_NAME}-${ARCH_NAME}"
-    DEST="${INSTALL_DIR}/scud"
-fi
-
-URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
-echo "Downloading scud ${TAG} (${OS_NAME}/${ARCH_NAME})..."
-
-if curl -sSfL -o "$DEST" "$URL"; then
-    chmod +x "$DEST"
-    echo "Installed scud to ${DEST}"
-else
-    echo "Error: download failed"
-    echo "  Go fallback: go install github.com/reuben/scud/cmd/scud@latest"
-    exit 1
-fi
-
-echo ""
-
-# Install rho-cli if not present
-RHO_REPO="pyrex41/rho"
-if ! command -v rho-cli >/dev/null 2>&1; then
-    echo "Installing rho-cli (required for scud heavy)..."
-
-    RHO_TAG=$(curl -sSf "https://api.github.com/repos/${RHO_REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
-    if [ -n "$RHO_TAG" ]; then
-        # rho uses x64/macos naming convention
-        case "$ARCH_NAME" in
-            amd64) RHO_ARCH="x64" ;;
-            arm64) RHO_ARCH="arm64" ;;
-        esac
-        case "$OS_NAME" in
-            darwin)  RHO_OS="macos" ;;
-            linux)   RHO_OS="linux" ;;
-            windows) RHO_OS="windows" ;;
-        esac
-
-        if [ "$OS_NAME" = "windows" ]; then
-            RHO_ASSET="rho-cli-${RHO_OS}-${RHO_ARCH}.exe"
-            RHO_DEST="${INSTALL_DIR}/rho-cli.exe"
-        else
-            RHO_ASSET="rho-cli-${RHO_OS}-${RHO_ARCH}"
-            RHO_DEST="${INSTALL_DIR}/rho-cli"
-        fi
-
-        RHO_URL="https://github.com/${RHO_REPO}/releases/download/${RHO_TAG}/${RHO_ASSET}"
-        if curl -sSfL -o "$RHO_DEST" "$RHO_URL"; then
-            chmod +x "$RHO_DEST"
-            echo "Installed rho-cli to ${RHO_DEST}"
-        else
-            echo "Warning: rho-cli download failed (scud heavy will not work)"
-        fi
-    else
-        echo "Warning: could not determine latest rho-cli release"
-    fi
-    echo ""
-fi
-
-# Check PATH
-case ":$PATH:" in
-    *":$INSTALL_DIR:"*) ;;
-    *)
-        echo "Add ${INSTALL_DIR} to your PATH:"
-        echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
-        echo ""
-        ;;
+case "$(uname -s)" in
+    Linux) OS_NAME="linux" ;;
+    Darwin) OS_NAME="darwin" ;;
+    MINGW*|MSYS*|CYGWIN*) OS_NAME="windows" ;;
+    *) echo "Unsupported operating system" >&2; exit 1 ;;
+esac
+case "$(uname -m)" in
+    x86_64|amd64) ARCH_NAME="amd64" ;;
+    aarch64|arm64) ARCH_NAME="arm64" ;;
+    *) echo "Unsupported architecture" >&2; exit 1 ;;
 esac
 
-echo "Done! Run 'scud init' in any project to get started."
-echo "https://github.com/pyrex41/scud"
+echo "Installing the latest SCUD task-workflow CLI..."
+TAG=$(curl -sSf "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+if [ -z "$TAG" ]; then
+    echo "Error: could not determine the latest published release" >&2
+    exit 1
+fi
+
+ASSET="scud-${OS_NAME}-${ARCH_NAME}"
+DEST="${INSTALL_DIR}/scud"
+if [ "$OS_NAME" = "windows" ]; then
+    ASSET="${ASSET}.exe"
+    DEST="${DEST}.exe"
+fi
+mkdir -p "$INSTALL_DIR"
+TEMP=$(mktemp "${INSTALL_DIR}/.scud-download.XXXXXX")
+trap 'rm -f "$TEMP"' 0
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+
+URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+echo "Downloading ${TAG} for ${OS_NAME}/${ARCH_NAME}..."
+if ! curl -sSfL -o "$TEMP" "$URL"; then
+    echo "Download failed; any existing SCUD binary was left unchanged." >&2
+    echo "Source fallback (Go 1.27.3+): clone https://github.com/${REPO}, then run go install ./cmd/scud from that checkout." >&2
+    exit 1
+fi
+chmod +x "$TEMP"
+if [ "$OS_NAME" != "windows" ]; then
+    if ! "$TEMP" --version >/dev/null; then
+        echo "Downloaded binary could not run; existing installation was left unchanged." >&2
+        exit 1
+    fi
+fi
+mv -f "$TEMP" "$DEST"
+echo "Installed ${TAG} at ${DEST}"
+
+case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *) printf 'Add this directory to PATH: export PATH="%s:$PATH"\n' "$INSTALL_DIR" ;;
+esac
+
+cat <<'GUIDE'
+
+Get started in your project:
+  scud init
+  scud status
+  scud models list
+  scud models set main 'a uniquely matching model name'
+  scud models set fast 'another uniquely matching model name'
+  scud parse product.md > tasks.json
+  scud validate --input tasks.json
+  scud import tasks.json
+
+Model credentials are needed only for discovery/inference, not task CRUD.
+sb is optional. Coding-agent execution is not part of SCUD v3.
+Nonempty legacy tasks.scg files require explicit reviewed conversion;
+installation does not modify project task files or model defaults.
+Run scud --help and scud COMMAND --help for the current command surface.
+GUIDE

@@ -120,6 +120,13 @@ GET/DELETE stream endpoints, cross-origin rejection and independent cancellation
 
 ## 5. Deliverable
 
+Also check documentation drift: `docs/CLI_REFERENCE.md` must match generated
+Cobra help; every registered real command should explain behavior and include
+valid examples. Current `.claude`/`.opencode` skill copies must match, and live
+project/alias/hook guidance must not invoke retired commands. Replay the two
+advice-only skill cases; verify no task mutation/provider calls are executed.
+Old research must be marked historical, not silently rewritten as current fact.
+
 - Verdict: implement/use, use with changes, or rethink, scoped to the new core.
 - Severity-tagged findings with exact current `file:line`, reproduction and fix.
 - Direct answers to all eight questions and a complete [VERIFY] claims audit.

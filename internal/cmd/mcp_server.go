@@ -20,8 +20,14 @@ func NewMCPServerCmd() *cobra.Command {
 		Short: "Serve stateless MCP 2026-07-28 over stdio or local HTTP",
 		Long: `Stateless MCP 2026-07-28: no initialization handshake or sessions.
 Each request supplies protocol version and client capabilities in params._meta.
+Use io.modelcontextprotocol/protocolVersion: "2026-07-28" and
+io.modelcontextprotocol/clientCapabilities: {} for a client with no capabilities.
+Discovery uses server/discover, not initialize; metadata is required per request.
 Use stdio (default), or --transport http --listen 127.0.0.1:8080 (/mcp).
 HTTP is loopback-only; put authenticated remote access behind an explicit proxy.
+HTTP POST /mcp also requires Content-Type: application/json, Accept:
+application/json, text/event-stream, matching Mcp-Protocol-Version and Mcp-Method
+headers, and Mcp-Name for tool calls. No persistent session or legacy GET/SSE.
 
 Control which tools are exposed via the SCUD_TOOLS env var:
   core (default): tasks, import, update, status, parse
@@ -29,6 +35,9 @@ Control which tools are exposed via the SCUD_TOOLS env var:
   Custom: SCUD_TOOLS=tasks,status,sb
 
 No worker execution, commit, or experimental ensemble tools are exposed.`,
+		Example: `  scud mcp-server
+  SCUD_TOOLS=full scud mcp-server
+  SCUD_TOOLS=tasks,status scud mcp-server --transport http --listen 127.0.0.1:8080`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := os.Getwd()
 			if err != nil {

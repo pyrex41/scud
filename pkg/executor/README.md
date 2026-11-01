@@ -1,65 +1,26 @@
-# SCUD executor boundary
+# Legacy executor package — not a SCUD v3 CLI feature
 
-`pkg/executor` separates SCUD's task/wave scheduler from the harness that
-performs one agent run. `swarm.RunOpts.Executor` accepts any implementation of
-`Runner`; leaving it nil preserves the existing `rho-cli` behavior through
-`LegacyRho`.
+This package is retained for staged source cleanup and its protocol tests.
+It is **not used by the registered v3 task workflow, PRD proposal path, or
+experimental ensemble**. Retention is not a promise of supported public
+execution commands or a reason to install a coding harness.
 
-`RhoV1` is the opt-in adapter for the versioned `rho.run/v1` protocol. It sends
-one JSON request on stdin and consumes JSONL events, validating protocol, run
-identity, monotonic sequence numbers, terminal payloads, and the exactly-one
-terminal invariant. Unknown event types remain visible to the callback so that
-new producer events do not require a SCUD release.
+For current usage, read [the project README](../../README.md),
+[CLI reference](../../docs/CLI_REFERENCE.md), and
+[developer guide](../../go.md). Task state goes through `internal/taskapi`;
+model inference uses the explicit main/fast defaults. SCUD does not own coding
+worker execution, repairs, or Git commits.
 
-```go
-runner := executor.RhoV1{
-    Grant: executor.Grant{
-        GrantID: "local-scud",
-        ExpiresAt: "2030-01-01T00:00:00Z",
-        Providers: []string{"anthropic", "openai", "xai"},
-        Models: []string{"*"},
-        ReadRoots: []string{workspace},
-        WriteRoots: []string{workspace},
-        Network: executor.NetworkGrant{Mode: "provider_only"},
-    },
-}
+## Retained source contracts
 
-err := swarm.Run(ctx, cfg, store, swarm.RunOpts{Executor: runner})
-```
+- `Runner`, `Request`, `Result` and event types describe the former bounded
+  worker interface. See `executor.go` for the precise retained definitions.
+- `RhoV1` and `rho.run/v1` tests exercise request/event framing, run identity,
+  monotonic sequences and terminal-result constraints.
+- `LegacyRho` preserves old behavior for unregistered legacy call sites.
 
-The adapter defaults to:
-
-```text
-rho-cli run --request-file - --events jsonl
-```
-
-Use `RhoV1.Command` and `RhoV1.Args` to target another conforming executable.
-SCUD selects the adapter through `.scud/config.toml`:
-
-```toml
-[rho]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
-fast_provider = "xai"
-fast_model = "grok-build-0.1"
-smart_provider = "openai"
-smart_model = "gpt-5.2"
-
-[executor]
-kind = "rho-v1" # default remains "legacy"
-command = "rho-cli"
-grant_id = "scud-local"
-grant_ttl_seconds = 3600
-allowed_tools = ["read", "edit", "bash"]
-network_mode = "provider_only"
-```
-
-`scud run` and `scud swarm` accept `--executor legacy|rho-v1` and
-`--provider anthropic|openai|xai` overrides. `scud run --model` pairs with the
-explicit provider. Environment equivalents are `SCUD_EXECUTOR`,
-`SCUD_RHO_COMMAND`, `SCUD_RHO_PROVIDER`, `SCUD_RHO_FAST_PROVIDER`, and
-`SCUD_RHO_SMART_PROVIDER`.
-
-The local grant is deliberately rooted to the active project workspace and has
-a finite lifetime. A future control-plane integration should replace it with a
-signed externally authorized grant rather than expanding this local config.
+These are implementation-maintenance facts, not current user setup steps.
+Do not copy old executor configuration or worker-derived completion rules into
+v3 scripts/skills. Current `done` status is user-reported; optional sb command
+results do not silently change it. Audit remaining call sites before removing
+the package, without restoring execution to the small public API.

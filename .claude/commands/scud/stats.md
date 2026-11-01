@@ -1,16 +1,6 @@
 ---
-description: Show SCUD task completion statistics
+description: Legacy stats alias for SCUD v3 status counts
 allowed-tools: Bash(scud:*)
-argument-hint: [--tag <tag>]
 ---
 
-Show completion statistics for tasks.
-
-```bash
-scud stats $ARGUMENTS
-```
-
-Summarize:
-- Overall progress percentage
-- Tasks by status (pending, in-progress, done, expanded, blocked)
-- Per-tag breakdown if multiple tags exist
+Explain that the legacy `stats` CLI command was removed. Run `scud status` and summarize `summary.total`, `summary.status`, `ready`, and `blocked`. Do not forward `$ARGUMENTS` into an update. Counts are user-reported workflow state, not verification.

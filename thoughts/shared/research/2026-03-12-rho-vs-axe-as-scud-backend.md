@@ -13,6 +13,11 @@ last_updated_by: claude
 
 # Research: rho-cli vs axe as scud's Agent Execution Backend
 
+> **Historical research — pre-v3.** SCUD 3.x no longer owns coding-agent execution.
+> The backend comparison and old task commands below are a historical record,
+> not a current integration plan. See the [current README](../../../README.md)
+> and [CLI reference](../../../docs/CLI_REFERENCE.md).
+
 **Date**: 2026-03-12
 **Git Commit**: b0adb02
 **Branch**: scud-go

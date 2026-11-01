@@ -12,6 +12,14 @@ import (
 // NewSBCmd exposes optional verification independently of task workflow state.
 func NewSBCmd() *cobra.Command {
 	root := &cobra.Command{Use: "sb", Short: "Optional sb verification and context (never executes task workers)"}
+	root.Long = `Wrap optional public sb commands; ordinary task workflows do not require sb.
+These commands never run task workers or mark tasks complete. A successful check
+is not invariant discharge or proof; report bytes remain unverified. derive,
+gen and check may change generated project files. --timeout bounds execution;
+--json preserves command stdout/stderr and diagnostics, including failures.`
+	root.Example = `  scud sb status --json
+  scud sb check --json
+  scud sb context`
 	var jsonOutput bool
 	var timeout time.Duration
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Write complete JSON to stdout")
@@ -26,6 +34,11 @@ func NewSBCmd() *cobra.Command {
 	}
 	root.AddCommand(&cobra.Command{
 		Use: "status", Short: "Report sb configuration/availability without running checks", Args: cobra.NoArgs,
+		Long: `Report whether sb is configured, whether its binary is available and the
+discharge-report status without running checks. Report presence does not establish
+freshness, proof strength or task completion. Use --json for structured output.`,
+		Example: `  scud sb status
+  scud sb status --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := client()
 			if err != nil {
@@ -51,6 +64,12 @@ func NewSBCmd() *cobra.Command {
 	} {
 		root.AddCommand(&cobra.Command{
 			Use: operation.name, Short: operation.description, Args: cobra.NoArgs,
+			Long: operation.description + `. Invokes the optional sb binary in the project.
+Requires sb configuration and an available binary. This operation does not update
+task status, run task workers or certify invariant discharge. derive/gen/check
+may change generated files. Output is bounded with explicit truncation markers;
+--json preserves stdout/stderr and diagnostics even if the command fails.`,
+			Example: "  scud sb " + operation.name + "\n  scud sb " + operation.name + " --json --timeout 2m",
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				if timeout <= 0 {
 					return fmt.Errorf("--timeout must be positive")

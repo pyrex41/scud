@@ -3,6 +3,10 @@
 Status: revised for the user-directed product scope. Normative contract:
 [V2_SPEC.md](V2_SPEC.md). Current commands/examples: [README](../README.md).
 
+This describes SCUD **3.x**. Exact command/flag help is generated from the
+registered CLI in [CLI_REFERENCE.md](CLI_REFERENCE.md); use that reference
+instead of archived research or an older installed binary's help.
+
 ## 1. Product decision
 
 **Scud turns PRDs into task lists, manages those lists safely, and gives

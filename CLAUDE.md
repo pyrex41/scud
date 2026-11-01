@@ -1,30 +1,16 @@
 # Project Instructions
 
-## SCUD Task Management
+## SCUD v3 Task Management
 
-This project uses SCUD Task Manager for task management.
+Use `scud status` for current counts, revision, ready refs, and dependency blockers. Use `scud next` to read the first ready `{tag, id}` or `null`; this is not a reservation, atomic claim, or highest-priority guarantee. Inspect `scud show TASK_ID --tag PHASE` before working; its JSON contains `ref` and `task`.
 
-### Session Workflow
+Update tasks only when authorized, using `scud update TASK_ID --tag PHASE --status STATUS --if-revision REVISION` with a fresh revision from `status`. Re-read and reconcile conflicts. Do not automatically mark tasks in progress or done on session start/exit. `done` is user-reported workflow state, not verification; report tests separately. SCUD does not execute workers, manage git, or provide task leases. Use git only when requested.
 
-1. **Start of session**: Run `scud warmup` to orient yourself
-   - Shows current working directory and recent git history
-   - Displays active tag, task counts, and any stale locks
-   - Identifies the next available task
+Use `scud list` for an importable versioned document and `scud validate` for graph checks. Read counts under `summary.status`; inspect `ready`/`blocked` rather than invoking legacy stats/waves commands. `list --tag PHASE` includes whole prerequisite phases transitively. Cross-phase dependencies use `phase:id`.
 
-2. **Get a task**: Use `/scud:next` or `scud next`
-   - Shows the next available task based on DAG dependencies
-   - Use `scud set-status <id> in-progress` to mark you're working on it
+For PRDs, keep `scud parse` → `scud validate --input proposal.json` → reviewed `scud import` distinct. Parsing can call a model but does not write tasks. Choose an explicit merge/replace import policy and use `--if-revision`. Discover and set the `main`/`fast` defaults using `scud models list` and `scud models set`; do not invent model IDs or edit TOML to configure roles.
 
-3. **Work on the task**: Implement the requirements
-   - Reference task details with `/scud:task-show <id>`
-   - Dependencies are automatically tracked by the DAG
-
-4. **Commit with context**: Use `scud commit -m "message"` or `scud commit -a -m "message"`
-   - Automatically prefixes commits with `[TASK-ID]`
-   - Uses task title as default commit message if none provided
-
-5. **Complete the task**: Mark done with `/scud:task-status <id> done`
-   - The stop hook will prompt for task completion
+Read `.claude/skills/scud/SKILL.md` for CLI/model/import/MCP setup and `.claude/skills/scud-tasks/SKILL.md` for readiness and status workflows. Check `scud --help`, `README.md`, and `docs/CLI_REFERENCE.md` for supported commands. Legacy slash aliases are informational translations, not restored v1 commands.
 
 ### Progress Journaling
 
@@ -40,12 +26,3 @@ Keep a brief progress log during complex tasks:
 ```
 
 This helps maintain continuity across sessions and provides context for future work.
-
-### Key Commands
-
-- `scud warmup` - Session orientation
-- `scud next` - Find next available task
-- `scud show <id>` - View task details
-- `scud set-status <id> <status>` - Update task status
-- `scud commit` - Task-aware git commit
-- `scud stats` - View completion statistics

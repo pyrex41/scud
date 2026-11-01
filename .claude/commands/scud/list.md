@@ -1,16 +1,7 @@
 ---
-description: List SCUD tasks with optional status filter
+description: Export SCUD v3 tasks as versioned JSON
 allowed-tools: Bash(scud:*)
-argument-hint: [--status pending|in-progress|done|blocked] [--tag <tag>]
+argument-hint: "[--tag <phase>]"
 ---
 
-List tasks from the SCUD task graph.
-
-```bash
-scud list $ARGUMENTS
-```
-
-After running, summarize:
-- Total tasks shown
-- Breakdown by status
-- Any tasks that are blocked or stale
+Interpret `$ARGUMENTS` only as a supported optional phase selector. Run `scud list` or `scud list --tag PHASE`. Output is an importable document; tagged exports include whole prerequisite phases transitively. There is no active-tag switch or `--status` filter. For progress, run `scud status` and read `summary.status`.

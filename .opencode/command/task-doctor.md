@@ -1,16 +1,6 @@
 ---
-description: Update the status of a SCUD task
+description: Legacy doctor alias for read-only SCUD v3 graph checks
 allowed-tools: Bash(scud:*)
-argument-hint: "<task-id> <status> [--tag <tag>]"
 ---
 
-Update a task's status. Valid statuses: pending, in-progress, done, blocked, review, deferred, cancelled.
-
-```bash
-scud set-status $ARGUMENTS
-```
-
-After updating:
-1. Confirm the status change
-2. If marked `done`, suggest running `scud next` to find the next task
-3. If marked `blocked`, ask what's blocking and whether to add a note
+Explain that the legacy `doctor` CLI command and automatic fixes are unavailable. Run `scud validate` for graph validity and `scud status` for readiness and blockers. Report errors without repairing or rewriting tasks. Do not forward `$ARGUMENTS` into a mutation. Optional external sb checks are separate and require an explicit request.

@@ -46,6 +46,15 @@ func newModelsCmd(catalog modelCatalogFunc, load modelConfigFunc) *cobra.Command
 		}
 		return nil
 	}}
+	root.Long = `Discover live provider catalogs and configure only the project-local main
+and fast defaults. With no subcommand, show both defaults as text. No model or
+provider is guessed for a new project, and credentials are not read from apps.
+Discovery uses OPENAI_API_KEY, XAI_API_KEY, ANTHROPIC_API_KEY and OPENROUTER_API_KEY.
+Use list to discover models, set to choose a unique match, defaults to inspect.
+Catalog availability does not guarantee text-generation compatibility.`
+	root.Example = `  scud models
+  scud models list --json
+  scud models defaults --json`
 	listProvider, search := "", ""
 	var asJSON bool
 	list := &cobra.Command{Use: "list", Short: "List models available from authenticated providers", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error {
@@ -154,6 +163,15 @@ func newModelsCmd(catalog modelCatalogFunc, load modelConfigFunc) *cobra.Command
 		}
 		return nil
 	}}
+	list.Long = `Query live catalogs for providers whose API-key environment variables are set,
+or restrict discovery with --provider openai|xai|anthropic|openrouter. Missing
+credentials are skipped; provider failures are reported as warnings if another
+catalog succeeds. No available catalog is an error. Discovery needs no project.
+--search matches every case-insensitive word against provider, model ID and
+display name. Text is the default; --json returns models and optional warnings.
+Configured main/fast selections are marked when project settings are available.`
+	list.Example = `  scud models list
+  scud models list --provider anthropic --search sonnet --json`
 	list.Flags().StringVar(&listProvider, "provider", "", "Only query this provider")
 	list.Flags().StringVar(&search, "search", "", "Case-insensitive search words")
 	list.Flags().BoolVar(&asJSON, "json", false, "Emit JSON")
@@ -187,6 +205,11 @@ func newModelsCmd(catalog modelCatalogFunc, load modelConfigFunc) *cobra.Command
 		}
 		return nil
 	}}
+	defaults.Long = `Show the configured main and fast defaults without calling provider APIs.
+Unset defaults remain unset: --json represents them as null and includes setup
+guidance. No model target is guessed. Run inside an initialized project.`
+	defaults.Example = `  scud models defaults
+  scud models defaults --json`
 	defaults.Flags().BoolVar(&asJSON, "json", false, "Emit JSON")
 	set := &cobra.Command{Use: "set main|fast QUERY...", Short: "Set a default by matching a live model catalog", Args: cobra.MinimumNArgs(2), RunE: func(c *cobra.Command, args []string) error {
 		alias := strings.ToLower(args[0])
@@ -283,6 +306,17 @@ func newModelsCmd(catalog modelCatalogFunc, load modelConfigFunc) *cobra.Command
 		fmt.Fprintf(c.OutOrStdout(), "%s default set to %s (%s)\n", alias, matches[0].DisplayName, matches[0].ID)
 		return nil
 	}}
+	set.Long = `Set only main or fast by searching live authenticated provider catalogs.
+QUERY words match case-insensitively across provider, model ID and display name;
+an exact model ID is preferred. Ambiguous queries show choices and write nothing.
+Narrow the query or use --provider; targets are never guessed. If an authenticated
+catalog fails, refuse an incomplete match (retry or restrict the provider).
+Initialize the project first. Saves the resolved provider/model pair while
+preserving unrelated settings. main and fast may use the same model.
+Credentials come only from the supported provider API-key environment variables.`
+	set.Example = `  scud models list --provider anthropic --search sonnet
+  scud models set main sonnet --provider anthropic
+  scud models set fast haiku --provider anthropic --json`
 	set.Flags().StringVar(&listProvider, "provider", "", "Limit lookup to a provider")
 	set.Flags().BoolVar(&asJSON, "json", false, "Emit JSON")
 	root.AddCommand(list, defaults, set)

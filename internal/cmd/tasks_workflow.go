@@ -66,6 +66,16 @@ func NewTaskImportCmd() *cobra.Command {
 		}
 		return taskOutput(c, v)
 	}}
+	c.Long = `Import a schema_version: 1 JSON document from a file or stdin (default).
+Validate the document before writing. Existing phase tags are refused unless a
+policy is explicit: merge appends tasks to matching phase metadata and rejects
+duplicate IDs; replace replaces only phases named in the input.
+--if-revision is an optimistic revision guard, not a lease or task claim.
+Successful imports return the resulting status snapshot as JSON.`
+	c.Example = `  scud validate --input proposal.json
+  scud import proposal.json
+  scud import exported-tasks.json --policy replace
+  cat proposal.json | scud import -`
 	c.Flags().StringVar(&policy, "policy", "", "Collision policy: merge or replace")
 	c.Flags().StringVar(&revision, "if-revision", "", "Only import if the current revision matches")
 	taskJSON(c)
@@ -88,6 +98,12 @@ func NewTaskListCmd() *cobra.Command {
 		}
 		return taskOutput(c, d)
 	}}
+	c.Long = `Export all phases by default as an importable schema_version: 1 JSON document.
+--tag includes the entire named phase and its transitive prerequisite phases,
+not just individual prerequisite tasks. Dependency edges are preserved so the
+export can validate and import independently. This is not a status snapshot.`
+	c.Example = `  scud list > exported-tasks.json
+  scud list --tag app > app-with-prerequisites.json`
 	c.Flags().StringVar(&tag, "tag", "", "Phase tag (includes whole prerequisite phases)")
 	taskJSON(c)
 	return c
@@ -108,6 +124,11 @@ func NewTaskShowCmd() *cobra.Command {
 			Task *model.Task `json:"task"`
 		}{r, t})
 	}}
+	c.Long = `Read one task as a JSON wrapper with "ref" (tag and id) and "task" fields.
+Use phase:id or --tag to qualify the ID; an unqualified ID must be unambiguous.
+Reading does not claim, update, or execute the task.`
+	c.Example = `  scud show main:1
+  scud show 1 --tag main`
 	c.Flags().StringVar(&tag, "tag", "", "Phase tag")
 	taskJSON(c)
 	return c
@@ -170,16 +191,35 @@ func NewTaskUpdateCmd() *cobra.Command {
 		}
 		return taskOutput(c, v)
 	}}
+	c.Long = `Update a task using patch flags OR --input JSON, never both. Use phase:id
+or --tag to qualify an ambiguous ID. Omitted fields remain unchanged.
+
+JSON patch fields: status, title, description, details, test_strategy, priority,
+complexity, dependencies, assigned_to. --depends-on replaces the entire dependency
+list (it does not append); --depends-on= or JSON dependencies: [] clears it.
+An empty assigned_to clears the assignee.
+
+Statuses: pending, in-progress, done, failed, blocked, review, expanded, deferred,
+cancelled. Priorities: critical, high, medium, low. Status is user-reported,
+not proof of verification. Invalid changes leave the task document untouched.
+--if-revision compares the current project revision before writing; it is an
+optimistic guard, not a lease or exclusive claim. Returns the updated snapshot.`
+	c.Example = `  scud update main:1 --status in-progress
+  scud update main:2 --depends-on main:1 --assigned-to alice
+  scud update main:2 --depends-on=
+  printf '%s\n' '{"test_strategy":"Run tests","dependencies":[]}' | scud update main:2 --input -
+  revision=$(scud status | jq -r .revision)
+  scud update main:1 --status review --if-revision "$revision"`
 	f := c.Flags()
 	f.StringVar(&tag, "tag", "", "Phase tag")
-	f.StringVar(&rev, "if-revision", "", "Expected revision")
+	f.StringVar(&rev, "if-revision", "", "Expected project revision (optimistic guard, not a lease)")
 	f.StringVar(&input, "input", "", "JSON patch file or - for stdin")
-	f.StringVar(&status, "status", "", "Status")
+	f.StringVar(&status, "status", "", "pending, in-progress, done, failed, blocked, review, expanded, deferred, cancelled")
 	f.StringVar(&title, "title", "", "Title")
 	f.StringVar(&description, "description", "", "Description")
 	f.StringVar(&details, "details", "", "Details")
 	f.StringVar(&strategy, "test-strategy", "", "Test strategy")
-	f.StringVar(&priority, "priority", "", "Priority")
+	f.StringVar(&priority, "priority", "", "critical, high, medium, low")
 	f.IntVar(&complexity, "complexity", 0, "Complexity")
 	f.StringSliceVar(&dependencies, "depends-on", nil, "Replace dependencies (comma-separated; use --depends-on= to clear)")
 	f.StringVar(&assignedTo, "assigned-to", "", "Assignee (empty clears)")
@@ -222,7 +262,18 @@ func NewTaskStatusCmd() *cobra.Command {
 			}
 		}
 	}}
-	c.Flags().BoolVar(&watch, "watch", false, "Stream changes as JSON lines")
+	c.Long = `Read a JSON snapshot containing schema_version, revision, phases, summary,
+ready references and blocked reasons. Readiness accounts for cross-phase and
+inherited dependencies; workflow status is not a verification certificate.
+
+--watch emits an initial snapshot and another on each observed revision change
+as JSON lines. This is polling, not an event log or heartbeat, and intermediate
+revisions may be missed. --interval is clamped to at least 100ms. Ctrl-C stops
+watching; no task is claimed or executed.`
+	c.Example = `  scud status
+  scud status | jq '{revision, summary, ready, blocked}'
+  scud status --watch --interval 500ms`
+	c.Flags().BoolVar(&watch, "watch", false, "Poll snapshots and emit observed revision changes as JSON lines")
 	c.Flags().DurationVar(&interval, "interval", time.Second, "Poll interval (minimum 100ms)")
 	taskJSON(c)
 	return c
@@ -243,6 +294,13 @@ func NewTaskNextCmd() *cobra.Command {
 		}
 		return taskOutput(c, r)
 	}}
+	c.Long = `Return only the FIRST ready reference as JSON {"tag":"...","id":"..."},
+or null when no task is ready (still exit 0). This is neither a full task nor
+the complete ready list: use show for task details or status for all ready refs.
+Readiness includes inherited and cross-phase dependencies. No task is claimed,
+leased, updated, or executed; concurrent callers can receive the same reference.`
+	c.Example = `  scud next
+  scud status | jq .ready`
 	taskJSON(c)
 	return c
 }
@@ -270,6 +328,14 @@ func NewTaskValidateCmd() *cobra.Command {
 		}
 		return taskOutput(c, v)
 	}}
+	c.Long = `Validate current project tasks, or a schema_version: 1 JSON document supplied
+with --input (file or - for stdin), without writing task state. Input validation
+can run before project initialization. Checks include references, cycles, duplicate
+IDs and parent relationships. Unknown JSON fields, duplicate keys and trailing
+values are rejected. Review a parse proposal here before importing it.`
+	c.Example = `  scud validate
+  scud validate --input proposal.json
+  cat proposal.json | scud validate --input -`
 	c.Flags().StringVar(&input, "input", "", "Validate a JSON document without writing (file or -)")
 	taskJSON(c)
 	return c

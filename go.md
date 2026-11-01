@@ -39,6 +39,27 @@ No live model/sb installation is needed for the fixture suites. Tests use
 temporary projects, fake catalogs/HTTP responses and fake sb executables.
 Root-command tests restore working directories and must not run in parallel.
 
+## Help, documentation and skills
+
+[CLI_REFERENCE.md](docs/CLI_REFERENCE.md) is generated from the registered Cobra
+command tree, including built-in help/completion. When changing help or flags:
+
+```sh
+go test ./cmd/scud -run '^TestCLIReference$' -args -update-help
+go test ./cmd/scud
+```
+
+Keep `CLAUDE.md`, bundled `.claude`/`.opencode` skills, slash-command templates,
+and onboarding hooks aligned with v3. The matching SCUD skill bodies in both
+directories must remain identical; they are active agent-facing instructions,
+not historical notes. Do not automatically mark tasks done on session exit.
+Archived research is explicitly labelled and is not current CLI guidance.
+
+Task output contracts matter: `next` returns the first reference or `null`,
+`show` returns `{ref,task}`, `list` exports a document, and `status` returns a
+snapshot. A reference is not the task body or a claim/lease. Re-read status and
+use a revision-guarded update before coordinating concurrent work.
+
 ## Code map
 
 | Area | Responsibility |
