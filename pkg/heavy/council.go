@@ -36,7 +36,7 @@ func RunCouncil(ctx context.Context, cfg *config.Config, opts CouncilOpts) (*Res
 			opts.CaptainModel = cfg.HeavyModel("synthesis")
 		}
 		if opts.CaptainModel == "" {
-			opts.CaptainModel = "grok-4.20-reasoning"
+			opts.CaptainModel = "grok-4.7"
 		}
 	}
 
