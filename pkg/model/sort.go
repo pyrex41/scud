@@ -1,6 +1,7 @@
 package model
 
 import (
+	"cmp"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,32 +21,45 @@ func NaturalSort(ids []string) {
 	})
 }
 
-// CompareIDs compares two task IDs using natural sort.
-// Split on ".", compare segments numerically where possible.
-// "1" < "1.1" < "1.2" < "1.10" < "2" < "10"
+// CompareIDs defines a total natural order on IDs split into dot-separated
+// hierarchical segments. Nonempty ASCII-digit segments precede all other
+// segments and compare as unsigned integers of arbitrary length; other segments
+// compare bytewise. Equal segments defer to later segments, then fewer segments
+// sort first. Only when the entire hierarchy is equal numerically does the
+// original byte spelling break ties (including leading zeros). Thus
+// "1" < "1.1" < "1.2" < "1.10" < "2" < "10".
 func CompareIDs(a, b string) int {
 	partsA := strings.Split(a, ".")
 	partsB := strings.Split(b, ".")
 
 	for i := 0; i < len(partsA) && i < len(partsB); i++ {
-		na, errA := strconv.Atoi(partsA[i])
-		nb, errB := strconv.Atoi(partsB[i])
-
-		if errA == nil && errB == nil {
-			if na != nb {
-				if na < nb {
-					return -1
-				}
-				return 1
+		x, y := partsA[i], partsB[i]
+		numeric := func(s string) bool {
+			if s == "" {
+				return false
 			}
-		} else {
-			// Lexicographic comparison
-			if partsA[i] != partsB[i] {
-				if partsA[i] < partsB[i] {
-					return -1
+			for j := range len(s) {
+				if s[j] < '0' || s[j] > '9' {
+					return false
 				}
-				return 1
 			}
+			return true
+		}
+		nx, ny := numeric(x), numeric(y)
+		if nx != ny {
+			if nx {
+				return -1
+			}
+			return 1
+		}
+		if nx {
+			x, y = strings.TrimLeft(x, "0"), strings.TrimLeft(y, "0")
+			if n := cmp.Compare(len(x), len(y)); n != 0 {
+				return n
+			}
+		}
+		if n := strings.Compare(x, y); n != 0 {
+			return n
 		}
 	}
 
@@ -56,7 +70,7 @@ func CompareIDs(a, b string) int {
 		}
 		return 1
 	}
-	return 0
+	return strings.Compare(a, b)
 }
 
 func parseLeadingInt(s string) int {

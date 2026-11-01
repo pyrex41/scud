@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "bash -c 'scud sync-from-claude 2>/dev/null || true'",
+            "command": "bash -c 'echo \"SCUD: review task changes explicitly with scud status; Claude tasks are not automatically imported.\"'",
             "timeout": 10,
             "type": "command"
           }
@@ -16,7 +16,7 @@
       {
         "hooks": [
           {
-            "command": "bash -c 'if [ -n \"$SCUD_TASK_ID\" ]; then scud set-status \"$SCUD_TASK_ID\" done 2>/dev/null || true; fi'",
+            "command": "bash -c 'echo \"SCUD: session exit does not complete tasks. Review scud status and report test evidence; update only when authorized.\"'",
             "timeout": 10,
             "type": "command"
           }

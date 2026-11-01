@@ -13,6 +13,11 @@ last_updated_by: claude
 
 # Research: Compare and Contrast axe vs scud
 
+> **Historical research — pre-v3.** This compares the March 2026 implementations,
+> not the current SCUD product. Old commands/configuration below are retained
+> as evidence, not instructions. Use the [current README](../../../README.md)
+> and [CLI reference](../../../docs/CLI_REFERENCE.md) for SCUD 3.x.
+
 **Date**: 2026-03-12
 **Git Commit**: b0adb02
 **Branch**: scud-go

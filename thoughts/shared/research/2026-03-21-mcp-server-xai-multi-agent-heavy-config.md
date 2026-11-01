@@ -13,6 +13,12 @@ last_updated_by: reuben
 
 # Research: MCP Server for SCUD, xAI Multi-Agent Heavy Branch, Model Configurability
 
+> **Historical research — pre-v3.** The tool names, roles/model settings and
+> session-based MCP design below describe earlier work. SCUD 3.x has a small
+> task API, main/fast defaults, experimental direct inference and stateless MCP
+> 2026-07-28. Use the [current README](../../../README.md) and
+> [CLI reference](../../../docs/CLI_REFERENCE.md), not these old setup examples.
+
 **Date**: 2026-03-21T18:22:43Z
 **Researcher**: reuben
 **Git Commit**: 7c43e1b

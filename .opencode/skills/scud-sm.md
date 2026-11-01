@@ -1,31 +1,7 @@
-# SCUD Task Manager Skill
+# SCUD v3 Task Manager Compatibility Guide
 
-Use when working with SCUD tasks, planning work, or tracking progress.
+Use `scud status`, `scud next`, `scud show TASK_ID --tag PHASE`, and `scud list` to inspect tasks. `next` returns a ready reference or null, not a claim; `show` returns a ref/task wrapper. Counts are under `summary.status` in status snapshots.
 
-## Essential Commands
+Read `scud-tasks/SKILL.md` for readiness, blockers, and revision-guarded authorized updates. Read `scud/SKILL.md` for models, PRD proposals, validation/import, and stateless MCP 2026-07-28 compatibility. Check `scud --help` for commands.
 
-```bash
-scud warmup                      # Session orientation
-scud next                        # Find next available task
-scud show <id>                   # Task details
-scud list [--status pending]     # List tasks
-scud set-status <id> <status>    # Update status
-scud stats                       # Progress statistics
-scud waves                       # Parallel execution plan
-scud commit -m "msg"             # Task-aware git commit
-scud heavy "query" -v            # Multi-agent reasoning
-scud mcp-server                  # Start MCP server
-```
-
-## Workflow
-
-1. `scud warmup` - orient
-2. `scud next` - find available task
-3. `scud set-status <id> in-progress` - claim it
-4. Implement the task
-5. `scud commit -m "message"` - commit with task prefix
-6. `scud set-status <id> done` - complete
-
-## Status Values
-
-`pending`, `in-progress`, `done`, `blocked`, `failed`, `review`, `expanded`, `deferred`, `cancelled`
+Do not use removed warmup, set-status, stats, waves, heavy, execution, git, or claim-lock commands. Do not automatically update task status at session exit. `done` is user-reported workflow state, not verification.

@@ -2,51 +2,12 @@
 event: session:start
 ---
 
-# SCUD Skills Bootstrap
+# SCUD v3 Skills Bootstrap
 
-You have access to the **SCUD task management system** with skills that provide specialized knowledge and workflows.
+Discover available skills using the environment's skill tools. Read `scud-tasks` for task status/readiness and `scud-guide` for CLI, PRDs, model defaults, imports, and MCP setup. Use native read/edit/shell tools; SCUD itself does not spawn agents or execute workers.
 
-## Available Skills
+When task orientation is relevant, query `scud status` and `scud next`. Inspect `scud show TASK_ID --tag PHASE` before working. Read counts under `summary.status`, and inspect `ready`/`blocked`. `next` returns a first ready reference or null, not a reservation or priority guarantee.
 
-Use the `find_skills` tool to discover available skills, then `use_skill` to activate them.
+Use `/task-list`, `/task-next`, `/task-show`, and `/task-status` for supported inspection/update guidance. Retained `/task-stats`, `/task-waves`, `/task-tags`, `/task-whois`, and `/task-doctor` aliases explain current queries. `/task-claim` and `/task-release` explain revision-guarded status changes, not ownership locks. Do not silently turn their arguments into mutations.
 
-### SCUD Task Management Skill
-
-The `scud-tasks` skill provides comprehensive task management capabilities:
-
-- **Task viewing**: `scud list`, `scud show`
-- **Status updates**: `scud set-status`
-- **Parallel work**: `scud claim`, `scud release`, `scud whois`
-- **Finding work**: `scud next`, `scud waves`
-- **Progress tracking**: `scud stats`, `scud tags`
-
-### Tool Translation
-
-When skills reference Claude Code tools, use OpenCode equivalents:
-- `TodoWrite` → `update_plan`
-- `Task` tool with subagents → Use OpenCode's subagent system (@mention)
-- `Skill` tool → `use_skill` custom tool
-- `Read`, `Write`, `Edit`, `Bash` → Your native tools
-
-## Task Commands
-
-These slash commands are available for task management:
-- `/task-list` - List tasks with optional status filter
-- `/task-next` - Find next available task
-- `/task-show` - Show task details
-- `/task-status` - Update task status
-- `/task-claim` - Claim a task lock
-- `/task-release` - Release a task lock
-- `/task-waves` - Show parallel execution waves
-- `/task-stats` - Show completion statistics
-- `/task-whois` - Show who is working on tasks
-- `/task-tags` - List or set active tag
-- `/task-doctor` - Diagnose task issues
-
-## SCUD Quick Start
-
-To get started with SCUD:
-1. Create or import tasks with `scud parse-prd` or manually
-2. Use `/scud:task-next` to find available work
-3. Claim tasks with `/scud:task-claim` to prevent conflicts
-4. Update status with `/scud:task-status` as you progress
+Keep proposal generation, validation, and reviewed import separate. Use explicit merge/replace policies and fresh revision guards for imports and authorized updates. Do not automatically start, claim, or mark tasks done on session entry/exit; completion is user-reported and needs separate test evidence. For flags consult `scud --help`, repository `README.md`, or `docs/CLI_REFERENCE.md`.

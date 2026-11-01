@@ -17,6 +17,12 @@ func TestDefaultValues(t *testing.T) {
 	if cfg.Swarm.Tiers.Standard != "grok-4.7" {
 		t.Errorf("default Swarm.Tiers.Standard = %q, want grok-4.7", cfg.Swarm.Tiers.Standard)
 	}
+	if cfg.Rho.Provider != "xai" {
+		t.Errorf("default Rho.Provider = %q, want xai", cfg.Rho.Provider)
+	}
+	if cfg.Executor.Kind != "legacy" {
+		t.Errorf("default Executor.Kind = %q, want legacy", cfg.Executor.Kind)
+	}
 	if cfg.LLM.Provider != "xai" {
 		t.Errorf("LLM.Provider = %q, want %q", cfg.LLM.Provider, "xai")
 	}
@@ -83,6 +89,20 @@ func TestEnvOverrides(t *testing.T) {
 		check func(*Config) string
 		want  string
 	}{
+		{
+			name:  "SCUD_EXECUTOR overrides Executor.Kind",
+			env:   "SCUD_EXECUTOR",
+			value: "rho-v1",
+			check: func(c *Config) string { return c.Executor.Kind },
+			want:  "rho-v1",
+		},
+		{
+			name:  "SCUD_RHO_PROVIDER overrides Rho.Provider",
+			env:   "SCUD_RHO_PROVIDER",
+			value: "anthropic",
+			check: func(c *Config) string { return c.Rho.Provider },
+			want:  "anthropic",
+		},
 		{
 			name:  "SCUD_MODEL overrides Rho.Model",
 			env:   "SCUD_MODEL",
@@ -247,6 +267,20 @@ func TestModelForTier(t *testing.T) {
 				t.Errorf("ModelForTier(%q) = %q, want %q", tt.tier, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestProviderForTier(t *testing.T) {
+	cfg := Default()
+	cfg.Rho.Provider = "openai"
+	cfg.Rho.FastProvider = "xai"
+	cfg.Rho.SmartProvider = "anthropic"
+	for tier, want := range map[string]string{
+		"fast": "xai", "standard": "openai", "smart": "anthropic", "unknown": "openai",
+	} {
+		if got := cfg.ProviderForTier(tier); got != want {
+			t.Errorf("ProviderForTier(%q) = %q, want %q", tier, got, want)
+		}
 	}
 }
 

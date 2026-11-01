@@ -9,7 +9,7 @@ import (
 )
 
 func NewSwarmCmd() *cobra.Command {
-	var tag string
+	var tag, executorKind, provider string
 	var dryRun, noValidate, noRepair, allTags bool
 	var roundSize int
 
@@ -25,6 +25,10 @@ func NewSwarmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			runner, err := configuredExecutor(cfg, executorKind, provider, "", store.Root())
+			if err != nil {
+				return err
+			}
 
 			opts := swarm.RunOpts{
 				DryRun:     dryRun,
@@ -32,6 +36,8 @@ func NewSwarmCmd() *cobra.Command {
 				NoRepair:   noRepair,
 				AllTags:    allTags,
 				RoundSize:  roundSize,
+				Executor:   runner,
+				Provider:   provider,
 			}
 
 			if allTags {
@@ -53,5 +59,7 @@ func NewSwarmCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&noRepair, "no-repair", false, "Skip ralph recovery loop on failure")
 	cmd.Flags().BoolVar(&allTags, "all-tags", false, "Iterate all phases/tags in order")
 	cmd.Flags().IntVarP(&roundSize, "round-size", "n", 0, "Round size override (0 = use config)")
+	cmd.Flags().StringVar(&executorKind, "executor", "", "Agent executor override: legacy or rho-v1")
+	cmd.Flags().StringVar(&provider, "provider", "", "Provider override for rho-v1 (anthropic, openai, xai)")
 	return cmd
 }

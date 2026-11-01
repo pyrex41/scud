@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: fast-proposal-reviewed-import
+expected_outcome: |
+  Gives advice only: discover using models list, select the fast default using models set fast, parse with --model fast into a proposal, validate the proposal, review it, and import with an explicit merge/replace policy and fresh revision guard. Distinguishes proposal file output and model configuration from stored task writes. Does not invent model IDs, run providers, mutate tasks, or imply parsing imports tasks.

@@ -1,433 +1,338 @@
+// Package mcp exposes the task API using stateless MCP 2026-07-28. Tool
+// arguments remain raw JSON until strict typed decoding; no float64/map roundtrip.
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/reuben/scud/internal/config"
+	"github.com/reuben/scud/internal/sbintegration"
 	"github.com/reuben/scud/internal/storage"
-	"github.com/reuben/scud/pkg/heavy"
-	"github.com/reuben/scud/pkg/model"
+	"github.com/reuben/scud/internal/taskapi"
+	"github.com/reuben/scud/pkg/generate"
+	"github.com/reuben/scud/pkg/llm"
 )
 
-const maxResponseLen = 4096
+const ProtocolVersion = "2026-07-28"
 
-// Serve starts an MCP stdio server exposing scud tools.
-func Serve(version string) error {
-	s := server.NewMCPServer("scud", version)
-	registerTools(s)
-	return server.ServeStdio(s)
+type argumentSchema struct {
+	Type        string   `json:"type"`
+	Description string   `json:"description,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
 }
 
-func registerTools(s *server.MCPServer) {
-	tier := os.Getenv("SCUD_TOOLS")
-	if tier == "" {
-		tier = "core"
-	}
-
-	// Core tools — always registered
-	s.AddTool(toolWarmup(), handleWarmup)
-	s.AddTool(toolNext(), handleNext)
-	s.AddTool(toolShow(), handleShow)
-	s.AddTool(toolSetStatus(), handleSetStatus)
-	s.AddTool(toolStats(), handleStats)
-	s.AddTool(toolCommit(), handleCommit)
-
-	if tier == "full" || tier == "all" || containsTool(tier, "list") {
-		s.AddTool(toolList(), handleList)
-	}
-	if tier == "full" || tier == "all" || containsTool(tier, "heavy") {
-		s.AddTool(toolHeavy(), handleHeavy)
-	}
-	if tier == "full" || tier == "all" || containsTool(tier, "create") {
-		s.AddTool(toolCreate(), handleCreate)
-	}
-
-	// Custom comma-separated list — add individual tools
-	if tier != "core" && tier != "full" && tier != "all" {
-		for _, name := range strings.Split(tier, ",") {
-			switch strings.TrimSpace(name) {
-			case "warmup", "next", "show", "set-status", "stats", "commit":
-				// already registered as core
-			case "list":
-				s.AddTool(toolList(), handleList)
-			case "heavy":
-				s.AddTool(toolHeavy(), handleHeavy)
-			case "create":
-				s.AddTool(toolCreate(), handleCreate)
-			}
-		}
-	}
+type objectSchema struct {
+	Type                 string                    `json:"type"`
+	Properties           map[string]argumentSchema `json:"properties"`
+	Required             []string                  `json:"required,omitempty"`
+	AdditionalProperties bool                      `json:"additionalProperties"`
 }
 
-func containsTool(tier, name string) bool {
-	for _, t := range strings.Split(tier, ",") {
-		if strings.TrimSpace(t) == name {
-			return true
-		}
-	}
-	return false
+type definition struct {
+	tool    *sdk.Tool
+	handler sdk.ToolHandler
 }
 
-// --- Tool Definitions ---
-
-func toolWarmup() mcp.Tool {
-	return mcp.NewTool("scud_warmup",
-		mcp.WithDescription("Session orientation: show project status, recent git history, and next task"),
-	)
-}
-
-func toolNext() mcp.Tool {
-	return mcp.NewTool("scud_next",
-		mcp.WithDescription("Find the next available task based on DAG dependencies"),
-	)
-}
-
-func toolShow() mcp.Tool {
-	return mcp.NewTool("scud_show",
-		mcp.WithDescription("Show details for a specific task"),
-		mcp.WithString("id", mcp.Required(), mcp.Description("Task ID, e.g. '1' or '1.2'")),
-	)
-}
-
-func toolSetStatus() mcp.Tool {
-	return mcp.NewTool("scud_set_status",
-		mcp.WithDescription("Update the status of a task"),
-		mcp.WithString("id", mcp.Required(), mcp.Description("Task ID")),
-		mcp.WithString("status", mcp.Required(), mcp.Description("New status: pending, in-progress, done, blocked, failed")),
-	)
-}
-
-func toolStats() mcp.Tool {
-	return mcp.NewTool("scud_stats",
-		mcp.WithDescription("Show task completion statistics"),
-	)
-}
-
-func toolCommit() mcp.Tool {
-	return mcp.NewTool("scud_commit",
-		mcp.WithDescription("Task-aware git commit with auto-prefixed task ID"),
-		mcp.WithString("message", mcp.Description("Commit message (optional, uses task title if empty)")),
-	)
-}
-
-func toolList() mcp.Tool {
-	return mcp.NewTool("scud_list",
-		mcp.WithDescription("List all tasks with status"),
-		mcp.WithString("status", mcp.Description("Filter by status: pending, in-progress, done")),
-	)
-}
-
-func toolHeavy() mcp.Tool {
-	return mcp.NewTool("scud_heavy",
-		mcp.WithDescription("Run multi-agent reasoning ensemble"),
-		mcp.WithString("query", mcp.Required(), mcp.Description("The question or task to analyze")),
-		mcp.WithString("mode", mcp.Description("ensemble (default), native, hybrid")),
-		mcp.WithString("model_agents", mcp.Description("Model for agent execution (e.g. grok-4.1-fast)")),
-		mcp.WithString("model_synthesis", mcp.Description("Model for synthesis (e.g. grok-4.20-reasoning)")),
-	)
-}
-
-func toolCreate() mcp.Tool {
-	return mcp.NewTool("scud_create",
-		mcp.WithDescription("Create a new task"),
-		mcp.WithString("title", mcp.Required(), mcp.Description("Task title")),
-	)
-}
-
-// --- Handlers ---
-
-func getStoreAndConfig() (*storage.Storage, *config.Config, error) {
-	cwd, err := os.Getwd()
+// NewServer supports only the current stateless protocol: server/discover and
+// tools calls work immediately, with version/capabilities supplied per request.
+func NewServer(version, selection, root string) (*sdk.Server, error) {
+	names, err := selectedTools(selection)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getwd: %w", err)
+		return nil, err
 	}
-	root, err := storage.FindRoot(cwd)
-	if err != nil {
-		return nil, nil, fmt.Errorf("no .scud directory found (run 'scud init' first)")
-	}
-	store := storage.New(root)
-	cfg, err := config.Load(store.ScudDir())
-	if err != nil {
-		cfg = config.Default()
-	}
-	return store, cfg, nil
-}
-
-func textResult(text string) *mcp.CallToolResult {
-	if len(text) > maxResponseLen {
-		text = text[:maxResponseLen] + "\n... (truncated)"
-	}
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{mcp.NewTextContent(text)},
-	}
-}
-
-func errResult(err error) *mcp.CallToolResult {
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{mcp.NewTextContent(err.Error())},
-		IsError: true,
-	}
-}
-
-func handleWarmup(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	store, _, err := getStoreAndConfig()
-	if err != nil {
-		return errResult(err), nil
-	}
-	phases, err := store.LoadPhases()
-	if err != nil {
-		return errResult(err), nil
-	}
-
-	var sb strings.Builder
-	for name, phase := range phases {
-		total := len(phase.Tasks)
-		done := 0
-		inProgress := 0
-		for _, t := range phase.Tasks {
-			switch t.Status {
-			case model.Done:
-				done++
-			case model.InProgress:
-				inProgress++
-			}
-		}
-		sb.WriteString(fmt.Sprintf("Phase: %s | %d tasks (%d done, %d in-progress, %d remaining)\n",
-			name, total, done, inProgress, total-done-inProgress))
-	}
-
-	// Find next task
-	for _, phase := range phases {
-		if t := phase.FindNextTask(phases); t != nil {
-			sb.WriteString(fmt.Sprintf("\nNext task: %s - %s\n", t.ID, t.Title))
-			break
-		}
-	}
-
-	return textResult(sb.String()), nil
-}
-
-func handleNext(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	store, _, err := getStoreAndConfig()
-	if err != nil {
-		return errResult(err), nil
-	}
-	phases, err := store.LoadPhases()
-	if err != nil {
-		return errResult(err), nil
-	}
-	for _, phase := range phases {
-		if t := phase.FindNextTask(phases); t != nil {
-			return textResult(fmt.Sprintf("Next task: %s\nTitle: %s\nStatus: %s\nPriority: %s\nComplexity: %d\n\n%s",
-				t.ID, t.Title, t.Status, t.Priority, t.Complexity, t.Description)), nil
-		}
-	}
-	return textResult("No tasks available. All tasks are done or blocked."), nil
-}
-
-func handleShow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	id, _ := args["id"].(string)
-	if id == "" {
-		return errResult(fmt.Errorf("id is required")), nil
-	}
-
-	store, _, err := getStoreAndConfig()
-	if err != nil {
-		return errResult(err), nil
-	}
-	phases, err := store.LoadPhases()
-	if err != nil {
-		return errResult(err), nil
-	}
-	for _, phase := range phases {
-		for _, t := range phase.Tasks {
-			if t.ID == id {
-				var sb strings.Builder
-				sb.WriteString(fmt.Sprintf("ID: %s\nTitle: %s\nStatus: %s\nPriority: %s\nComplexity: %d\n",
-					t.ID, t.Title, t.Status, t.Priority, t.Complexity))
-				if len(t.Dependencies) > 0 {
-					sb.WriteString(fmt.Sprintf("Dependencies: %s\n", strings.Join(t.Dependencies, ", ")))
-				}
-				if t.Description != "" {
-					sb.WriteString(fmt.Sprintf("\nDescription:\n%s\n", t.Description))
-				}
-				if t.Details != "" {
-					sb.WriteString(fmt.Sprintf("\nDetails:\n%s\n", t.Details))
-				}
-				return textResult(sb.String()), nil
-			}
-		}
-	}
-	return errResult(fmt.Errorf("task %q not found", id)), nil
-}
-
-func handleSetStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	id, _ := args["id"].(string)
-	status, _ := args["status"].(string)
-	if id == "" || status == "" {
-		return errResult(fmt.Errorf("id and status are required")), nil
-	}
-
-	store, _, err := getStoreAndConfig()
-	if err != nil {
-		return errResult(err), nil
-	}
-
-	err = store.UpdatePhase("", func(phase *model.Phase) error {
-		for _, t := range phase.Tasks {
-			if t.ID == id {
-				t.Status = model.TaskStatus(status)
-				return nil
-			}
-		}
-		return fmt.Errorf("task %q not found", id)
+	s := sdk.NewServer(&sdk.Implementation{Name: "scud", Version: version}, &sdk.ServerOptions{
+		SupportedProtocolVersions: []string{ProtocolVersion},
 	})
-	if err != nil {
-		return errResult(err), nil
-	}
-	return textResult(fmt.Sprintf("Task %s status set to %s", id, status)), nil
-}
-
-func handleStats(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	store, _, err := getStoreAndConfig()
-	if err != nil {
-		return errResult(err), nil
-	}
-	phases, err := store.LoadPhases()
-	if err != nil {
-		return errResult(err), nil
-	}
-
-	var sb strings.Builder
-	totalAll, doneAll := 0, 0
-	for name, phase := range phases {
-		stats := phase.Stats()
-		totalAll += stats.Total
-		doneAll += stats.Done
-		sb.WriteString(fmt.Sprintf("%s: %d/%d done (%.0f%%)\n",
-			name, stats.Done, stats.Total,
-			float64(stats.Done)/float64(max(stats.Total, 1))*100))
-	}
-	if len(phases) > 1 {
-		sb.WriteString(fmt.Sprintf("\nOverall: %d/%d done (%.0f%%)\n",
-			doneAll, totalAll,
-			float64(doneAll)/float64(max(totalAll, 1))*100))
-	}
-	return textResult(sb.String()), nil
-}
-
-func handleCommit(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	message, _ := args["message"].(string)
-
-	cmdArgs := []string{"commit"}
-	if message != "" {
-		cmdArgs = append(cmdArgs, "-m", message)
-	}
-	out, err := exec.CommandContext(ctx, "scud", cmdArgs...).CombinedOutput()
-	if err != nil {
-		return errResult(fmt.Errorf("%s: %s", err, string(out))), nil
-	}
-	return textResult(string(out)), nil
-}
-
-func handleList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	statusFilter, _ := args["status"].(string)
-
-	store, _, err := getStoreAndConfig()
-	if err != nil {
-		return errResult(err), nil
-	}
-	phases, err := store.LoadPhases()
-	if err != nil {
-		return errResult(err), nil
-	}
-
-	var sb strings.Builder
-	for _, phase := range phases {
-		for _, t := range phase.Tasks {
-			if statusFilter != "" && string(t.Status) != statusFilter {
-				continue
+	// Do not leave a second, legacy handshake API enabled by the SDK's
+	// backwards-compatibility machinery.
+	s.AddReceivingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
+		return func(ctx context.Context, method string, request sdk.Request) (sdk.Result, error) {
+			if method == "initialize" || method == "notifications/initialized" {
+				return nil, &jsonrpc.Error{Code: jsonrpc.CodeMethodNotFound, Message: "Use stateless MCP 2026-07-28 per-request metadata; initialization is not supported"}
 			}
-			sb.WriteString(fmt.Sprintf("%-8s %-12s %s\n", t.ID, t.Status, t.Title))
+			if !strings.HasPrefix(method, "notifications/") {
+				// The SDK retains legacy fallback state for other consumers.
+				// Inspect THIS request's literal metadata, never ProtocolVersion()
+				// or ClientCapabilities(), which can fall back to that state.
+				params := request.GetParams()
+				if params == nil || (reflect.ValueOf(params).Kind() == reflect.Pointer && reflect.ValueOf(params).IsNil()) {
+					return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "Every request requires params._meta with protocol version and client capabilities"}
+				}
+				meta := params.GetMeta()
+				version, versionOK := meta["io.modelcontextprotocol/protocolVersion"].(string)
+				capabilities, capabilitiesOK := meta["io.modelcontextprotocol/clientCapabilities"].(map[string]any)
+				if !versionOK || !capabilitiesOK || capabilities == nil {
+					return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "Every request requires its own protocolVersion and object clientCapabilities metadata"}
+				}
+				if version != ProtocolVersion {
+					data, _ := json.Marshal(struct {
+						Supported []string `json:"supported"`
+						Requested string   `json:"requested"`
+					}{[]string{ProtocolVersion}, version})
+					return nil, &jsonrpc.Error{Code: -32022, Message: "Unsupported protocol version", Data: data}
+				}
+			}
+			return next(ctx, method, request)
 		}
-	}
-	if sb.Len() == 0 {
-		return textResult("No tasks found."), nil
-	}
-	return textResult(sb.String()), nil
-}
-
-func handleHeavy(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	query, _ := args["query"].(string)
-	if query == "" {
-		return errResult(fmt.Errorf("query is required")), nil
-	}
-
-	mode, _ := args["mode"].(string)
-	modelAgents, _ := args["model_agents"].(string)
-	modelSynthesis, _ := args["model_synthesis"].(string)
-
-	_, cfg, _ := getStoreAndConfig()
-	if cfg == nil {
-		cfg = config.Default()
-	}
-
-	cwd, _ := os.Getwd()
-	opts := heavy.RunOpts{
-		Query:          query,
-		Mode:           mode,
-		ModelAgents:    modelAgents,
-		ModelSynthesis: modelSynthesis,
-		WorkingDir:     cwd,
-		TimeoutSecs:    300,
-	}
-
-	result, err := heavy.Run(ctx, cfg, opts)
-	if err != nil {
-		return errResult(err), nil
-	}
-	return textResult(result.Synthesis), nil
-}
-
-func handleCreate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	title, _ := args["title"].(string)
-	if title == "" {
-		return errResult(fmt.Errorf("title is required")), nil
-	}
-
-	store, _, err := getStoreAndConfig()
-	if err != nil {
-		return errResult(err), nil
-	}
-
-	var newID string
-	err = store.UpdatePhase("", func(phase *model.Phase) error {
-		newID = phase.NextTaskID()
-		t := &model.Task{
-			ID:        newID,
-			Title:     title,
-			Status:    model.Pending,
-			Priority:  model.Medium,
-			CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		}
-		phase.Tasks = append(phase.Tasks, t)
-		return nil
 	})
-	if err != nil {
-		return errResult(err), nil
+	all := definitions(root)
+	for _, name := range names {
+		d := all[name]
+		// The low-level method intentionally bypasses the SDK's map/default
+		// normalization: the typed binder below is the argument validator.
+		s.AddTool(d.tool, d.handler)
 	}
-	return textResult(fmt.Sprintf("Created task %s: %s", newID, title)), nil
+	return s, nil
+}
+
+func selectedTools(selection string) ([]string, error) {
+	core := []string{"tasks", "import", "update", "status", "parse"}
+	if selection == "" || selection == "core" {
+		return core, nil
+	}
+	if selection == "full" {
+		return append(core, "sb"), nil
+	}
+	known := map[string]bool{"tasks": true, "import": true, "update": true, "status": true, "parse": true, "sb": true}
+	names, seen := []string{}, map[string]bool{}
+	for _, raw := range strings.Split(selection, ",") {
+		name := strings.TrimPrefix(strings.TrimSpace(raw), "scud_")
+		if !known[name] {
+			return nil, fmt.Errorf("unknown SCUD_TOOLS entry %q; use core, full, or tasks,import,update,status,parse,sb", raw)
+		}
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+type taskQuery struct {
+	Tag   string `json:"tag,omitempty"`
+	ID    string `json:"id,omitempty"`
+	Ready bool   `json:"ready,omitempty"`
+}
+type importArgs struct {
+	Document   taskapi.Document `json:"document"`
+	Policy     string           `json:"policy,omitempty"`
+	IfRevision string           `json:"if_revision,omitempty"`
+}
+type updateArgs struct {
+	ID         string        `json:"id"`
+	Tag        string        `json:"tag,omitempty"`
+	Patch      taskapi.Patch `json:"patch"`
+	IfRevision string        `json:"if_revision,omitempty"`
+}
+type parseArgs struct {
+	Content string `json:"content"`
+	Model   string `json:"model,omitempty"`
+	Tag     string `json:"tag,omitempty"`
+}
+type sbArgs struct {
+	Operation string `json:"operation"`
+}
+
+func definitions(root string) map[string]definition {
+	str, obj := argumentSchema{Type: "string"}, argumentSchema{Type: "object"}
+	service := func() (*taskapi.Service, error) { return taskapi.Open(root) }
+	return map[string]definition{
+		"tasks": bind("scud_tasks", "Read the task document, one task (id), or ready refs (ready=true). A tag-filtered document includes prerequisite phases so it remains importable.", true, false,
+			map[string]argumentSchema{"tag": str, "id": str, "ready": {Type: "boolean"}}, nil,
+			func(ctx context.Context, args taskQuery) (any, error) {
+				if args.ID != "" && args.Ready {
+					return nil, fmt.Errorf("id and ready are mutually exclusive")
+				}
+				s, err := service()
+				if err != nil {
+					return nil, err
+				}
+				if args.ID != "" {
+					t, ref, err := s.ReadTask(ctx, taskapi.Ref{Tag: args.Tag, ID: args.ID})
+					return struct {
+						Ref  taskapi.Ref `json:"ref"`
+						Task any         `json:"task"`
+					}{ref, t}, err
+				}
+				snap, err := s.Snapshot(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if args.Ready {
+					refs := []taskapi.Ref{}
+					for _, ref := range snap.Ready {
+						if args.Tag == "" || ref.Tag == args.Tag {
+							refs = append(refs, ref)
+						}
+					}
+					return struct {
+						Revision string        `json:"revision"`
+						Ready    []taskapi.Ref `json:"ready"`
+					}{snap.Revision, refs}, nil
+				}
+				return taskapi.FilterDocument(taskapi.Document{SchemaVersion: 1, Phases: snap.Phases}, args.Tag)
+			}),
+		"status": bind("scud_status", "Fresh task counts, revision, ready refs and dependency blockers. Workflow status is user-reported, not verification.", true, false,
+			map[string]argumentSchema{}, nil, func(ctx context.Context, _ struct{}) (any, error) {
+				s, err := service()
+				if err != nil {
+					return nil, err
+				}
+				return s.Snapshot(ctx)
+			}),
+		"import": bind("scud_import", "Atomically ingest an importable document; colliding phases require explicit merge or replace. Optional revision guard prevents lost updates.", false, false,
+			map[string]argumentSchema{"document": obj, "policy": {Type: "string", Enum: []string{"merge", "replace"}}, "if_revision": str}, []string{"document"},
+			func(ctx context.Context, args importArgs) (any, error) {
+				s, err := service()
+				if err != nil {
+					return nil, err
+				}
+				return s.Import(ctx, args.Document, taskapi.ImportOptions{Policy: args.Policy, ExpectedRevision: args.IfRevision})
+			}),
+		"update": bind("scud_update", "Patch one task. Unspecified fields stay unchanged; status changes do not run workers or imply verification.", false, false,
+			map[string]argumentSchema{"id": str, "tag": str, "patch": obj, "if_revision": str}, []string{"id", "patch"},
+			func(ctx context.Context, args updateArgs) (any, error) {
+				if strings.TrimSpace(args.ID) == "" {
+					return nil, fmt.Errorf("a nonempty task id is required")
+				}
+				s, err := service()
+				if err != nil {
+					return nil, err
+				}
+				return s.Update(ctx, taskapi.Ref{Tag: args.Tag, ID: args.ID}, args.Patch, args.IfRevision)
+			}),
+		"parse": bind("scud_parse", "Propose an importable task document from PRD text using main or fast. Calls a model, never persists tasks or edits source.", true, true,
+			map[string]argumentSchema{"content": str, "model": {Type: "string", Enum: []string{"main", "fast"}}, "tag": str}, []string{"content"},
+			func(ctx context.Context, args parseArgs) (any, error) {
+				name := args.Model
+				if name == "" {
+					name = "main"
+				}
+				project, err := storage.FindRoot(root)
+				if err != nil {
+					return nil, err
+				}
+				cfg, err := config.LoadModelDefaults(filepath.Join(project, ".scud"))
+				if err != nil {
+					return nil, err
+				}
+				target, err := cfg.ResolveModelTarget(name)
+				if err != nil {
+					return nil, err
+				}
+				caller, err := llm.NewTargetClient(target)
+				if err != nil {
+					return nil, err
+				}
+				return generate.Propose(ctx, caller, args.Content, generate.ProposalOptions{Tag: args.Tag})
+			}),
+		"sb": bind("scud_sb", "Optional public sb commands. check/gen/derive may edit generated files. Results never modify task status; report presence is not proof.", false, true,
+			map[string]argumentSchema{"operation": {Type: "string", Enum: []string{"status", "check", "context", "derive", "audit", "gen"}}}, []string{"operation"},
+			func(ctx context.Context, args sbArgs) (any, error) {
+				project, err := sbintegration.FindRoot(root)
+				if err != nil {
+					return nil, err
+				}
+				client := sbintegration.Client{Root: project, Timeout: 5 * time.Minute}
+				if args.Operation == "status" {
+					return client.State()
+				}
+				r, err := client.Run(ctx, args.Operation)
+				if err != nil {
+					b, _ := json.Marshal(r)
+					return nil, fmt.Errorf("%w\n%s", err, b)
+				}
+				return r, nil
+			}),
+	}
+}
+
+// bind retains raw lexemes until strict decoding into T. Schema checks also
+// reject null/wrong primitive argument types rather than treating them as absent.
+func bind[T any](name, description string, readOnly, openWorld bool, properties map[string]argumentSchema, required []string, run func(context.Context, T) (any, error)) definition {
+	schema := objectSchema{Type: "object", Properties: properties, Required: required}
+	return definition{
+		tool: &sdk.Tool{Name: name, Description: description, InputSchema: schema,
+			Annotations: &sdk.ToolAnnotations{ReadOnlyHint: readOnly, OpenWorldHint: new(openWorld), DestructiveHint: new(!readOnly)}},
+		handler: func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
+			raw := req.Params.Arguments
+			if len(raw) == 0 {
+				raw = json.RawMessage(`{}`)
+			}
+			args, err := decodeArguments[T](raw, schema)
+			if err != nil {
+				return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: err.Error()}
+			}
+			value, err := run(ctx, args)
+			if err != nil {
+				return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: err.Error()}}}, nil
+			}
+			b, err := json.Marshal(value)
+			if err != nil {
+				return nil, err
+			}
+			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: string(b)}}, StructuredContent: value}, nil
+		},
+	}
+}
+
+func decodeArguments[T any](raw json.RawMessage, schema objectSchema) (T, error) {
+	var zero T
+	fields, err := taskapi.Decode[map[string]json.RawMessage](bytes.NewReader(raw))
+	if err != nil {
+		return zero, err
+	}
+	if fields == nil {
+		return zero, fmt.Errorf("arguments must be an object")
+	}
+	for _, key := range schema.Required {
+		if _, exists := fields[key]; !exists {
+			return zero, fmt.Errorf("%s is required", key)
+		}
+	}
+	for key, value := range fields {
+		property, exists := schema.Properties[key]
+		if !exists {
+			return zero, fmt.Errorf("unknown argument %q", key)
+		}
+		v := bytes.TrimSpace(value)
+		valid := len(v) != 0
+		if valid {
+			switch property.Type {
+			case "string":
+				valid = v[0] == '"'
+			case "object":
+				valid = v[0] == '{'
+			case "boolean":
+				valid = bytes.Equal(v, []byte("true")) || bytes.Equal(v, []byte("false"))
+			}
+		}
+		if !valid {
+			return zero, fmt.Errorf("%s must be a %s", key, property.Type)
+		}
+		if len(property.Enum) != 0 {
+			var text string
+			_ = json.Unmarshal(value, &text)
+			match := false
+			for _, allowed := range property.Enum {
+				if text == allowed {
+					match = true
+					break
+				}
+			}
+			if !match {
+				return zero, fmt.Errorf("%s must be one of %s", key, strings.Join(property.Enum, ", "))
+			}
+		}
+	}
+	return taskapi.Decode[T](bytes.NewReader(raw))
 }

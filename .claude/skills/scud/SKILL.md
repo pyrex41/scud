@@ -1,108 +1,80 @@
 ---
 name: scud-guide
-description: SCUD CLI reference and workflow guide. Use when working with scud task management, running scud commands, or when the user mentions tasks, waves, DAG, or project progress.
+description: SCUD v3 CLI guide for turning PRDs into task proposals, validating and importing task JSON, discovering and setting main/fast models, and configuring stateless MCP. Use for SCUD commands and setup; use scud-tasks for current readiness, progress, and task status updates.
 ---
 
-# SCUD CLI Guide
+# SCUD v3 CLI Guide
 
-SCUD is a DAG-based task manager for AI-driven development. Tasks have dependencies, priorities, and complexity scores. Work flows through parallel waves.
+Use `scud --help` and `scud COMMAND --help` for exact flags. Consult the repository `README.md` and `docs/CLI_REFERENCE.md` for the complete reference. SCUD manages a dependency graph; it does not execute task workers, manage git, or lease tasks.
 
-## Session Workflow
+## Orient without changing tasks
 
 ```bash
-scud warmup              # Orient: status, git history, next task
-scud next                # Find next available task (deps satisfied)
-scud set-status ID in-progress
-# ... do the work ...
-scud commit -m "message" # Auto-prefixes [TASK-ID]
-scud set-status ID done
-scud stats               # Check progress
+scud status
+scud next
+scud show TASK_ID --tag PHASE
+scud list
 ```
 
-## Commands
+- Read `status` as a snapshot: `schema_version`, `revision`, `phases`, `summary.total`, `summary.status`, `ready`, and `blocked`. Counts live under `summary.status`, not a top-level `status` field.
+- Read `next` as the first `{ "tag": "…", "id": "…" }` in the canonical ready order, or JSON `null`. It is not a task object, priority-ranking promise, reservation, or claim.
+- Read `show` as `{ "ref": {"tag": "…", "id": "…"}, "task": {...} }`.
+- Read `list` as an importable `{ "schema_version": 1, "phases": [...] }` document. `list --tag PHASE` includes the transitive closure of whole prerequisite phases, not just that phase. There is no active-tag switch or `list --status` filter.
+- Use `scud status --watch --interval 1s` for polling-based JSONL snapshots on changes, not an event log or lease feed.
 
-| Category | Command | Description |
-|----------|---------|-------------|
-| **Session** | `scud warmup` | Orient with status + next task |
-| **View** | `scud list [--status pending]` | List tasks |
-| | `scud show ID` | Task details |
-| | `scud stats` | Completion statistics |
-| **Work** | `scud next` | Next ready task |
-| | `scud waves` | Parallel execution waves |
-| | `scud set-status ID STATUS` | Update status |
-| | `scud create --title "..."` | Create a task |
-| | `scud assign ID @dev` | Assign task |
-| **Git** | `scud commit -m "msg"` | [TASK-ID] prefixed commit |
-| **AI** | `scud parse FILE` | Generate tasks from doc |
-| | `scud expand ID` | Break into subtasks |
-| | `scud heavy "query"` | Multi-agent reasoning ensemble |
-| **Tags** | `scud tags` | List/switch phases |
-| **Utils** | `scud mermaid` | Export DAG as Mermaid |
-| | `scud doctor` | Diagnose issues |
-| **Server** | `scud mcp-server` | Start MCP server for tool integration |
+## Discover main and fast defaults
 
-## Heavy Ensemble
-
-Run a multi-agent reasoning ensemble with per-role model control:
+Use authenticated provider discovery rather than inventing model IDs or editing TOML manually:
 
 ```bash
-# Default: all agents use same model
-scud heavy "What does the auth module do?" -v
-
-# Cost-optimized: cheap agents, smart synthesis
-scud heavy "query" --model-agents grok-4.1-fast --model-synthesis grok-4.20-reasoning
-
-# Hybrid: local file analysis + web research in parallel
-scud heavy "query" --mode hybrid
-
-# Modes: ensemble (default), native (xAI multi-agent), hybrid (both)
+scud models list --search 'QUERY' --json
+scud models set main 'QUERY'
+scud models set fast 'QUERY'
 ```
 
-## MCP Server
+Replace `QUERY` with the user's requested catalog search. Use `--provider PROVIDER` to narrow discovery when needed. `main` and `fast` are the two defaults, not role tiers. These commands may query providers; run them only when model discovery/configuration is requested. `scud init` initializes storage without overwriting existing tasks or model defaults.
 
-Expose scud as tools for AI agents (Cowork, Claude Code):
+## Propose, validate, then import
+
+Treat these as distinct operations. Parsing can call a paid model and never writes project tasks:
 
 ```bash
-# Start with core tools (6 tools, ~3K context tokens)
+scud parse requirements.md --tag feature --model main > proposal.json
+scud validate --input proposal.json
+scud status
+# After review and explicit approval; use the revision just observed:
+scud import proposal.json --policy merge --if-revision REVISION
+```
+
+Review task contents and dependencies before importing. Choose `merge` or `replace` explicitly for collisions; replacement can remove existing phase tasks. Re-read and reconcile on revision conflicts rather than retrying blindly. Use `scud validate` to check the stored graph without changing it. To add tasks manually, edit an exported versioned document, validate it, and import it with an explicit policy and revision guard; there is no `create` or `expand` command.
+
+Keep IDs phase-scoped. Use `--tag PHASE` to disambiguate task queries and updates. Use `phase:id` for cross-phase dependency references; unqualified dependencies refer to the current phase. Preserve schema version 1 and phase/task fields from exported JSON rather than guessing a legacy file format. A nonempty legacy `tasks.scg` needs explicit conversion and archival before importing; SCUD does not migrate it automatically.
+
+## Update deliberately
+
+Read `status` for a revision and `show` for the exact task first. Then, only for an authorized change:
+
+```bash
+scud update TASK_ID --tag PHASE --status in-progress --if-revision REVISION
+```
+
+Patch only requested fields; omitted fields remain unchanged. Use `scud update --help` for patch flags or `--input` JSON. Revision guards prevent stale writes but do not provide worker ownership or an atomic claim. `done` is user-reported workflow state, not test evidence or verification. Do not mark tasks done automatically at session exit. Run project tests separately and report their results; use git separately only when requested.
+
+## MCP integration
+
+Expose five default tools: `scud_tasks`, `scud_import`, `scud_update`, `scud_status`, `scud_parse`. `SCUD_TOOLS=full` adds `scud_sb`; a custom selection such as `SCUD_TOOLS=tasks,status` narrows exposure.
+
+```bash
 scud mcp-server
-
-# Full tools including heavy and list
-SCUD_TOOLS=full scud mcp-server
-
-# Custom selection
-SCUD_TOOLS=next,show,heavy scud mcp-server
+scud mcp-server --transport http --listen 127.0.0.1:8080
 ```
 
-Add to `.mcp.json` for Claude Code or `claude_desktop_config.json` for Cowork:
-```json
-{"mcpServers": {"scud": {"command": "scud", "args": ["mcp-server"]}}}
-```
+Require a client compatible with **stateless MCP 2026-07-28**. There is no `initialize` handshake or session. Every request supplies `params._meta` with `io.modelcontextprotocol/protocolVersion` set to `2026-07-28` and object `io.modelcontextprotocol/clientCapabilities`; client info may also be supplied. For HTTP POST `/mcp`, also send `MCP-Protocol-Version: 2026-07-28`, `Content-Type: application/json`, `Accept: application/json, text/event-stream`, and `Mcp-Method` matching the JSON-RPC method. Tool calls also require `Mcp-Name` matching the tool name. Check client compatibility before offering desktop configuration: older session-based MCP clients do not automatically work. HTTP is loopback-only; authenticated remote proxying requires explicit setup.
 
-## Configuration
+Use `scud_tasks` with `id` (and optional `tag`) for a task, or `ready: true` for `{revision, ready}`; these selectors are mutually exclusive. With neither selector it returns the importable document. Use `scud_status` for the full snapshot. Import/update arguments accept `if_revision`; require the same review and authorization as CLI writes.
 
-Config lives in `.scud/config.toml`. Key sections:
+## Verification and legacy guidance
 
-```toml
-[heavy.models]
-routing = "grok-4.1-fast"        # Captain routing (cheap)
-agents = "grok-4.1-fast"         # Parallel agents (cheap)
-synthesis = "grok-4.20-reasoning" # Synthesis (quality)
+Use `scud sb --help` for optional external sb diagnostics and gates, only when requested. A successful sb command does not itself discharge invariants; `done` does not prove verification. No workers are launched.
 
-[swarm.tiers]
-fast = "grok-code-fast-1"
-standard = "grok-4.20-reasoning"
-smart = "grok-4.20-reasoning"
-```
-
-Env overrides: `SCUD_HEAVY_MODEL_AGENTS`, `SCUD_HEAVY_MODEL_SYNTHESIS`, `SCUD_HEAVY_MODE`, etc.
-
-## Task Statuses
-
-`pending` | `in-progress` | `done` | `blocked` | `failed` | `review` | `expanded` | `deferred` | `cancelled`
-
-## Key Concepts
-
-- **DAG**: Tasks form a directed acyclic graph. A task is "ready" when all deps are done.
-- **Waves**: Groups of tasks with no inter-dependencies, executable in parallel.
-- **Tags**: Organize tasks into phases/features. Switch with `scud tags <name>`.
-- **Complexity**: Fibonacci scores (1,2,3,5,8,13...) for effort estimation.
+Translate old workflow advice to supported queries: `status` replaces progress/statistics orientation; `validate` checks graph validity; inspect `ready`/`blocked` instead of execution waves, and `phases`/task `assigned_to` instead of active tags or lock ownership. Legacy slash aliases may remain as informational helpers, not restored CLI commands. Do not run removed warmup, set-status, stats, waves, tags, claim/release, heavy, execution, or git commands.

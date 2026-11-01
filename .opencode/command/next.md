@@ -1,16 +1,5 @@
 ---
-description: Find the next available SCUD task
+description: Read the first ready SCUD v3 task reference without claiming it
 ---
 
-Find the next available task based on dependencies and status.
-
-Run: `scud next $ARGUMENTS`
-
-Arguments: `[--tag <tag>] [--spawn]`
-
-After finding the next task:
-1. Show the task ID, title, and complexity
-2. List its dependencies and their status
-3. Suggest starting with: `scud set-status <id> in-progress`
-
-Use `--spawn` for machine-readable JSON output (for orchestrators).
+Run `scud next`. It returns the first ready `{tag,id}` in canonical order or `null`, not a task object, priority guarantee, claim, or lease. Inspect a returned task using `scud show ID --tag PHASE`. On null, inspect `scud status` for blockers and counts. Do not start workers, change status, or forward unsupported `$ARGUMENTS`.

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: readiness-not-a-lease
+expected_outcome: |
+  Explains status summary.status/ready/blocked/revision, next as first canonical ready reference or null, and show as ref/task wrapper. Explains next is not a claim, lease, or highest-priority promise. Recommends explicit task/phase inspection and an authorized update guarded by fresh revision, reconciling conflicts. Treats done as user-reported state, not verification, rejects automatic completion/commit, and executes nothing.

@@ -7,6 +7,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  checks:
+    name: Release checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test with race detector
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ${{ matrix.os }}
@@ -62,7 +75,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: build
+    needs: [checks, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -75,22 +88,27 @@ jobs:
           path: ./artifacts
 
       - name: Create Release
-        run: gh release create ${{ github.ref_name }} --title "${{ github.ref_name }}" --generate-notes
+        run: |
+          notes=".github/release-notes/${{ github.ref_name }}.md"
+          if [ -f "$notes" ]; then
+            gh release create "${{ github.ref_name }}" --verify-tag --draft --title "${{ github.ref_name }}" --notes-file "$notes"
+          else
+            gh release create "${{ github.ref_name }}" --verify-tag --draft --title "${{ github.ref_name }}" --generate-notes
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Assets
         run: |
-          for asset_dir in ./artifacts/*; do
-            if [ -d "$asset_dir" ]; then
-              asset_name=$(basename "$asset_dir")
-              asset_file=$(find "$asset_dir" -type f -name "scud*" | head -1)
-              if [ -n "$asset_file" ]; then
-                echo "Uploading $asset_file as $asset_name"
-                cp "$asset_file" "./$asset_name"
-                gh release upload ${{ github.ref_name }} "./$asset_name" --clobber
-              fi
-            fi
+          for asset_name in scud-linux-amd64 scud-linux-arm64 scud-darwin-amd64 scud-darwin-arm64 scud-windows-amd64.exe scud-windows-arm64.exe; do
+            asset_file="./artifacts/$asset_name/$asset_name"
+            test -f "$asset_file"
+            gh release upload "${{ github.ref_name }}" "$asset_file" --clobber
           done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish complete release
+        run: gh release edit "${{ github.ref_name }}" --draft=false --latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

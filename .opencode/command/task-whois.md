@@ -1,16 +1,6 @@
 ---
-description: Update the status of a SCUD task
+description: Legacy whois alias for SCUD v3 assignment inspection
 allowed-tools: Bash(scud:*)
-argument-hint: "<task-id> <status> [--tag <tag>]"
 ---
 
-Update a task's status. Valid statuses: pending, in-progress, done, blocked, review, deferred, cancelled.
-
-```bash
-scud set-status $ARGUMENTS
-```
-
-After updating:
-1. Confirm the status change
-2. If marked `done`, suggest running `scud next` to find the next task
-3. If marked `blocked`, ask what's blocking and whether to add a note
+Explain that the legacy `whois` CLI and worker-lock ownership queries are unavailable. Read `scud list` and inspect task `assigned_to` and status, using `scud show ID --tag PHASE` if an explicit ID is supplied. Assignment and in-progress status are coordination metadata, not evidence of an active worker or exclusive ownership. Do not forward `$ARGUMENTS` into mutations.
